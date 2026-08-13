@@ -169,6 +169,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import space.linuxct.glyphworks.ui.theme.fullContrastListItemColors
+import space.linuxct.glyphworks.ui.theme.fullContrastToggleColors
+import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.DebugLog
@@ -676,9 +679,8 @@ private fun MainScreen(startTab: Int = 0) {
                         ) { title -> Text(stringResource(title)) }
                     },
                     scrollBehavior = scrollBehavior,
-                    colors = TopAppBarDefaults.topAppBarColors(
+                    colors = fullContrastTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
-                        scrolledContainerColor = MaterialTheme.colorScheme.background,
                     ),
                 )
             },
@@ -1890,6 +1892,7 @@ private fun BrightnessRow() {
             // control is 36 dp rather than 40.
             NoRipple {
                 FilledIconToggleButton(
+                    colors = fullContrastToggleColors(),
                     checked = auto,
                     onCheckedChange = { on -> Core.prefs.putBoolean(PrefKeys.AUTO_BRIGHTNESS, on) },
                     shapes = IconButtonDefaults.toggleableShapes(),
@@ -2258,6 +2261,7 @@ private fun DisplayRow(
             // the only one that cost the list its calm. See [offStateOutline].
             NoRipple {
                 FilledIconToggleButton(
+                    colors = fullContrastToggleColors(),
                     checked = shown,
                     onCheckedChange = { onSelect() },
                     shapes = IconButtonDefaults.toggleableShapes(),
@@ -2502,8 +2506,13 @@ internal fun selectedRowColors(): ListItemColors = ListItemDefaults.colors(
     containerColor = Color.Transparent,
     selectedContainerColor = Color.Transparent,
     selectedContentColor = MaterialTheme.colorScheme.onSurface,
+    // No unselected leading/trailing override: this overload does not expose
+    // one, and it does not need to. Both callers put a RadioButton in the
+    // leading slot and text or nothing in the trailing slot, so there is no
+    // Icon here to come out grey. See ui/theme/IconContrast.kt.
     selectedLeadingContentColor = MaterialTheme.colorScheme.onSurface,
     selectedTrailingContentColor = MaterialTheme.colorScheme.onSurface,
+    // Text, deliberately left muted: hierarchy is carried by type, not by icons.
     selectedOverlineContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     selectedSupportingContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
 )
@@ -3345,6 +3354,7 @@ private val PREF_SWITCH_PADDING = PaddingValues(horizontal = 0.dp, vertical = 4.
 private fun PrefSwitch(title: String, key: String, def: Boolean) {
     var checked by remember(key) { mutableStateOf(Core.prefs.getBoolean(key, def)) }
     ListItem(
+        colors = fullContrastListItemColors(),
         modifier = Modifier.fillMaxWidth(),
         trailingContent = {
             NoRipple {

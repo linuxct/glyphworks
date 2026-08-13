@@ -106,6 +106,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import space.linuxct.glyphworks.ui.theme.fullContrastListItemColors
+import space.linuxct.glyphworks.ui.theme.fullContrastToggleColors
+import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.ui.AssistantAction
@@ -715,9 +718,8 @@ internal fun EditorScaffold(
                 // The whole page sits on the page background, and the bar is
                 // SOLID in that same colour so it stays opaque yet seamless —
                 // the same treatment MainActivity's header uses.
-                colors = TopAppBarDefaults.topAppBarColors(
+                colors = fullContrastTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
                 ),
             )
         },
@@ -1911,6 +1913,7 @@ private fun ToolRow(
         if (state.canOnionSkin) {
             NoRipple {
                 FilledIconToggleButton(
+                    colors = fullContrastToggleColors(),
                     checked = state.onionSkin,
                     onCheckedChange = { state.onionSkin = it },
                     shapes = IconButtonDefaults.toggleableShapes(),

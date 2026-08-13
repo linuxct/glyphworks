@@ -261,7 +261,11 @@ data class NavPillColors(
 /** Light mode: dark pill, light icons, light selected chip with a dark icon. */
 private val LightNavPill = NavPillColors(
     container = Color(0xFF2E2E33),
-    content = Color(0xFFF2F2FA).copy(alpha = 0.75f),
+    // Full strength, not the 75 % it was. Selection is already carried by the
+    // chip's own light container sliding under the selected item — dimming the
+    // others as well made three of the four nav icons grey, which is the one
+    // thing this app's iconography does not do. See ui/theme/IconContrast.kt.
+    content = Color(0xFFF2F2FA),
     selectedContainer = Color(0xFFF2F2FA),
     selectedContent = Color(0xFF2E2E33),
     // Nothing's blue, not a grey. The FAB is the theme's branded exception and is
@@ -280,7 +284,10 @@ private val LightNavPill = NavPillColors(
  */
 private val DarkNavPill = NavPillColors(
     container = DarkPill,
-    content = DarkInkDim,
+    // Ink, not [DarkInkDim] — same reason as the light scheme above: the sliding
+    // chip is what shows selection, so the unselected icons have no need to be
+    // grey and every reason not to be.
+    content = DarkInk,
     selectedContainer = Color(0xFFDDDEE4),
     selectedContent = DarkCard,
     // The same brand blue as the light scheme, for the same reason. The selected

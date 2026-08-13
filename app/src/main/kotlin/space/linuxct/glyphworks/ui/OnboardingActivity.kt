@@ -86,6 +86,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import space.linuxct.glyphworks.ui.theme.fullContrastListItemColors
+import space.linuxct.glyphworks.ui.theme.fullContrastToggleColors
+import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.PrefKeys
@@ -943,6 +946,7 @@ private fun BodyText(text: String) {
 @Composable
 private fun PermRow(title: Int, why: Int, granted: Boolean, onClick: () -> Unit) {
     ListItem(
+        colors = fullContrastListItemColors(),
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         supportingContent = {
