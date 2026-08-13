@@ -70,6 +70,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.Brush
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.DragIndicator
@@ -95,6 +96,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -248,32 +250,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val DISPLAY_NAMES = mapOf(
-    "ambient" to R.string.screen_ambient,
-    "clock" to R.string.screen_clock,
-    "eyes" to R.string.screen_eyes,
-    "speed" to R.string.screen_speed,
-    "battery" to R.string.screen_battery,
-    "solar" to R.string.screen_solar,
-    "moon" to R.string.screen_moon,
-    "dice" to R.string.screen_dice,
-    "coin" to R.string.screen_coin,
-    "dino" to R.string.screen_dino,
-    "bottle" to R.string.screen_bottle,
-    // TEMPORARILY DISABLED — Rock Paper Scissors. This map is the Toys tab's
-    // roster: [loadOrder] keeps only stored ids that are keys here, then appends
-    // any key the store has not seen, so dropping the entry removes the row and
-    // with it every way to enable the toy. Restore alongside the matching line in
-    // screens/ScreenRegistry.kt, which is what the Essential Key cycles.
-    // "rps" to R.string.screen_rps,
-    "counter" to R.string.screen_counter,
-    "breathing" to R.string.screen_breathing,
-    "timer" to R.string.screen_timer,
-    "compass" to R.string.screen_compass,
-    "level" to R.string.screen_level,
-    "visualizer" to R.string.screen_visualizer,
-    "custom" to R.string.screen_custom,
-)
+/**
+ * Moved to `ui/ScreenNames.kt` — `key/EssentialKeyService` needs the same names
+ * for the optional gesture announcement, and a second copy would drift from the
+ * ones on screen. This alias keeps the call sites below reading as they did.
+ */
+private val DISPLAY_NAMES get() = SCREEN_DISPLAY_NAMES
 
 private val CONFIGURABLE =
     setOf("ambient", "clock", "dice", "coin", "battery", "breathing", "timer", "visualizer", "custom")
@@ -1799,6 +1781,25 @@ private fun SettingsTab(
                     Core.prefs.putBoolean(PrefKeys.MENU_MODE_ENABLED, it)
                 }
             }
+            // Directly under the two key rows, because it is about the key: it
+            // is the only way to watch what the Essential Key is doing when the
+            // thing it drives is a panel of LEDs facing away from you.
+            item {
+                var announce by remember(refreshTick) {
+                    mutableStateOf(
+                        Core.prefs.getBoolean(PrefKeys.KEY_ACTION_TOASTS, PrefKeys.KEY_ACTION_TOASTS_DEF),
+                    )
+                }
+                SwitchRow(
+                    title = stringResource(R.string.pref_key_toasts),
+                    subtitle = stringResource(R.string.pref_key_toasts_summary),
+                    checked = announce,
+                    leading = Icons.Outlined.Campaign,
+                ) {
+                    announce = it
+                    Core.prefs.putBoolean(PrefKeys.KEY_ACTION_TOASTS, it)
+                }
+            }
             item {
                 var use12h by remember(refreshTick) {
                     mutableStateOf(Core.prefs.getBoolean(PrefKeys.USE_12H, false))
@@ -1818,7 +1819,14 @@ private fun SettingsTab(
             // Present only in the GitHub build — Play distributes its own
             // updates, and pointing users at an APK outside Play would breach the
             // Device and Network Abuse policy. See `ui/OptionalFeatures.kt`.
-            item { UpdateSettingsRow() }
+            //
+            // It adds its own `item`, and that is the whole point: written as
+            // `item { UpdateSettingsRow() }` the entry existed in every build and
+            // merely drew nothing in Play, so the group thought it had one more
+            // row than it showed. [SectionCard] takes each card's shape from its
+            // index against that count, so the invisible row took the rounded
+            // bottom and Creator name was left square.
+            updateSettingsItem()
         }
 
         // The design assistant's own group — header, the three rows and the hint
@@ -2163,7 +2171,7 @@ private fun DisplayRow(
             Icon(
                 Icons.Outlined.DragIndicator,
                 contentDescription = "Drag to reorder",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
                     .padding(8.dp)
                     .pointerInput(id) {
@@ -2262,7 +2270,7 @@ private fun DisplayRow(
                     Icon(
                         Icons.Outlined.Settings,
                         contentDescription = stringResource(R.string.settings),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
@@ -2494,8 +2502,8 @@ internal fun selectedRowColors(): ListItemColors = ListItemDefaults.colors(
     containerColor = Color.Transparent,
     selectedContainerColor = Color.Transparent,
     selectedContentColor = MaterialTheme.colorScheme.onSurface,
-    selectedLeadingContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    selectedTrailingContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    selectedLeadingContentColor = MaterialTheme.colorScheme.onSurface,
+    selectedTrailingContentColor = MaterialTheme.colorScheme.onSurface,
     selectedOverlineContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     selectedSupportingContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
 )
@@ -2777,9 +2785,19 @@ internal fun PrefRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
-            // The tint ListItemDefaults.colors() was giving the leading slot.
+            // **Full-contrast icons, not the muted slot tint.**
+            //
+            // ListItemDefaults gives the leading slot `onSurfaceVariant`, which
+            // is the same token as supporting text — so a row's mark came out
+            // the same grey as its subtitle, reading as decoration rather than
+            // as the row's subject. Every icon in this app is now `onSurface`:
+            // black on light, white on dark, no greys. The hierarchy is carried
+            // by the TEXT, which keeps its variant tint, and by size.
+            //
+            // This one provider covers every settings, checklist and toy row —
+            // they all reach an icon through [PrefRow] and [PrefIcon].
             CompositionLocalProvider(
-                LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant,
+                LocalContentColor provides MaterialTheme.colorScheme.onSurface,
                 content = leading,
             )
             Spacer(Modifier.width(PREF_ROW_PADDING))
@@ -3029,23 +3047,41 @@ private fun UntestedDeviceDialog(onDismiss: () -> Unit) {
     )
 }
 
-/** Shown instead of the app on hardware without a Glyph Matrix. */
+/**
+ * Shown instead of the app on hardware without a Glyph Matrix.
+ *
+ * It carries the accessibility disclosure too, without the consent buttons —
+ * there is nothing to consent to, because the app cannot run here at all.
+ *
+ * That is not decoration. This is the ONLY screen the app shows on a device that
+ * is not a Nothing phone with a Glyph Matrix, which is very likely what a Play
+ * reviewer has: `uses-feature com.nothing.feature` filters the listing, but a
+ * reviewer sideloads the artefact onto whatever is on their desk. Without this,
+ * they install the app, see a dead end, and can truthfully report that they
+ * could not locate any disclosure of the AccessibilityService use — which is
+ * precisely what happened to the 3.0.0 submission.
+ */
 @Composable
 private fun UnsupportedDeviceScreen() {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-            Column {
-                Text(
-                    stringResource(R.string.unsupported_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-                Text(
-                    stringResource(R.string.unsupported_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(32.dp),
+        ) {
+            Text(
+                stringResource(R.string.unsupported_title),
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Text(
+                stringResource(R.string.unsupported_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            HorizontalDivider(Modifier.padding(vertical = 24.dp))
+            AccessibilityDisclosureText()
         }
     }
 }

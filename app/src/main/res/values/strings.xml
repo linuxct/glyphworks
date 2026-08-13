@@ -12,7 +12,10 @@
 
     <!-- Disclosure -->
     <string name="disclosure_title">Accessibility permission needed</string>
-    <string name="disclosure_body">GlyphWorks uses an accessibility service to detect presses of your phone’s Essential Key, including on the lock screen and Always-On Display. This is the only way a normal app can react to that key.\n\nWhat the service does:\n• Listens for Essential Key presses and consumes them so Essential Space does not open\n• Single press: Glyph Touch action on the current toy\n• Double press: switch to the next toy\n• Triple press: return to the background toy\n\nWhat the service does NOT do:\n• It cannot and does not read your screen content\n• It does not store or transmit anything it observes — key presses are counted in memory and turned into a toy action\n\nOn the next screen, enable “GlyphWorks” under Downloaded apps.</string>
+    <string name="disclosure_body">GlyphWorks uses Android’s AccessibilityService API to detect presses of your phone’s Essential Key, including on the lock screen and Always-On Display. This is the only way a normal app can react to that key.\n\nWhat the service accesses:\n• Presses of the Essential Key, and nothing else — no other key and no other input\n• Window-opened events from Essential Space and Essential Recorder only\n\nWhat it does with them:\n• Single press: Glyph Touch action on the current toy\n• Double press: switch to the next toy\n• Triple press: return to the background toy\n• It consumes the press so Essential Space does not open over your toy, and if Essential Space opens anyway it closes it once, straight after\n\nWhat the service does NOT do:\n• It cannot and does not read your screen content\n• It does not store or transmit anything it observes — key presses are counted in memory, turned into a toy action, and discarded\n• It is not used for advertising, analytics or profiling, and this build has no internet permission at all\n\nYou can decline. The Essential Key then keeps its stock behaviour and the rest of the app works normally.\n\nTap “Continue to Settings” to enable “GlyphWorks” under Downloaded apps.</string>
+    <!-- Shown in place of nothing when the user taps the decline button in
+         onboarding: declining has to be visibly acknowledged, and reversible. -->
+    <string name="disclosure_declined_note">Not enabled. The Essential Key keeps its stock behaviour and every other part of GlyphWorks still works. You can turn this on here, or later from Settings → Initial setup.</string>
     <string name="disclosure_accept">Continue to Settings</string>
     <string name="disclosure_decline">Not now</string>
 
@@ -27,8 +30,10 @@
     <string name="onb_done">Get started</string>
 
     <string name="onb_key_title">Take over the Essential Key</string>
-    <string name="onb_key_body">GlyphWorks listens for your phone’s Essential Key through an accessibility service — the only way a regular app can react to that key, even on the lock screen and Always-On Display.\n\nWith the listener on:\n• Press once — Glyph Touch action on the current toy\n• Press twice — switch to the next toy\n• Press three times — return to the background toy\n\nThe service never reads your screen content and never collects or transmits any data. You can skip this step; the key simply keeps its stock behaviour.</string>
-    <string name="onb_key_enable">Enable the listener</string>
+    <!-- Deliberately short: the disclosure card immediately below says all of
+         this properly, and a long lead-in only pushes the disclosure further
+         down the first screen of the app. -->
+    <string name="onb_key_body">The Essential Key is how you drive the toys on the back of your phone. GlyphWorks needs an accessibility service to see that key — here is exactly what it does, and what it does not.</string>
     <string name="onb_key_status_on">Listener running — the Essential Key is yours</string>
     <string name="onb_key_status_off">Listener off — enable it now or skip for later</string>
 
@@ -114,6 +119,32 @@
     <string name="master_toggle_summary">When on, all Essential Key presses control Glyph Toys. When off, the key behaves normally.</string>
     <string name="pref_menu_mode">Essential Key menu mode</string>
     <string name="pref_menu_mode_summary">Double-press opens a blinking on-glyph selector; single-press cycles toys, and the shown toy is set automatically after a few seconds. Single-press still triggers toy actions outside the menu.</string>
+    <!-- On-screen announcement of each recognised key gesture. Deliberately NOT
+         called "debug": it is a supported diagnostic, and it is the only way to
+         see what the accessibility service is doing when the thing it drives is
+         on the back of the phone. -->
+    <string name="pref_key_toasts">Announce key press actions</string>
+    <string name="pref_key_toasts_summary">Shows a brief on-screen message naming each Essential Key gesture and what it did. Useful for checking the key is captured — the Glyph Matrix is on the back of the phone, where you cannot see it.</string>
+
+    <!-- Gesture announcements. %1$d is the press count, %2$s the toy's name. One
+         message per gesture, after the app has decided what the presses meant. -->
+    <plurals name="key_action_presses">
+        <item quantity="one">%1$d press</item>
+        <item quantity="other">%1$d presses</item>
+    </plurals>
+    <string name="key_action_toy">%1$s → action on “%2$s”</string>
+    <string name="key_action_next">%1$s → next toy: “%2$s”</string>
+    <string name="key_action_home">%1$s → back to “%2$s”</string>
+    <string name="key_action_menu_open">%1$s → toy selector opened</string>
+    <string name="key_action_menu_next">%1$s → selector preview: “%2$s”</string>
+    <string name="key_action_menu_commit">%1$s → toy set: “%2$s”</string>
+    <string name="key_action_swallowed">%1$s → captured, but no Glyph session yet</string>
+    <string name="key_action_ignored">%1$s → not a recognised gesture</string>
+    <!-- The leak watchdog. Named on screen because an accessibility service
+         closing another app's window is the single most alarming thing this app
+         does, and it should never be something the user has to guess at. -->
+    <string name="key_action_dismissed_essential">Essential Space opened after a captured press — closing it</string>
+
     <string name="brightness">Glyph brightness</string>
     <string name="auto_brightness_on">Automatic brightness on — the Glyph follows the room light. Tap to turn off.</string>
     <string name="auto_brightness_off">Automatic brightness off. Tap to let the Glyph follow the room light.</string>

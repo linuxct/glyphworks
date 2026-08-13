@@ -41,6 +41,23 @@ object PrefKeys {
     const val MASTER_TOGGLE = "master_toggle"
     const val MASTER_TOGGLE_DEF = true
 
+    /**
+     * Show a short on-screen message naming each recognised key gesture and what
+     * it did.
+     *
+     * **Off by default and it must stay that way** — a message on every press is
+     * intolerable in daily use, and the whole point of this key is that it works
+     * without looking at the screen.
+     *
+     * It answers a real question the setup checklist cannot ("is my Essential Key
+     * actually being captured, and as what?"), which is why it is a normal
+     * setting and not hidden behind a debug build. It is also the only way to
+     * *see* what an accessibility service is doing when the thing it drives is a
+     * panel of LEDs on the back of the phone — see the announcement strings.
+     */
+    const val KEY_ACTION_TOASTS = "keyActionToasts"
+    const val KEY_ACTION_TOASTS_DEF = false
+
     /** Optional Essential-Key "menu mode": double-press opens a blinking toy selector. */
     const val MENU_MODE_ENABLED = "menuModeEnabled"
     const val MENU_MODE_ENABLED_DEF = false

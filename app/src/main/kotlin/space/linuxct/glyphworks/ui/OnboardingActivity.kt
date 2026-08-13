@@ -460,18 +460,40 @@ private fun KeyPage(
         revealMillis = if (morphed) ART_REVEAL_MS else ART_INTRO_REVEAL_MS,
     ) {
         BodyText(stringResource(R.string.onb_key_body))
+        Spacer(Modifier.height(20.dp))
+
+        // **The prominent disclosure, on the first page of the app.**
+        //
+        // `Page.KEY` is the first entry in [Page], so this is on screen seconds
+        // after the launcher icon is tapped, with nothing to navigate to reach
+        // it. That is the whole point: Play's User Data policy requires the
+        // disclosure to be "displayed in the normal usage of the app and not
+        // require the user to navigate through a menu or settings", and the
+        // 3.0.0 submission was rejected because the only copy of it lived behind
+        // Settings while this page sent people straight to the system screen.
+        //
+        // The button below is the affirmative consent, and it is now the only
+        // way out of this page into ACTION_ACCESSIBILITY_SETTINGS. See
+        // ui/AccessibilityDisclosure.kt.
+        //
+        // Declining is remembered for the page, not persisted: it must be
+        // visible and it must be reversible, so the accept button stays put.
+        var declined by rememberSaveable { mutableStateOf(false) }
+        AccessibilityDisclosureCard(
+            declined = declined,
+            onDecline = { declined = true },
+            onAccept = {
+                declined = false
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+        )
+
         Spacer(Modifier.height(16.dp))
         Text(
             stringResource(if (a11yOn) R.string.onb_key_status_on else R.string.onb_key_status_off),
             style = MaterialTheme.typography.titleSmall,
             color = if (a11yOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = {
-            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }) {
-            Text(stringResource(R.string.onb_key_enable))
-        }
         // Nothing in the Play build: a store install is never subject to the
         // restricted-setting block, so the card would explain a problem the user
         // cannot have. See ui/OptionalFeatures.kt.

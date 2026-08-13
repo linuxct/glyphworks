@@ -45,9 +45,13 @@ internal fun ColumnScope.AiSettingsSection() = Unit
  * Play distributes the updates for this build, and pointing users at an APK
  * outside Play would breach the Device and Network Abuse policy — using
  * `ACTION_VIEW` rather than installing directly does not exempt it.
+ *
+ * Adds no `item`, which is why this is a `SectionCardScope` extension and not a
+ * composable that returns `Unit`. As a composable it still occupied a slot in
+ * the group and drew nothing there, so App settings ended on an invisible row
+ * that took the rounded bottom corner from Creator name.
  */
-@Composable
-internal fun UpdateSettingsRow() = Unit
+internal fun SectionCardScope.updateSettingsItem() = Unit
 
 /** Nothing to schedule: there is no update checker in this build. */
 @Suppress("UNUSED_PARAMETER")

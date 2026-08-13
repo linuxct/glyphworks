@@ -52,10 +52,16 @@ internal fun ColumnScope.AiSettingsSection() {
     AiSettingsSectionImpl()
 }
 
-/** The Settings page's "Check for updates" row. */
-@Composable
-internal fun UpdateSettingsRow() {
-    UpdateSettingsRowImpl()
+/**
+ * The Settings page's "Check for updates" row, as a group entry.
+ *
+ * A `SectionCardScope` extension rather than a composable, so that a build
+ * without an updater contributes no entry at all. A composable that renders
+ * nothing still leaves its `item` in the group, and the group shapes its cards
+ * from the item count — an empty last row silently steals the rounded corner.
+ */
+internal fun SectionCardScope.updateSettingsItem() {
+    item { UpdateSettingsRowImpl() }
 }
 
 /** Arms the daily background release check. Called once from `MainActivity`. */

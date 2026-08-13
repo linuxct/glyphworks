@@ -386,7 +386,7 @@ private fun UnverifiedEffortIcon() {
     Icon(
         Icons.Outlined.WarningAmber,
         contentDescription = stringResource(R.string.pref_ai_effort_unverified),
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        tint = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.size(20.dp),
     )
 }

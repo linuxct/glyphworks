@@ -50,30 +50,18 @@ class DisclosureActivity : ComponentActivity() {
                             .verticalScroll(rememberScrollState())
                             .padding(24.dp),
                     ) {
-                        Text(
-                            stringResource(R.string.disclosure_title),
-                            style = MaterialTheme.typography.headlineMedium,
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            stringResource(R.string.disclosure_body),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        // Same component onboarding's first page shows, so the
+                        // two cannot say different things — see
+                        // ui/AccessibilityDisclosure.kt.
+                        AccessibilityDisclosureText()
                         Spacer(Modifier.height(24.dp))
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            TextButton(onClick = { finish() }) {
-                                Text(stringResource(R.string.disclosure_decline))
-                            }
-                            Button(onClick = {
+                        AccessibilityDisclosureActions(
+                            onDecline = { finish() },
+                            onAccept = {
                                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                                 finish()
-                            }) {
-                                Text(stringResource(R.string.disclosure_accept))
-                            }
-                        }
+                            },
+                        )
                     }
                 }
             }

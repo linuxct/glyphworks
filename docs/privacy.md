@@ -88,6 +88,14 @@ be one.
 Key presses are counted in memory and turned into a toy action. They are not logged, not
 persisted, and not transmitted.
 
+The service does one thing to another app's window, and it is worth stating plainly: it
+consumes the key press so Essential Space does not open on top of the toy you just acted on,
+and on firmware where Essential Space opens anyway it closes it once, immediately after. That
+is the only use of the accessibility API's global actions in this app, it happens only within
+three seconds of a press GlyphWorks itself captured, and it never happens while key capture is
+switched off. The in-app disclosure — the first screen you see on a new install — says the same
+thing before you are asked to enable anything.
+
 ### Designs you draw
 
 Designs made in the Create tab are `glyph.design` JSON files under the app's own

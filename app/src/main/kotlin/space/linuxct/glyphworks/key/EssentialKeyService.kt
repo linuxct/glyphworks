@@ -9,9 +9,12 @@ import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 import space.linuxct.glyphworks.Core
+import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.ui.screenDisplayName
 
 /**
  * Captures the Nothing Essential Key globally (including lock screen / AOD /
@@ -50,8 +53,40 @@ class EssentialKeyService : AccessibilityService() {
         Core.init(this)
         logAndEnsureKeyFilterFlag()
         Core.prefs.putLong(PrefKeys.SERVICE_HEARTBEAT, System.currentTimeMillis())
+        Core.router.onAction = ::announce
         Core.arbiter.revive()
         DebugLog.i(C, "onServiceConnected: heartbeat written, session revived")
+    }
+
+    /**
+     * The optional on-screen announcement of a resolved gesture.
+     *
+     * Reached from [KeyActionRouter.onAction], which fires on the render thread
+     * for most outcomes and on the key thread for the two early returns — hence
+     * the hop to the main looper, which a Toast requires.
+     *
+     * Reads the preference at fire time rather than caching it, so turning the
+     * setting on takes effect on the very next press with no service restart.
+     * That matters: the alternative is telling someone to toggle accessibility
+     * off and on again to see it work.
+     */
+    private fun announce(clicks: Int, action: KeyAction, screenId: String) {
+        if (!Core.prefs.getBoolean(PrefKeys.KEY_ACTION_TOASTS, PrefKeys.KEY_ACTION_TOASTS_DEF)) return
+        mainHandler.post {
+            val presses = resources.getQuantityString(R.plurals.key_action_presses, clicks, clicks)
+            val toy = screenDisplayName(this, screenId)
+            val text = when (action) {
+                KeyAction.TOY_ACTION -> getString(R.string.key_action_toy, presses, toy)
+                KeyAction.NEXT_TOY -> getString(R.string.key_action_next, presses, toy)
+                KeyAction.HOME -> getString(R.string.key_action_home, presses, toy)
+                KeyAction.MENU_OPEN -> getString(R.string.key_action_menu_open, presses)
+                KeyAction.MENU_PREVIEW_NEXT -> getString(R.string.key_action_menu_next, presses, toy)
+                KeyAction.MENU_COMMIT -> getString(R.string.key_action_menu_commit, presses, toy)
+                KeyAction.SWALLOWED -> getString(R.string.key_action_swallowed, presses)
+                KeyAction.IGNORED -> getString(R.string.key_action_ignored, presses)
+            }
+            Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**
@@ -145,6 +180,15 @@ class EssentialKeyService : AccessibilityService() {
             return
         }
         val locked = getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+        // Say so on screen when announcements are on. An accessibility service
+        // closing another app's window is the most alarming thing this app does,
+        // and it is the thing a Play reviewer watches happen with no explanation
+        // — naming it as it happens is worth more than any amount of prose.
+        if (Core.prefs.getBoolean(PrefKeys.KEY_ACTION_TOASTS, PrefKeys.KEY_ACTION_TOASTS_DEF)) {
+            mainHandler.post {
+                Toast.makeText(this, R.string.key_action_dismissed_essential, Toast.LENGTH_SHORT).show()
+            }
+        }
         mainHandler.postDelayed({
             val action = if (locked) GLOBAL_ACTION_HOME else GLOBAL_ACTION_BACK
             DebugLog.i(C, "dismissing $pkg leak via ${if (locked) "HOME" else "BACK"}")
@@ -172,6 +216,10 @@ class EssentialKeyService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         DebugLog.w(C, "onUnbind (service disabled or system rebinding)")
+        // The router outlives this service — it hangs off Core for the life of
+        // the process — so leaving the listener attached would pin a dead
+        // service, and its Context with it, until the next bind replaced it.
+        Core.router.onAction = null
         return super.onUnbind(intent)
     }
 

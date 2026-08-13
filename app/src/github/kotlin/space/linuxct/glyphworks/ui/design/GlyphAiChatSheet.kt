@@ -449,6 +449,7 @@ private fun ChatHeader(
                         Icon(
                             Icons.Outlined.DeleteSweep,
                             contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                         )
                     },
@@ -467,6 +468,7 @@ private fun ChatHeader(
                         Icon(
                             Icons.AutoMirrored.Outlined.Logout,
                             contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                         )
                     },
@@ -663,7 +665,7 @@ private fun ToolNoteRow(note: ChatToolNote, attempt: Int) {
         Icon(
             if (note.ok) Icons.Outlined.Check else Icons.Outlined.Refresh,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(14.dp),
         )
         Spacer(Modifier.width(10.dp))

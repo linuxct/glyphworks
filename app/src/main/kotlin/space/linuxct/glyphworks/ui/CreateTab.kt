@@ -1404,7 +1404,7 @@ private fun DesignCard(
                     Icon(
                         Icons.Outlined.MoreVert,
                         contentDescription = stringResource(R.string.create_more),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 DropdownMenu(
@@ -1447,6 +1447,7 @@ private fun DesignCard(
                                 // never sizes what goes in it, so an `Icon` left
                                 // alone draws its own 24 dp default and every
                                 // item in the list runs one step heavy.
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                             )
                         },
@@ -1464,6 +1465,7 @@ private fun DesignCard(
                             Icon(
                                 Icons.Outlined.DriveFileRenameOutline,
                                 contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                             )
                         },
@@ -1478,6 +1480,7 @@ private fun DesignCard(
                             Icon(
                                 Icons.Outlined.ContentCopy,
                                 contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                             )
                         },
@@ -1496,6 +1499,7 @@ private fun DesignCard(
                             Icon(
                                 Icons.Outlined.Share,
                                 contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                             )
                         },
@@ -1516,6 +1520,7 @@ private fun DesignCard(
                             Icon(
                                 Icons.Outlined.Download,
                                 contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                             )
                         },
@@ -1530,6 +1535,7 @@ private fun DesignCard(
                             Icon(
                                 Icons.Outlined.DeleteOutline,
                                 contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(MenuDefaults.LeadingIconSize),
                             )
                         },
