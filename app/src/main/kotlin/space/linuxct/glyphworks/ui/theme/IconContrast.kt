@@ -56,12 +56,40 @@ internal fun fullContrastListItemColors() = ListItemDefaults.colors(
 /**
  * A filled icon toggle whose UNCHECKED glyph is ink.
  *
- * Only the unchecked colour moves. Checked keeps M3's `onPrimary` against the
- * filled container — see the KDoc above.
+ * ## `checkedContentColor` is passed on purpose — do not remove it
+ *
+ * `IconButtonDefaults.filledIconToggleButtonColors` declares:
+ *
+ * ```
+ * checkedContentColor: Color = contentColorFor(checkedContainerColor),
+ * ```
+ *
+ * and `checkedContainerColor` itself defaults to `Color.Unspecified`. Kotlin
+ * evaluates that default expression the moment ANY argument is named, so
+ * `contentColorFor(Unspecified)` runs, finds no match, and falls back to
+ * **`LocalContentColor.current`** — the ink colour of whatever row the button
+ * happens to sit in. `copy()` then treats that as a real override.
+ *
+ * The result: the checked button kept its `primary` container and had its glyph
+ * repainted in the *same* near-black ink, so the Toys tab's active play button
+ * and the auto-brightness toggle rendered as solid black slabs with nothing on
+ * them. Naming this parameter restores the token value and is the only thing
+ * standing between this helper and that bug.
+ *
+ * Everything else is left alone deliberately. Both container colours keep their
+ * tokens — `SurfaceContainer` unchecked, `Primary` checked — so the pressed and
+ * selected states look exactly as they always did. The one and only change here
+ * is the unchecked glyph, `OnSurfaceVariant` to `onSurface`.
  */
 @Composable
 internal fun fullContrastToggleColors() = IconButtonDefaults.filledIconToggleButtonColors(
+    // The unchecked glyph: ink instead of the muted token. This is the fix.
     contentColor = MaterialTheme.colorScheme.onSurface,
+    // FilledIconButtonTokens.SelectedColor, restated. Not a new colour — the
+    // token default, named so the broken derivation above never runs. It is also
+    // exactly "the opposite of the selected button's background", since the
+    // checked container is `primary`.
+    checkedContentColor = MaterialTheme.colorScheme.onPrimary,
 )
 
 /**
