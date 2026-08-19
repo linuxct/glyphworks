@@ -11,6 +11,22 @@
 
 ---
 
+## Download
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=space.linuxct.glyphworks">
+    <img src="https://i.imgur.com/RvsPBjV.png" alt="Download button"></img><br/>
+    Click here to download from Google Play<br/>(might be some version behind GitHub, so GitHub is recommended)
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/linuxct/glyphworks/releases/latest">
+    <img src="https://i.imgur.com/eKVKAIk.png" alt="Download button"></img><br/>
+    Click here to download the latest version
+  </a>
+</p>
+
 ## What is this?
 
 The Nothing Phone (4a) Pro has a 13×13 Glyph Matrix on its back, but no Glyph Button: the
