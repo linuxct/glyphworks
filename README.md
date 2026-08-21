@@ -20,14 +20,12 @@
 <p align="center">
   <a href="https://github.com/linuxct/glyphworks/releases/latest">
     <img src="https://i.imgur.com/eKVKAIk.png" alt="Download from GitHub"><br/>
-    Newest version, from GitHub
   </a>
 </p>
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=space.linuxct.glyphworks">
     <img src="https://i.imgur.com/RvsPBjV.png" alt="Download from Google Play"><br/>
-    Or from Google Play<br/>(sometimes a version behind)
   </a>
 </p>
 
