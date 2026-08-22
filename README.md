@@ -15,7 +15,7 @@
 
 ---
 
-## Get it
+## Download
 
 <p align="center">
   <a href="https://github.com/linuxct/glyphworks/releases/latest">
