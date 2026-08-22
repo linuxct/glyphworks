@@ -88,7 +88,7 @@ The Tutorials tab has a guided walkthrough of the editor.
 
 ## Setup
 
-Install, open, and the onboarding walks you through it. In short:
+Install, open, and the app's built-in onboarding process walks you through it. In short:
 
 1. Turn on the accessibility service (sideloaded builds may need *Allow restricted settings* first).
 2. Pick GlyphWorks as your always-on Glyph Toy.
@@ -119,8 +119,10 @@ There's a second flavour, `play`, which ships without the design assistant and t
 
 ## Privacy
 
-One network call: a daily check of this repo's GitHub Releases for a new version. Nothing else
-leaves your phone. The Play build has no `INTERNET` permission at all.
+The GitHub version does automatically only one network call: a daily check of this repo's GitHub 
+Releases for a new version. Nothing else leaves your phone. If you wish to enable it, the design assitant
+will send the custom design you are currently editing and help you customize it to your liking with the help
+of OpenAI's models. On the other hand, the Play build has no `INTERNET` permission at all.
 
 ## Contributing
 
