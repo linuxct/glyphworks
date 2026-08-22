@@ -80,7 +80,6 @@
 
         <service
             android:name=".key.EssentialKeyService"
-            android:directBootAware="true"
             android:exported="true"
             android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
@@ -92,9 +91,9 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- No directBootAware: a bind before unlock crashes com.nothing.thirdparty. -->
         <service
             android:name=".toy.AodToyService"
-            android:directBootAware="true"
             android:exported="true"
             android:icon="@drawable/toy_preview"
             android:label="@string/toy_name">

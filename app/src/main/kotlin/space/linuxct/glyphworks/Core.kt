@@ -148,6 +148,7 @@ object Core {
         }
 
         built = true
+        glyphLink.onUserUnlocked = { arbiter.revive() }
         arbiter.revive()
     }
 

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.UserManager
 import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
 import com.nothing.ketchum.GlyphMatrixManager
@@ -24,6 +25,44 @@ class GlyphLink(private val app: Context) {
     private var pendingFrame: IntArray? = null
     private var lastFrame: IntArray? = null
     private var teardown: Runnable? = null
+
+    private val userManager = app.getSystemService(UserManager::class.java)
+
+    private fun userUnlocked(): Boolean = userManager?.isUserUnlocked ?: true
+
+    private var awaitingUnlock = false
+
+    /** Set by [space.linuxct.glyphworks.Core] to revive the session on unlock. */
+    @Volatile
+    var onUserUnlocked: (() -> Unit)? = null
+
+    // ACTION_USER_UNLOCKED is not deliverable to manifest receivers.
+    private val unlockReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: android.content.Intent?) {
+            DebugLog.i(C, "user unlocked; starting the Glyph session")
+            runCatching { app.unregisterReceiver(this) }
+            onUserUnlocked?.invoke()
+            glyph.post {
+                awaitingUnlock = false
+                if (refCount > 0 && manager == null) connect()
+            }
+        }
+    }
+
+    private fun awaitUnlock() {
+        if (awaitingUnlock) return
+        awaitingUnlock = true
+        runCatching {
+            app.registerReceiver(
+                unlockReceiver,
+                android.content.IntentFilter(android.content.Intent.ACTION_USER_UNLOCKED),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
+        }.onFailure {
+            awaitingUnlock = false
+            DebugLog.w(C, "could not listen for unlock: $it")
+        }
+    }
 
     private val recovery = Runnable {
         if (refCount > 0 && !ready) {
@@ -112,6 +151,14 @@ class GlyphLink(private val app: Context) {
     private fun connect() {
         if (!isSupported) {
             DebugLog.w(C, "no Glyph Matrix on this device (${android.os.Build.MODEL}); rendering disabled")
+            return
+        }
+        // com.nothing.thirdparty is not directBootAware: its GlyphService reads a
+        // credential-encrypted database in onCreate, so binding it before unlock
+        // crash-loops it until the platform reboots the device.
+        if (!userUnlocked()) {
+            DebugLog.i(C, "user locked; deferring Glyph bind until unlock")
+            awaitUnlock()
             return
         }
         DebugLog.i(C, "connecting to the Glyph service")
