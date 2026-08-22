@@ -7,13 +7,7 @@ import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
 
-/**
- * Quick Settings tile toggling Essential Key capture (the master toggle).
- * Passive tile: state refreshes every time the panel opens. Flipping it
- * takes effect immediately — the session arbiter reacts to the pref change
- * and the accessibility service checks it on every key event. Works from
- * the lock screen too (the pref lives in device-protected storage).
- */
+/** Named in AndroidManifest.xml, so never rename this class. */
 class KeyCaptureTileService : TileService() {
 
     override fun onStartListening() {

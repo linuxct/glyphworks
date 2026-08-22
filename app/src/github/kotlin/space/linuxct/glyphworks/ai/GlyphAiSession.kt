@@ -41,85 +41,42 @@ import space.linuxct.glyphworks.core.ai.pendingApplyVerdict
 import space.linuxct.glyphworks.core.design.Design
 import kotlin.coroutines.CoroutineContext
 
-/**
- * The conversation on disk, as the session needs it.
- *
- * An interface over [ChatStore] rather than the class itself, because the class
- * needs a `Context` and the session's lifecycle rules — which is the thing worth
- * proving — can then be exercised under plain JUnit against a store that is a
- * `HashMap`.
- */
+/** [ChatStore] implements this. */
 interface TranscriptStore {
     suspend fun load(designId: String): ChatTranscript?
     suspend fun save(transcript: ChatTranscript)
     suspend fun delete(designId: String)
 }
 
-/** Deferred applies on disk, as the session needs them. See [PendingApplyStore]. */
+/** [PendingApplyStore] implements this. */
 interface PendingApplyRecords {
     /** Reads **and removes** the record for [designId]. */
     suspend fun take(designId: String): PendingApply?
     suspend fun put(record: PendingApply)
 }
 
-/**
- * The one fact the deferred-apply conflict rule needs from the design store.
- *
- * Narrow on purpose: the session has no business loading designs, and a
- * `DesignStore` in here would be a second route onto artwork that the editor
- * already owns.
- */
 fun interface StoredDesignFacts {
-    /** `Design.modifiedAt` as it is on disk, or null if there is no readable design. */
     suspend fun modifiedAt(designId: String): String?
 }
 
 /**
- * What holds the process up while a turn runs.
- *
- * An interface for the same reason as the rest of this file's seams — a test must
- * be able to assert that a turn starts it exactly once and stops it however the
- * turn ends, without a `Service` — and because it is genuinely optional
- * behaviour: a build without the foreground service still runs turns, it just
- * loses them to the low-memory killer, which is the bug this exists to fix.
+ * Holds the process up while a turn runs; without it the low-memory killer takes a
+ * backgrounded turn. Both called on the main thread.
  */
 interface TurnForeground {
-    /** A turn has begun on [designName]. Called on the main thread. */
     fun turnStarted(designId: String, designName: String)
 
-    /** No turn is running. Called on the main thread, however the turn ended. */
     fun turnEnded()
 }
 
-/**
- * The sentences the app writes into a conversation *as the assistant* when the
- * assistant itself did not get to. See [GlyphAiSession.startTurn] and
- * [GlyphAiSession.applyDeferred].
- *
- * A seam rather than a `getString` in the middle of the session, for the usual
- * two reasons: the wording belongs in `strings.xml` and the session has no
- * `Context`, and a test that asserts *what the transcript ends up containing*
- * should not need a resource table to do it.
- *
- * Both members are corrections to the scrollback, arrived at from opposite
- * directions: [changedTheDesign] covers a turn that changed the canvas and never
- * said so, [deferredApplyDropped] a turn that said it had and then did not.
- */
+/** What the app writes as the assistant when the assistant itself did not get to. */
 interface TurnNotices {
-    /** What to write down for a turn that ended as [reason] having changed the design. */
     fun changedTheDesign(reason: GlyphAiOrchestrator.TurnResult.Reason): String
 
-    /**
-     * What to write down when a change this conversation was already told about
-     * is dropped rather than applied, for [verdict].
-     *
-     * Never called for [PendingApplyVerdict.APPLY]: a change that lands is
-     * already accounted for by the reply that promised it.
-     */
+    /** Never called for [PendingApplyVerdict.APPLY]. */
     fun deferredApplyDropped(verdict: PendingApplyVerdict): String
 }
 
-/** One turn, everything the runner needs to run it. */
 class TurnRequest(
     val context: GlyphToolContext,
     val history: List<ChatInputItem>,
@@ -130,78 +87,23 @@ class TurnRequest(
     val onTextDelta: (String) -> Unit,
 )
 
-/**
- * Runs one turn against the model.
- *
- * The production implementation builds a [GlyphAiOrchestrator]; a test scripts
- * the answers, including the answer "suspend forever", which is the only way to
- * observe what happens to a turn that is still in flight.
- */
+/** Runs one turn against the model. The real one builds a [GlyphAiOrchestrator]. */
 fun interface TurnRunner {
     suspend fun run(request: TurnRequest): GlyphAiOrchestrator.TurnResult
 }
 
 /**
- * The assistant's turn, and the conversation it belongs to — **owned by the
- * process, not by a screen**.
+ * Owned by the process, not by a screen, so closing the editor does not kill a turn.
+ * [stopTurn] is the only thing that ends one early, and a turn that changed the design has
+ * to be explainable afterwards; see [noticeFor] and [applyDeferred].
  *
- * ## Why this is not in the ViewModel any more
- *
- * It was, and leaving the editor destroyed the work. `GlyphAiViewModel` is
- * activity-scoped, so `finish()` calls `onCleared()`, which cancelled
- * `viewModelScope` and with it the turn — a *deterministic* kill, nothing to do
- * with memory pressure. Somebody who asked for a drawing and then went to check a
- * message lost the drawing, every time, and the transcript showed their own
- * request with no answer under it.
- *
- * So the turn lives here, on a scope that is created once and never cancelled,
- * and [GlyphAiViewModel] is now a *view* onto it: it forwards the calls and
- * republishes [chat]. Closing the editor withdraws the canvas ([clearEditor]) and
- * nothing else. Backgrounding the app is covered by the other half of the fix —
- * see [TurnForeground] — because an application scope keeps a turn out of the
- * ViewModel's reach but does not keep the *process* alive.
- *
- * ## What did not change, and must not
- *
- * - **[stopTurn] is still the user's cancel**, and the only one. The composer's
- *   stop button is now the single thing in the app that abandons a turn.
- * - **[clearEditor] is still identity-checked.** A configuration change disposes
- *   the outgoing composition after the incoming one has registered, so an
- *   unconditional clear would unregister the live editor.
- * - **A turn that changed the design is explainable afterwards.** A turn with no
- *   answer stores nothing, which is right for a dropped connection and wrong for
- *   the one that left new artwork on the canvas; see [noticeFor].
- * - **A turn that *said* it changed the design and then did not is corrected.**
- *   The other half of the same principle, and the sharper one. A deferred apply
- *   is reported to the model as a success while it is only recorded, so the reply
- *   in the thread already claims the change; if the record is later dropped
- *   ([PendingApplyVerdict.CONFLICT], [PendingApplyVerdict.EXPIRED],
- *   [PendingApplyVerdict.MISSING]) the claim is a falsehood and the thread is
- *   told so. See [applyDeferred] and [ChatTranscript.withCorrection].
- * - **A message that reached the screen reaches the disk.** It used to take
- *   `Dispatchers.IO + NonCancellable` inside a scope that was about to die; now
- *   the scope does not die, and every read *and* write of a transcript goes
- *   through one serialised queue (see [persistQueue]) so a checkpoint can never
- *   land on top of the reply that superseded it, and a correction written before
- *   anybody opened the chat can never be read back as though it were not there.
- *
- * ## One conversation at a time, and a turn that outlives it
- *
- * [openChat] points this at a design. A turn started on that design goes on
- * running if the user opens a *different* one, but it stops touching the visible
- * state — see [viewEpoch] — and finishes by writing its reply to its own
- * transcript, which is what the next open of that design reads.
+ * [openChat] points this at one design. A turn on another design keeps running and writes
+ * to its own transcript, but stops touching the visible state. See [viewEpoch].
  */
 class GlyphAiSession internal constructor(
     /**
-     * Application-scoped and dispatched on Main, deliberately.
-     *
-     * Main because the two things a turn must do on the main thread are the ones
-     * it does directly: reading the editor's live frame buffers
-     * ([GlyphEditorBridge.snapshot]) and writing a design back into them. The
-     * network is not one of them — `GlyphAiClient.respond` moves itself to IO —
-     * and deltas arriving on that IO thread are safe because a
-     * [MutableStateFlow] update is atomic from any thread.
+     * Application-scoped, dispatched on Main: a turn reads and writes the editor's live
+     * frame buffers, which is main-thread work. The network hops to IO on its own.
      */
     private val scope: CoroutineScope,
     private val transcripts: TranscriptStore,
@@ -210,7 +112,6 @@ class GlyphAiSession internal constructor(
     private val foreground: TurnForeground,
     private val notices: TurnNotices,
     private val runner: TurnRunner,
-    /** Where file work happens. A test passes the scope's own dispatcher. */
     private val ioContext: CoroutineContext = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -218,76 +119,34 @@ class GlyphAiSession internal constructor(
     private val _chat = MutableStateFlow(GlyphChatState())
     val chat: StateFlow<GlyphChatState> = _chat.asStateFlow()
 
-    /**
-     * The conversation of record. [GlyphChatState.messages] mirrors it for the
-     * UI; this is what is written to disk and what is replayed to the model.
-     */
+    /** The conversation of record: what is written to disk and replayed to the model. */
     private var transcript = ChatTranscript()
 
-    /** The turn in flight, if any. One at a time; the composer is disabled meanwhile. */
     private var turn: Job? = null
 
-    /** Set by the editor while it is on screen. See [GlyphEditorBridge]. */
     private var editor: GlyphEditorBridge? = null
 
-    /** The document as it was before the most recent accepted apply. */
     private var revertSnapshot: Design? = null
 
-    /** Which design [revertSnapshot] belongs to. See [openChat]. */
     private var revertOf: String = ""
 
-    /** What [retry] would send again. */
     private var lastTurn: PendingTurn? = null
 
     /**
-     * Bumped every time [openChat] actually points this at a new conversation.
-     *
-     * A turn captures it when it starts and stops writing to [chat] the moment it
-     * no longer matches. That is the whole rule for "a turn is running on the
-     * design I just navigated away from": the work continues and persists, and
-     * the screen showing a *different* conversation never sees another
-     * conversation's text delta appear in it.
-     *
-     * Reopening the same design's editor mid-turn does not bump it — [openChat]
-     * returns early — which is exactly what makes the live turn still be on
-     * screen when the user comes back to it.
+     * A turn captures this at the start and stops writing to [chat] once it no longer
+     * matches, so one conversation's deltas never appear in another. Reopening the same
+     * design mid-turn does not bump it, so a live turn is still on screen when you return.
      */
     private var viewEpoch = 0
 
-    /**
-     * The conversation being read in, if one is. See [correctDeferred].
-     *
-     * Held so that a decision which depends on *whether this design's thread is
-     * in memory* can wait for the answer instead of racing it. Nothing else needs
-     * it: every other caller either owns the state already or does not care.
-     */
+    /** [correctDeferred] joins this rather than racing the read. */
     private var openJob: Job? = null
 
     /**
-     * Every read and every write of conversation storage, in the order it was
-     * asked for.
-     *
-     * ## Why writes are serialised
-     *
-     * A turn writes a checkpoint every couple of seconds and then, at the end,
-     * the real thing. Launching those independently onto [Dispatchers.IO] leaves
-     * the order to the thread pool, and the ordering that loses is the one where
-     * a checkpoint lands *after* the reply that replaced it — the user's answer
-     * silently reverting to a half-sentence. One consumer, unbounded so a send
-     * never blocks the main thread, and FIFO.
-     *
-     * ## Why *reads* joined them
-     *
-     * [correctDeferred] is a load-modify-save on a transcript that is usually not
-     * the one in memory: it runs from [setEditor], and [openChat] does not happen
-     * until the chat sheet composes. A load living outside this queue could
-     * therefore read the file *between* the correction's read and its write, and
-     * the in-memory copy that resulted would be one message short — and would
-     * overwrite the corrected file on the next append. Putting [PersistOp.Load]
-     * in the same queue makes that unrepresentable: a load either sees the whole
-     * correction or precedes it entirely, and the second case is reconciled on
-     * the way back. Nothing else changes for it; a load was already a suspending
-     * hop onto [ioContext].
+     * FIFO on one consumer, unbounded so a send never blocks the main thread. Writes are
+     * ordered so a checkpoint cannot land after the reply that replaced it. Reads share the
+     * queue because [correctDeferred] is a load-modify-save, and a load slipping between its
+     * two halves would give the in-memory copy one message too few.
      */
     private val persistQueue = Channel<PersistOp>(Channel.UNLIMITED)
 
@@ -302,15 +161,11 @@ class GlyphAiSession internal constructor(
                         is PersistOp.Correct -> op.answer(correctOnDisk(op))
                     }
                 } catch (e: Exception) {
-                    // The stores below already swallow their own failures; this
-                    // is the belt to that, because one throw here would end the
-                    // loop and silently stop persisting anything at all.
+                    // One throw here would end the loop and stop all persisting.
                     DebugLog.w(TAG, "could not persist: ${e.message}")
                 } finally {
-                    // An op that answers and threw before it could is the one way
-                    // this loop can strand a coroutine forever — a chat that
-                    // never opens. `complete` on a settled deferred is a no-op,
-                    // so this is free in the ordinary case.
+                    // An op that threw before it answered would strand its caller forever.
+                    // Completing a settled deferred is a no-op.
                     op.answer(null)
                 }
             }
@@ -318,12 +173,8 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * The load-modify-save half of a correction, on the queue's own thread.
-     *
-     * The whole point of it being *here* is that nothing else can read or write
-     * this transcript in between. [ChatTranscript.withCorrection] carries the
-     * rule about not creating one; see it for why a missing file means "say
-     * nothing" rather than "start a thread with an apology in it".
+     * On the queue's own thread, so nothing else can read or write this transcript between
+     * the load and the save. A missing file says nothing; see [ChatTranscript.withCorrection].
      */
     private suspend fun correctOnDisk(op: PersistOp.Correct): ChatTranscript? {
         val stored = transcripts.load(op.designId)?.copy(designId = op.designId)
@@ -332,15 +183,7 @@ class GlyphAiSession internal constructor(
         return corrected
     }
 
-    // ---- the editor bridge ----
-
-    /**
-     * Registers the editor currently on screen, and hands it anything the
-     * assistant finished while there was none.
-     *
-     * Replacing an existing registration is normal, not an error: that is exactly
-     * what a rotation does, and a turn in flight will find the new one.
-     */
+    /** Also hands [bridge] anything the assistant finished while there was no editor. */
     fun setEditor(bridge: GlyphEditorBridge) {
         editor = bridge
         scope.launch {
@@ -349,43 +192,27 @@ class GlyphAiSession internal constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Nothing below is expected to throw and none of it is worth the
-                // process: a drawing that could not be handed over is a drawing
-                // the user can ask for again, and this scope's exceptions reach
-                // the thread's uncaught handler.
+                // This scope's exceptions reach the thread's uncaught handler, and a
+                // drawing that could not be handed over is not worth the process.
                 DebugLog.w(TAG, "could not hand over a waiting change: ${e.message}")
             }
         }
     }
 
     /**
-     * Withdraws [bridge], but **only if it is still the registered one**.
-     *
-     * A configuration change disposes the outgoing composition *after* the
-     * incoming one has registered, so an unconditional clear would remove the
-     * live editor and leave the assistant unable to reach the canvas.
-     *
-     * Note what this deliberately does **not** do: cancel the turn. That was the
-     * old behaviour, by way of `onCleared`, and it is the bug this class exists
-     * to fix.
+     * Only if [bridge] is still the registered one: a configuration change disposes the
+     * outgoing composition after the incoming one registers, so an unconditional clear
+     * would remove the live editor. Never cancels the turn.
      */
     fun clearEditor(bridge: GlyphEditorBridge) {
         if (editor === bridge) editor = null
     }
 
-    // ---- the conversation ----
-
     /**
-     * Loads the conversation about [designId], once.
-     *
-     * Called from the chat modal's first composition — **never from anything
-     * `Core.init` touches**. This is the first thing in the process that forces
-     * chat storage, and forcing it creates a credential-protected directory,
-     * which cannot be done before the first unlock; see [ChatStore].
-     *
-     * The early return is what keeps a turn on screen: reopening the editor on
-     * the same design mid-turn finds the conversation already loaded and leaves
-     * every field of it — the streamed reply included — exactly where it is.
+     * Call this from the chat modal, never from anything `Core.init` touches: it forces
+     * chat storage, which creates a credential-protected directory and so needs the first
+     * unlock. See [ChatStore]. The early return keeps a live turn on screen when the same
+     * design is reopened.
      */
     fun openChat(designId: String) {
         val current = _chat.value
@@ -393,14 +220,12 @@ class GlyphAiSession internal constructor(
         viewEpoch++
         _chat.value = GlyphChatState(
             designId = designId,
-            // The banner is about the canvas, not about the conversation, and a
-            // deferred apply lands before anybody opens the chat — so a change
-            // there IS a way back from must still offer one here.
+            // The banner is about the canvas, not the conversation. A deferred apply lands
+            // before anybody opens the chat, and it still needs a way back.
             canRevert = revertSnapshot != null && revertOf == designId,
         )
         openJob = scope.launch {
-            // Through the queue rather than straight onto [ioContext]: a
-            // correction may be mid-flight on the same file. See [persistQueue].
+            // Through the queue, since a correction may be mid-flight on the same file.
             val loaded = if (designId.isBlank()) null else awaitOp { PersistOp.Load(designId, it) }
             transcript = loaded?.copy(designId = designId) ?: ChatTranscript(designId = designId)
             _chat.update {
@@ -410,11 +235,6 @@ class GlyphAiSession internal constructor(
         }
     }
 
-    /**
-     * Puts the op [build] makes on [persistQueue] and waits for its answer, or
-     * null if the queue is gone — in which case the conversation reads as empty,
-     * which is [ChatStore]'s contract for every other way a read can fail.
-     */
     private suspend fun awaitOp(
         build: (CompletableDeferred<ChatTranscript?>) -> PersistOp,
     ): ChatTranscript? {
@@ -423,10 +243,7 @@ class GlyphAiSession internal constructor(
         return answer.await()
     }
 
-    /**
-     * Clears the conversation about the design being edited: the transcript on
-     * disk, and everything the sheet is showing. See [GlyphAiViewModel.resetChat].
-     */
+    /** Forgets what was said; it does not undo what was drawn. See [cleared]. */
     fun resetChat(): Boolean {
         val state = _chat.value
         if (!state.canReset()) return false
@@ -437,8 +254,6 @@ class GlyphAiSession internal constructor(
         if (designId.isNotBlank()) persistQueue.trySend(PersistOp.Delete(designId))
         return true
     }
-
-    // ---- the composer ----
 
     fun attached(image: AttachedImage) {
         _chat.update {
@@ -463,10 +278,9 @@ class GlyphAiSession internal constructor(
         _chat.update { it.copy(failure = null) }
     }
 
-    /** How many attachments the composer will hold. */
     fun attachmentsFull(): Boolean = _chat.value.attachments.size >= MAX_ATTACHMENTS
 
-    /** See [GlyphAiViewModel.send]. False means nothing was sent. */
+    /** False means nothing was sent, and the caller must keep what the user typed. */
     fun send(text: String): Boolean {
         val state = _chat.value
         val trimmed = text.trim()
@@ -476,17 +290,14 @@ class GlyphAiSession internal constructor(
             PendingTurn(
                 text = trimmed,
                 imageDataUrls = state.attachments.map { it.dataUrl },
-                // The same photos, as pixels, for `image_to_grid`. Carried on the
-                // pending turn rather than read from the composer at snapshot
-                // time, so a retry converts the images that were actually sent
-                // and not whatever happens to be attached now.
+                // The same photos, as pixels, for `image_to_grid`. Held on the pending turn
+                // so a retry converts what was sent, not what is attached now.
                 images = state.attachments.mapNotNull { it.source },
             ),
             record = true,
         )
     }
 
-    /** See [GlyphAiViewModel.retry]. */
     fun retry() {
         val pending = lastTurn ?: return
         if (_chat.value.sending) return
@@ -494,15 +305,8 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * Abandons the turn in flight — the user's explicit cancel, and the only
-     * thing in the app that still ends a turn early.
-     *
-     * The socket read cannot be interrupted, so this frees the *user*, not the
-     * connection. Anything the turn already applied stays applied and stays
-     * revertible, and the checkpoint the turn may have written is cleared by the
-     * turn's own ending (see [startTurn]) so a stopped turn leaves the transcript
-     * as it was — which is what this app has always stored for a turn that
-     * produced no answer.
+     * The socket read cannot be interrupted, so this frees the user, not the connection.
+     * Anything already applied stays applied and stays revertible.
      */
     fun stopTurn() {
         turn?.cancel()
@@ -510,20 +314,13 @@ class GlyphAiSession internal constructor(
         _chat.update { it.turnEnded() }
     }
 
-    /**
-     * The state a turn leaves behind: nothing in flight, and no half-narrated
-     * progress.
-     *
-     * One function for all three endings — answered, failed, abandoned — because
-     * the fields that must be reset together grew from two to five, and a turn
-     * that cleared its trace but left its step list showing would keep narrating
-     * work that finished minutes ago. The steps are not lost by this: a turn that
-     * answered puts the same calls under its message as [ChatMessage.tools].
-     */
     private fun GlyphChatState.turnEnded(): GlyphChatState =
         copy(sending = false, streaming = "", trace = null, steps = emptyList(), startedAtMs = 0L)
 
-    /** Puts the design back as it was before the assistant's most recent change. */
+    /**
+     * One step, not a stack: a whole-document swap does not fit the editor's per-frame
+     * undo, and keeping every snapshot would cost a megabyte of frames per turn.
+     */
     fun revertLastChange() {
         val snapshot = revertSnapshot ?: return
         if (revertOf != _chat.value.designId) return
@@ -535,25 +332,18 @@ class GlyphAiSession internal constructor(
         }
     }
 
-    // ---- one turn ----
-
     private fun startTurn(pending: PendingTurn, record: Boolean): Boolean {
         if (turn?.isActive == true) return false
         val bridge = editor ?: run {
-            // A turn has to start from an open editor: the model is answering a
-            // question about a drawing, and with no bridge there is no drawing to
-            // read. It may FINISH with none, which is the whole point of the
-            // deferred apply below.
+            // A turn needs an editor to start, because there has to be a drawing to read.
+            // It may finish with none; that is what the deferred apply is for.
             DebugLog.w(TAG, "no editor is registered; nothing was sent")
             return false
         }
-        // The canvas from the editor, the photos from the message being sent:
-        // the bridge knows nothing about attachments and should not.
         val context = bridge.snapshot().copy(images = pending.images)
         val designId = _chat.value.designId
-        // Captured BEFORE the new message is appended: the orchestrator takes the
-        // new turn separately, and history that already contained it would send
-        // it twice.
+        // Captured before the new message is appended. The orchestrator takes the new turn
+        // separately, so history holding it too would send it twice.
         val history = (if (record) transcript else transcript.withoutTrailingUser()).asInput()
         if (record) {
             appendMessage(
@@ -618,29 +408,23 @@ class GlyphAiSession internal constructor(
                         message = ChatMessageItem.user(pending.text, pending.imageDataUrls),
                         applyDesign = { design -> applyFromModel(design, designId, epoch) },
                         onTrace = { trace ->
-                            // The screen drops a preamble when a tool starts —
-                            // see [onTrace] — so the checkpoint must drop it too,
-                            // or a killed turn would be redisplayed with the
-                            // thinking-out-loud the user was never shown.
+                            // The screen drops a preamble when a tool starts, so the
+                            // checkpoint drops it too. See [onTrace].
                             if (trace is ChatTrace.RunningTool) streamed.setLength(0)
                             onTrace(trace, epoch)
                         },
                         onToolNote = { note ->
                             notes += note
                             updateFor(epoch) { it.copy(steps = it.steps + note) }
-                            // Unthrottled: a tool note is rare, is the visible
-                            // record of a slow turn, and is exactly the thing
-                            // worth having survived if the process goes now.
+                            // Unthrottled: tool notes are rare, and are the visible record
+                            // of a slow turn.
                             checkpoint()
                         },
                         onTextDelta = { delta ->
                             streamed.append(delta)
                             updateFor(epoch) { it.copy(streaming = it.streaming + delta) }
-                            // The first fragment writes at once and the rest are
-                            // throttled: the moment a reply *starts* is when a
-                            // record of it is worth most, and a turn killed three
-                            // seconds in should not read as a turn that never
-                            // began.
+                            // The first fragment writes at once, so a turn killed three
+                            // seconds in does not look like one that never began.
                             if (checkpointedAt == 0L || now() - checkpointedAt >= CHECKPOINT_INTERVAL_MS) {
                                 checkpoint()
                             }
@@ -668,9 +452,6 @@ class GlyphAiSession internal constructor(
                             TAG,
                             "turn failed (${result.reason}) after ${result.rounds} round(s): ${result.detail}",
                         )
-                        // A turn that changed nothing stores nothing; a turn that
-                        // changed the design leaves the note that explains it.
-                        // See [noticeFor].
                         val notice = noticeFor(result)
                         if (notice != null) {
                             commit(base, epoch, notice)
@@ -684,13 +465,8 @@ class GlyphAiSession internal constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // `GlyphAiOrchestrator` promises never to throw, so reaching here
-                // is a bug rather than a bad reply — but this coroutine no longer
-                // belongs to a screen, and an exception escaping an
-                // application-scoped `launch` reaches the thread's uncaught
-                // handler and takes the process with it. It is reported as the
-                // failure it is instead, so the composer comes back and the
-                // detail is on screen where it can be copied.
+                // `GlyphAiOrchestrator` never throws, so this is a bug. An exception
+                // escaping this application-scoped launch would take the process down.
                 DebugLog.w(TAG, "turn threw: ${e.javaClass.simpleName}: ${e.message}")
                 updateFor(epoch) {
                     it.turnEnded().copy(
@@ -702,12 +478,8 @@ class GlyphAiSession internal constructor(
                 }
             } finally {
                 foreground.turnEnded()
-                // The turn is over, so the checkpoint describes something that is
-                // no longer happening. Either something above replaced it — the
-                // reply, or the notice a turn that changed the design leaves; see
-                // [noticeFor] — or the conversation goes back to what it was
-                // before the turn, which is what this app stores for a turn that
-                // produced neither an answer nor a change.
+                // The turn is over, so its checkpoint describes something no longer
+                // happening. Nothing replaced it above, so drop it.
                 if (checkpointOnDisk && !appended) {
                     persistQueue.trySend(PersistOp.Save(base.withoutPartial()))
                 }
@@ -717,37 +489,10 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * The transcript entry a failed turn leaves behind, or null for one that
-     * leaves none.
-     *
-     * ## The rule, and why it is this rule
-     *
-     * **A turn that changed something has to be explainable afterwards.** That is
-     * the whole of it, and everything else follows: a turn that produced neither
-     * an answer nor a change stores nothing, because a dropped connection or a
-     * user pressing stop is not something the assistant *said* and a thread that
-     * accumulated "Couldn't reach the service" would be a log, not a
-     * conversation. A turn that put artwork on the canvas is a different thing
-     * entirely — the user's design is not as they left it, and the only place
-     * that can ever explain why is the thread they will scroll back through.
-     *
-     * The case that forced this was [GlyphAiOrchestrator.TurnResult.Reason.STUCK_SALVAGED]:
-     * the turn runs out of tool rounds, the last draft that passed validation is
-     * applied on the way out, and the design changes. The banner saying so is
-     * dismissed with the sheet, so somebody reopening that design a day later
-     * found artwork they did not draw and a conversation that did not mention it.
-     * It is not special-cased, though — the discriminator is
-     * [GlyphAiOrchestrator.TurnResult.Failure.appliedDesign], because "did this
-     * turn change the design" is the question that matters, and a turn whose
-     * connection died *after* an apply landed leaves exactly the same hole.
-     *
-     * ## What it is, in the thread
-     *
-     * An assistant message carrying [ChatMessage.error], which is precisely what
-     * that flag is for: shown to the person, never replayed to the model
-     * ([ChatTranscript.asInput] drops it), so the model is not taught that
-     * narrating its own failures is a thing it does. The turn's tool notes ride
-     * along, so the step list under it shows the apply that actually happened.
+     * A failed turn that changed nothing stores nothing, or the thread would fill up with
+     * "couldn't reach the service"; one that changed the design has to be explainable
+     * later. The note carries [ChatMessage.error], which [ChatTranscript.asInput] drops, so
+     * the model never sees its own failures replayed.
      */
     private fun noticeFor(result: GlyphAiOrchestrator.TurnResult.Failure): ChatMessage? {
         if (result.appliedDesign == null) return null
@@ -761,24 +506,10 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * The orchestrator's apply hook.
-     *
-     * Reads [editor] afresh rather than closing over the bridge the turn started
-     * with, so a design produced after a rotation lands on the editor that is
-     * actually on screen. Returning a sentence rather than null makes the *model*
-     * see a failed tool call — that string is not user-facing copy.
-     *
-     * ## With no editor open, the change is recorded rather than refused
-     *
-     * This used to answer "the design editor is no longer open, so nothing was
-     * changed", which was a fair description of a turn that could not outlive its
-     * screen. It can now, so that answer would throw away the drawing the user
-     * asked for in the *ordinary* case of somebody closing the editor and
-     * waiting. The design is written down instead and applied when that design is
-     * next opened — see [applyDeferred] — and the model is told it succeeded,
-     * because from its side it has: the change is accepted, recorded and on its
-     * way to the canvas. Telling it otherwise would have it apologise and redraw,
-     * burning the user's tool rounds on work that was already done.
+     * Reads [editor] afresh, so a design produced after a rotation lands on the editor that
+     * is on screen now. A returned string is a failed tool call the model sees, not
+     * user-facing copy. With no editor open the change is recorded and applied on the next
+     * open, and the model is told it succeeded. See [applyDeferred].
      */
     private fun applyFromModel(design: Design, designId: String, epoch: Int): String? {
         val bridge = editor
@@ -802,12 +533,9 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * Records [design] for the next time [designId] is opened.
-     *
-     * The baseline is read here rather than at the start of the turn, and it is
-     * read from *disk*: the editor writes on its way out, so the version this has
-     * to compare against later is the one that close left behind, not the one the
-     * turn was shown. See [PendingApply] for the conflict rule it feeds.
+     * The baseline is read from disk here, not at the start of the turn: the editor writes
+     * on its way out, so this has to compare against what close left behind. See
+     * [PendingApply] for the conflict rule.
      */
     private fun defer(design: Design, designId: String) {
         scope.launch {
@@ -830,28 +558,10 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * Hands [bridge] whatever the assistant finished while there was no editor.
-     *
-     * The conflict rule is [pendingApplyVerdict], and the case it exists for is
-     * the user going back into the editor themselves in the meantime: their
-     * strokes are newer than the model's draft and are **not** overwritten by it.
-     * That precedence is deliberate and stays — the model's drawing can be
-     * re-requested in a sentence, the user's strokes cannot be recovered. A
-     * record is consumed whichever way the verdict goes, so a draft that cannot
-     * land does not re-offer itself on every subsequent open.
-     *
-     * An apply that does land sets the revert snapshot exactly as a live one
-     * does, so the user opens their design, sees it changed, and has the same
-     * one-tap way back they would have had if they had watched it happen.
-     *
-     * ## An apply that does not land is said out loud
-     *
-     * The three verdicts that drop the record used to leave a `DebugLog.i` and
-     * nothing else — while the reply that recorded it is still sitting in the
-     * thread saying the design was changed, because [applyFromModel] tells the
-     * model it succeeded. The user was told a thing was done that silently was
-     * not, which is worse than not being told at all. So the conversation is
-     * corrected; see [correctDeferred].
+     * The user's own strokes always win over the model's draft, because a drawing can be
+     * asked for again and strokes cannot. The record is consumed either way, so a draft
+     * that cannot land does not re-offer itself; one that does not land is said out loud in
+     * the thread, since the reply already claimed the change. See [correctDeferred].
      */
     private suspend fun applyDeferred(bridge: GlyphEditorBridge) {
         val designId = bridge.snapshot().design.id
@@ -879,52 +589,25 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * Tells the conversation about [designId] that the change it was already
-     * promised is not coming, and why.
-     *
-     * ## The race, and how it is settled
-     *
-     * This runs from [setEditor], which is normally *before* [openChat] has read
-     * that design's transcript — the chat sheet does not compose until somebody
-     * taps sparkles. So this is a load-modify-save on a file the session does not
-     * hold, against a reader that may start at any moment. Getting it wrong loses
-     * a conversation, so it is settled twice over:
-     *
-     * 1. **Wait for a read already in flight** ([openJob]). The question below —
-     *    "is this design's thread in memory?" — has no answer while one is
-     *    arriving, and a wrong answer is the whole bug.
-     * 2. **Then either append in memory, or go through the queue.** If the thread
-     *    *is* the one on screen and loaded, the correction is an ordinary
-     *    [appendMessage]: one step on this dispatcher, nothing to interleave with,
-     *    and it is on screen at once rather than on the next open. Otherwise it is
-     *    a [PersistOp.Correct], which reads and writes inside [persistQueue] where
-     *    no [PersistOp.Load] can slip between the two halves.
-     *
-     * The reconciliation afterwards covers the last ordering: an [openChat] that
-     * begins *during* the join queues its load ahead of the correction and would
-     * otherwise show — and later save — a thread one message short. Its answer
-     * lands first, because the queue is FIFO and so are the resumptions; adopting
-     * the corrected transcript here therefore always wins.
-     *
-     * If the user never opens the chat at all, none of that runs and the file on
-     * disk is already right.
+     * Runs from [setEditor], usually before [openChat] has read that transcript, so it
+     * races a reader. Join [openJob] first, because "is this thread in memory?" has no
+     * answer while a read is arriving; then either append in memory or go through
+     * [persistQueue] as a [PersistOp.Correct], where no load can slip between its read and
+     * its write. The reconciliation at the end covers an [openChat] that started during the
+     * join and queued its load first.
      */
     private suspend fun correctDeferred(designId: String, verdict: PendingApplyVerdict) {
         val message = ChatMessage(
             role = ChatRole.ASSISTANT,
             text = notices.deferredApplyDropped(verdict),
             atMs = now(),
-            // A notice, not something the assistant said: `asInput` drops it, so
-            // the model is never taught that retracting its own work is a thing
-            // it does. The same flag, for the same reason, as [noticeFor].
+            // A notice, not something the assistant said, so `asInput` drops it.
             error = true,
         )
         openJob?.join()
         val onScreen = _chat.value
         if (onScreen.designId == designId && onScreen.restored) {
-            // Nothing to correct is not the same as nothing to say; see
-            // [ChatTranscript.withCorrection] for why an empty thread is left
-            // empty.
+            // An empty thread is left empty. See [ChatTranscript.withCorrection].
             if (transcript.messages.isEmpty()) return
             appendMessage(message)
             return
@@ -937,12 +620,7 @@ class GlyphAiSession internal constructor(
         }
     }
 
-    // ---- state plumbing ----
-
-    /**
-     * Applies [block] only while the conversation on screen is still the one this
-     * turn belongs to. See [viewEpoch].
-     */
+    /** Only while the conversation on screen is still this turn's. See [viewEpoch]. */
     private fun updateFor(epoch: Int, block: (GlyphChatState) -> GlyphChatState) {
         if (viewEpoch != epoch) return
         _chat.update(block)
@@ -951,16 +629,14 @@ class GlyphAiSession internal constructor(
     private fun onTrace(trace: ChatTrace, epoch: Int) {
         updateFor(epoch) {
             when (trace) {
-                // A model that thinks out loud before calling a tool has produced
-                // text that is not the answer; leaving it would have the reply
-                // appended to a preamble nobody was meant to read as one.
+                // Text before a tool call is thinking out loud, not the answer. Drop it, or
+                // the reply arrives stuck to a preamble.
                 is ChatTrace.RunningTool -> it.copy(trace = trace, streaming = "")
                 else -> it.copy(trace = trace)
             }
         }
     }
 
-    /** Appends to the conversation of record and writes it out. */
     private fun appendMessage(message: ChatMessage) {
         transcript = transcript.plus(message)
         _chat.update { it.copy(messages = transcript.messages) }
@@ -970,13 +646,8 @@ class GlyphAiSession internal constructor(
     }
 
     /**
-     * Appends a turn's own message onto the conversation it started from, whether
-     * or not that conversation is still the one on screen.
-     *
-     * [base] rather than [transcript] because the two can differ: the user may
-     * have opened another design while this turn was running, and the reply still
-     * belongs in the thread that asked for it. The screen is only updated when it
-     * is still showing that thread.
+     * Uses [base], not [transcript], because the user may have opened another design
+     * meanwhile. The reply still belongs in the thread that asked for it.
      */
     private fun commit(base: ChatTranscript, epoch: Int, message: ChatMessage) {
         val next = base.withoutPartial().plus(message)
@@ -987,17 +658,13 @@ class GlyphAiSession internal constructor(
         if (next.designId.isNotBlank()) persistQueue.trySend(PersistOp.Save(next))
     }
 
-    /** This transcript without a trailing user turn; see [retry]. */
+    /** See [retry]: the user's message is already stored, so it is not appended twice. */
     private fun ChatTranscript.withoutTrailingUser(): ChatTranscript =
         if (messages.lastOrNull()?.role == ChatRole.USER) copy(messages = messages.dropLast(1)) else this
 
     /**
-     * A turn that has been composed, and can be composed again by [retry].
-     *
-     * [imageDataUrls] is what the *model* sees; [images] is the same pictures as
-     * brightness grids, which is what `image_to_grid` converts. Both are held
-     * per turn because an attachment travels with one message and is not stored
-     * afterwards — see [GlyphToolContext.images].
+     * [imageDataUrls] is what the model sees; [images] is the same pictures as brightness
+     * grids, which is what `image_to_grid` converts. Neither is stored afterwards.
      */
     private data class PendingTurn(
         val text: String,
@@ -1008,9 +675,8 @@ class GlyphAiSession internal constructor(
     /**
      * One unit of work on conversation storage. See [persistQueue].
      *
-     * [Load] and [Correct] carry a [CompletableDeferred] because they have
-     * something to say back — and because *waiting for the queue* is what makes
-     * them ordered against the writes rather than merely dispatched near them.
+     * [Load] and [Correct] carry a [CompletableDeferred] to answer with. Waiting on it is
+     * also what orders them against the writes.
      */
     private sealed interface PersistOp {
         data class Save(val transcript: ChatTranscript) : PersistOp
@@ -1027,11 +693,7 @@ class GlyphAiSession internal constructor(
         ) : PersistOp
     }
 
-    /**
-     * Answers [this] op with [value], if it is one of the two that answer at all.
-     * Settling an already-settled deferred is a no-op, which is what lets the
-     * consumer's `finally` be an unconditional safety net.
-     */
+    /** Settling twice is a no-op, so the consumer's `finally` can call this always. */
     private fun PersistOp.answer(value: ChatTranscript?) {
         when (this) {
             is PersistOp.Load -> answer.complete(value)
@@ -1043,37 +705,19 @@ class GlyphAiSession internal constructor(
     companion object {
         private const val TAG = "GlyphAi"
 
-        /**
-         * How many images may ride on one message.
-         *
-         * Each is up to 1024 px of JPEG as base64 — a few hundred kilobytes of
-         * request body — and the model is being asked to turn them into a 13x13
-         * drawing. Four is already more reference than that task can use.
-         */
+        /** Each is up to 1024 px of JPEG as base64, and the target is a 13x13 drawing. */
         const val MAX_ATTACHMENTS = 4
 
         /**
-         * The shortest gap between two checkpoints of a reply that is still
-         * arriving.
-         *
-         * Text deltas land around thirty times a second, so writing on each would
-         * be thirty file writes a second for the length of a turn — the battery
-         * cost the editor's own debounce exists to avoid. Two seconds bounds what
-         * a process death can lose to about a sentence, which is the resolution
-         * this is useful at: the point is to show that the assistant *was*
-         * answering and roughly what it said, not to reproduce the last word.
+         * Deltas land about thirty times a second, and writing on each would be thirty file
+         * writes a second. Two seconds bounds what a process death loses to about a
+         * sentence.
          */
         const val CHECKPOINT_INTERVAL_MS = 2_000L
 
         /**
-         * The last line of defence for a scope that belongs to the process.
-         *
-         * A `viewModelScope` that let an exception escape took an Activity's
-         * coroutine down with it; this one would reach the thread's uncaught
-         * handler and take the *app* down, in a feature the user is not even
-         * looking at. Everything launched here catches its own failures — this
-         * exists so that forgetting to, once, is a log line rather than a crash
-         * report from somebody whose phone was in their pocket.
+         * The scope belongs to the process, so an escaping exception would reach the
+         * thread's uncaught handler and take the app down.
          */
         private val crashGuard = CoroutineExceptionHandler { _, e ->
             DebugLog.w(TAG, "uncaught in the assistant's scope: ${e.javaClass.simpleName}: ${e.message}")
@@ -1083,19 +727,9 @@ class GlyphAiSession internal constructor(
         private var instance: GlyphAiSession? = null
 
         /**
-         * The process's one session.
-         *
-         * **Nothing reachable from `Core.init` may call this.** It builds
-         * [ChatStore], [PendingApplyStore] and [TokenStore], all of which take the
-         * credential-protected context, and credential-protected `filesDir`
-         * cannot be created before the first unlock — which is exactly the state
-         * `Core.init` runs in when `AodToyService` starts during Direct Boot.
-         * Every one of those stores defers its own directory to a `by lazy`, so
-         * constructing them here is safe on its own; this note is about not
-         * moving the call.
-         *
-         * The client is `by lazy` on top of that, so a signed-out user never
-         * builds one.
+         * Nothing reachable from `Core.init` may call this: it builds [ChatStore],
+         * [PendingApplyStore] and [TokenStore], which all need credential-protected
+         * storage, and `Core.init` can run before the first unlock.
          */
         fun of(context: Context): GlyphAiSession {
             instance?.let { return it }
@@ -1151,9 +785,8 @@ class GlyphAiSession internal constructor(
                                 PendingApplyVerdict.EXPIRED ->
                                     R.string.ai_chat_notice_deferred_expired
 
-                                // APPLY never reaches here — see [TurnNotices] —
-                                // and if it somehow did, "I couldn't find it" is
-                                // the safe thing to have said.
+                                // APPLY never reaches here. If it did, "couldn't find it"
+                                // is the safe thing to say.
                                 else -> R.string.ai_chat_notice_deferred_missing
                             },
                         )
@@ -1161,25 +794,13 @@ class GlyphAiSession internal constructor(
                 runner = TurnRunner { request ->
                     GlyphAiOrchestrator(
                         client = client,
-                        // Read HERE, per turn, rather than once when this session
-                        // was built: the setting exists to rescue a broken model
-                        // id, and a fix that only took effect after a restart
-                        // would be a fix the user has no reason to believe worked.
+                        // All three are read per turn, not once at build: each setting
+                        // exists to rescue a turn you just watched go wrong, so it has to
+                        // take effect on the very next message.
                         model = ChatWire.resolveModel(
                             Core.prefs.getString(AiPrefKeys.MODEL, AiPrefKeys.MODEL_DEF),
                         ),
-                        // Per turn, for the same reason the model is: somebody
-                        // raises the budget precisely because the turn they just
-                        // watched run out of rounds, and the next thing they do
-                        // is ask again. A value that only applied after a restart
-                        // would look like it had not worked.
                         maxRounds = Core.prefs.aiMaxRounds(),
-                        // And per turn again, for the third time and the same
-                        // reason: the levels above `high` are unverified (see
-                        // [ReasoningEffort]), so the expected way to use this
-                        // setting is to try one, watch the request fail, and pick
-                        // another — a loop that only works if the change lands on
-                        // the very next message.
                         reasoningEffort = Core.prefs.aiReasoningEffort().wire,
                         applyDesign = request.applyDesign,
                         onTrace = request.onTrace,

@@ -1,14 +1,5 @@
 package space.linuxct.glyphworks.core
 
-/**
- * Process-wide diagnostic log with a pluggable sink so pure-Kotlin classes
- * (ScreenManager, screens) can log without touching android.util.Log — the
- * JVM test default is a no-op; Core.init installs the logcat sink under the
- * single tag "GlyphWorks" (filter with: adb logcat -s GlyphWorks).
- *
- * These logs are intentionally kept in RELEASE builds for field debugging —
- * see app/proguard-rules.pro. Do not strip them.
- */
 object DebugLog {
     const val TAG = "GlyphWorks"
 

@@ -5,14 +5,10 @@ import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
 import space.linuxct.glyphworks.matrix.Font3x5
+import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 
-/**
- * Counter, laid out natively for 13x13: up to three 3x5 digits right-aligned
- * at fixed columns 0-2 / 5-7 / 10-12, rows 4-8. Glyph Touch increments
- * (999 wraps to 0) and persists; shake resets with a double-blink
- * confirmation. Event-driven — no ticker.
- */
+/** A tally counter. Glyph Touch adds one, shake resets it, and the count lives in prefs. */
 class CounterScreen : GlyphScreen {
     override val id = "counter"
     override val interactive = true
@@ -32,7 +28,7 @@ class CounterScreen : GlyphScreen {
         val c = ctx ?: return
         when (event) {
             Events.CHANGE -> {
-                val v = (c.prefs.getInt(PrefKeys.COUNTER, PrefKeys.COUNTER_DEF) + 1) % 1000
+                val v = (c.prefs.getInt(PrefKeys.COUNTER, PrefKeys.COUNTER_DEF) + 1) % WRAP_AT
                 c.prefs.putInt(PrefKeys.COUNTER, v)
                 push()
             }
@@ -46,8 +42,8 @@ class CounterScreen : GlyphScreen {
     private fun blinkConfirm() {
         val c = ctx ?: return
         push()
-        c.scheduler.postDelayed(150) { ctx?.pushFrame(IntArray(c.size * c.size)) }
-        c.scheduler.postDelayed(300) { push() }
+        c.scheduler.postDelayed(BLINK_DARK_MS) { ctx?.pushFrame(IntArray(c.size * c.size)) }
+        c.scheduler.postDelayed(BLINK_END_MS) { push() }
     }
 
     private fun push() {
@@ -56,9 +52,15 @@ class CounterScreen : GlyphScreen {
     }
 
     companion object {
+        const val MAX_COUNT = 999
+        private const val WRAP_AT = MAX_COUNT + 1
+
+        private const val BLINK_DARK_MS = 150L
+        private const val BLINK_END_MS = 300L
+
         fun renderFrame(size: Int, value: Int): IntArray {
             val canvas = MatrixCanvas(size)
-            val text = value.coerceIn(0, 999).toString()
+            val text = value.coerceIn(0, MAX_COUNT).toString()
             if (size >= 25) {
                 val columns = listOf(4, 11, 18)
                 val y = 10
@@ -71,11 +73,11 @@ class CounterScreen : GlyphScreen {
             return canvas.copyOut()
         }
 
-        /** Right-aligns [text] on the fixed digit columns (units at the last column). */
+        /** Right-aligns [text] on the fixed digit columns, units last. */
         private fun drawAtColumns(canvas: MatrixCanvas, text: String, columns: List<Int>, y: Int) {
             val start = columns.size - text.length
             text.forEachIndexed { i, ch ->
-                Font3x5.draw(canvas, ch, columns[start + i], y, 4095)
+                Font3x5.draw(canvas, ch, columns[start + i], y, MAX_BRIGHTNESS)
             }
         }
     }

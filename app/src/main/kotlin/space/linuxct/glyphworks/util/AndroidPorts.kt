@@ -35,17 +35,13 @@ class JavaRandomPort : RandomPort {
     override fun nextFloat(): Float = random.nextFloat()
 }
 
-/**
- * Battery state from the sticky ACTION_BATTERY_CHANGED broadcast, queried on
- * every call (cheap: no receiver is registered for a sticky query).
- */
 class BatteryReader(private val app: Context) : BatteryPort {
 
-    private fun sticky(): Intent? =
+    private fun stickyBatteryStatus(): Intent? =
         app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
     override fun levelPercent(): Int {
-        val intent = sticky() ?: return 100
+        val intent = stickyBatteryStatus() ?: return 100
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
         if (level < 0 || scale <= 0) return 100
@@ -53,34 +49,24 @@ class BatteryReader(private val app: Context) : BatteryPort {
     }
 
     override fun isCharging(): Boolean {
-        val status = sticky()?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val status = stickyBatteryStatus()?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         return status == BatteryManager.BATTERY_STATUS_CHARGING
     }
 
-    /**
-     * watts = |CURRENT_NOW| / 1e6 (uA -> A) * EXTRA_VOLTAGE / 1e3 (mV -> V).
-     *
-     * Three layers of paranoia, because both inputs are notoriously
-     * OEM-specific: the current's sign is discarded (some vendors report
-     * charging as negative), a reading that lands above [MAX_WATTS] is retried
-     * as milliamps (a documented vendor deviation from the uA contract), and
-     * anything still outside [MIN_WATTS]..[MAX_WATTS] — or a voltage outside a
-     * sane Li-ion window — yields null so the gauge is shown instead of
-     * nonsense.
-     */
     override fun chargeWatts(): Float? {
-        val intent = sticky() ?: return null
+        val intent = stickyBatteryStatus() ?: return null
         if (intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1) != BatteryManager.BATTERY_STATUS_CHARGING) {
             return null
         }
         val millivolts = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
         if (millivolts < MIN_MILLIVOLTS || millivolts > MAX_MILLIVOLTS) return null
-        val bm = app.getSystemService(BatteryManager::class.java) ?: return null
-        val current = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-        if (current == 0 || current == Int.MIN_VALUE) return null
-        val amps = abs(current.toLong()).toFloat() / 1_000_000f
+        val batteryManager = app.getSystemService(BatteryManager::class.java) ?: return null
+        val microamps = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        if (microamps == 0 || microamps == Int.MIN_VALUE) return null
+        val amps = abs(microamps.toLong()).toFloat() / 1_000_000f
         var watts = amps * (millivolts / 1000f)
-        if (watts > MAX_WATTS) watts /= 1000f // vendor reported mA, not uA
+        val vendorReportedMilliamps = watts > MAX_WATTS
+        if (vendorReportedMilliamps) watts /= 1000f
         if (watts < MIN_WATTS || watts > MAX_WATTS) return null
         return watts
     }
@@ -99,13 +85,14 @@ class TrafficSpeedPort : SpeedPort {
 
 class AndroidConnectivityPort(private val app: Context) : ConnectivityPort {
     override fun state(): ConnectionState {
-        val cm = app.getSystemService(ConnectivityManager::class.java)
-        val caps: NetworkCapabilities? = cm?.getNetworkCapabilities(cm.activeNetwork)
+        val connectivityManager = app.getSystemService(ConnectivityManager::class.java)
+        val caps: NetworkCapabilities? =
+            connectivityManager?.getNetworkCapabilities(connectivityManager.activeNetwork)
         if (caps != null) {
             if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return ConnectionState.WIFI
             if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return ConnectionState.CELLULAR
         }
-        val airplane = Settings.Global.getInt(app.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
-        return if (airplane) ConnectionState.AIRPLANE else ConnectionState.NONE
+        val airplaneModeOn = Settings.Global.getInt(app.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+        return if (airplaneModeOn) ConnectionState.AIRPLANE else ConnectionState.NONE
     }
 }

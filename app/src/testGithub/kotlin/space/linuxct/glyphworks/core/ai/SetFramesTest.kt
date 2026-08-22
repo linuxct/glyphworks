@@ -22,30 +22,10 @@ import space.linuxct.glyphworks.core.design.DesignKind
 import space.linuxct.glyphworks.core.design.DesignVariant
 import space.linuxct.glyphworks.core.design.PokemonCodename
 
-/**
- * `set_frames` exists because `apply_design` replaces the whole document.
- *
- * That is the right primitive and it is also a trap on a long animation: 240
- * frames of `arbok` is around 150 kB of base36, so "make frame 7 brighter" was a
- * request to retype every frame — slow, expensive, and worse than both, a fresh
- * chance to corrupt one of the 239 that were already correct, in art nobody was
- * looking at.
- *
- * So the property that matters most here is the boring one:
- * [a replaced range leaves its neighbours byte-identical]. Everything else is
- * about the range arithmetic, which is where an off-by-one would silently eat
- * somebody's frame.
- */
 class SetFramesTest {
     private val bellsprout = PokemonCodename.BELLSPROUT
     private val arbok = PokemonCodename.ARBOK
 
-    // region the range arithmetic
-
-    /**
-     * The whole point of the tool, stated as an equality: the frames outside the
-     * window are not merely *equivalent* afterwards, they are the same strings.
-     */
     @Test
     fun `a replaced range leaves its neighbours byte-identical`() {
         val before = animation(10)
@@ -68,7 +48,6 @@ class SetFramesTest {
                 )
             }
         }
-        // Including their durations, which are just as easy to lose.
         assertEquals(before[0].durationMs, after[0].durationMs)
         assertEquals(before[9].durationMs, after[9].durationMs)
     }
@@ -134,10 +113,6 @@ class SetFramesTest {
         assertEquals("bellsprout", body["variant"]!!.jsonPrimitive.content)
     }
 
-    // endregion
-
-    // region what it refuses
-
     @Test
     fun `more frames than a design may hold is refused, with the arithmetic`() {
         val ctx = ctx(animation(DesignCodec.MAX_FRAMES - 2))
@@ -154,7 +129,6 @@ class SetFramesTest {
         assertTrue(message, message.contains("${DesignCodec.MAX_FRAMES - 2} now"))
         assertTrue(expected(result), expected(result).contains("At most ${DesignCodec.MAX_FRAMES}"))
         assertTrue("the way out is named", expected(result).contains("Add at most 2"))
-        // Exactly at the limit is fine, so the check is a limit and not a fence.
         assertEquals(
             DesignCodec.MAX_FRAMES,
             applied(
@@ -259,16 +233,6 @@ class SetFramesTest {
         assertTrue(expected(result), expected(result).contains(GlyphAiTools.MODE_INSERT))
     }
 
-    // endregion
-
-    // region the design it hands back
-
-    /**
-     * A static design may hold exactly one frame, and there is no way to set
-     * `kind` from here — so a static design that gains a second frame is
-     * promoted rather than being refused with advice this tool cannot act on.
-     * It is reported, because it changes how the design plays.
-     */
     @Test
     fun `a static design that gains a frame becomes dynamic, and says so`() {
         val still = TestDesigns.design(
@@ -284,7 +248,6 @@ class SetFramesTest {
         assertTrue(body["kind_changed"]!!.jsonPrimitive.boolean)
         assertEquals(DesignKind.DYNAMIC, result.design!!.kind)
         assertTrue(warningsOf(body).any { it.contains("dynamic") })
-        // ...and it is never demoted on the way back down.
         val back = call(
             mode = GlyphAiTools.MODE_DELETE,
             at = 1,
@@ -301,7 +264,6 @@ class SetFramesTest {
         )
 
         assertTrue(DesignCodec.decode(DesignCodec.encode(design)) is DesignCodec.Result.Ok)
-        // Fields the app owns are the canvas's, never invented here.
         assertEquals(TestDesigns.bellsproutOnly().id, design.id)
         assertEquals(TestDesigns.bellsproutOnly().createdAt, design.createdAt)
         assertEquals("Slow Ember", design.name)
@@ -332,32 +294,14 @@ class SetFramesTest {
         assertEquals(120, design.variantFor(bellsprout)!!.frames[0].durationMs)
     }
 
-    // endregion
-
-    // region helpers
-
-    /**
-     * A legal frame with one lit cell, in a place unique to [tag] — and never in
-     * the place [animation] lights, so a new frame is always distinguishable
-     * from the ones it replaced.
-     */
     private fun marked(tag: Int): String {
         val cells = CharArray(bellsprout.cellCount) { '0' }
-        // Inside rows 4-8 and columns 4-8, which are LEDs at 13x13, so the frame
-        // is legal art as well as legal data.
         cells[(4 + tag % 5) * bellsprout.size + (4 + (tag / 5) % 5)] = '2'
         return String(cells)
     }
 
-    /**
-     * [count] frames that are all different from each other, so a frame that
-     * moved when it should not have is visible as a mismatch rather than as a
-     * coincidence.
-     */
     private fun animation(count: Int): List<DesignFrame> = (0 until count).map { i ->
         val cells = CharArray(bellsprout.cellCount) { '0' }
-        // The centre is lit in every frame of an animation and in none of
-        // [marked]'s frames, which is what tells the two apart.
         cells[6 * bellsprout.size + 6] = '1'
         cells[(4 + i % 5) * bellsprout.size + (4 + (i / 5) % 5)] = '2'
         DesignFrame(100 + i, String(cells))
@@ -411,6 +355,4 @@ class SetFramesTest {
 
     private fun expected(result: GlyphToolResult): String =
         body(result)["expected"]!!.jsonPrimitive.content
-
-    // endregion
 }

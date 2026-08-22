@@ -3,14 +3,11 @@ package space.linuxct.glyphworks.screens
 import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.ScreenContext
 import space.linuxct.glyphworks.matrix.Font3x5
+import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 import kotlin.math.roundToInt
 
-/**
- * Compass: <=30 fps ticker over the fused azimuth, rounded to 5 degrees.
- * The needle points toward magnetic/true north on the display: a bright head
- * ray with a dim tail, inside a cardinal tick ring (N brightest).
- */
+/** Compass. The bright end of the needle points north, inside a ring of cardinal ticks. */
 class CompassScreen : GlyphScreen {
     override val id = "compass"
     override val interactive = false
@@ -19,7 +16,7 @@ class CompassScreen : GlyphScreen {
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
-        ctx.scheduler.setTicker(33) { tick() }
+        ctx.scheduler.setTicker(TICK_MS) { tick() }
     }
 
     override fun onDeactivate() {
@@ -32,35 +29,55 @@ class CompassScreen : GlyphScreen {
     }
 
     companion object {
+        const val TICK_MS = 33L
+
+        private const val DEGREES_PER_TURN = 360
+        private const val TICK_STEP_DEG = 45
+        private const val HALF_TURN_DEG = 180f
+        private const val AZIMUTH_QUANTUM_DEG = 5
+
+        private const val NORTH_DEG = 0
+        private const val EAST_DEG = 90
+        private const val SOUTH_DEG = 180
+        private const val WEST_DEG = 270
+
+        private const val NORTH_TICK = MAX_BRIGHTNESS
+        private const val CARDINAL_TICK = 1500
+        private const val INTERCARDINAL_TICK = 500
+        private const val NEEDLE_HEAD = MAX_BRIGHTNESS
+        private const val NEEDLE_TAIL = 900
+        private const val NEEDLE_HUB = 2200
+        private const val NO_READING = 1500
+
         fun renderFrame(size: Int, azimuthDeg: Float?): IntArray {
             val canvas = MatrixCanvas(size)
             val center = size / 2
             val ringR = (size / 2).toFloat()
 
-            // Cardinal ticks: N bright, E/S/W dim, intercardinals faint.
-            for (deg in 0 until 360 step 45) {
+            for (deg in 0 until DEGREES_PER_TURN step TICK_STEP_DEG) {
                 val v = when (deg) {
-                    0 -> 4095
-                    90, 180, 270 -> 1500
-                    else -> 500
+                    NORTH_DEG -> NORTH_TICK
+                    EAST_DEG, SOUTH_DEG, WEST_DEG -> CARDINAL_TICK
+                    else -> INTERCARDINAL_TICK
                 }
                 canvas.polar(center, center, deg.toFloat(), ringR, v)
             }
 
             if (azimuthDeg == null) {
-                Font3x5.drawStringCentered(canvas, "?", size / 2 - 2, 1500)
+                val textTop = size / 2 - Font3x5.HEIGHT / 2
+                Font3x5.drawStringCentered(canvas, "?", textTop, NO_READING)
                 return canvas.copyOut()
             }
 
-            val az5 = ((azimuthDeg / 5f).roundToInt() * 5 % 360).toFloat()
-            // Rotating the device by azimuth deg means north sits at -azimuth
-            // on the display.
-            val northAngle = (360f - az5) % 360f
+            val quantum = AZIMUTH_QUANTUM_DEG
+            val rounded = ((azimuthDeg / quantum).roundToInt() * quantum % DEGREES_PER_TURN)
+            // Turning the device by the azimuth puts north at -azimuth on the display.
+            val northAngle = (DEGREES_PER_TURN - rounded).toFloat() % DEGREES_PER_TURN
             val headLen = if (size >= 25) 9f else 4.6f
             val tailLen = if (size >= 25) 5f else 2.6f
-            canvas.ray(center, center, northAngle, headLen, 4095)
-            canvas.ray(center, center, northAngle + 180f, tailLen, 900)
-            canvas.set(center, center, 2200)
+            canvas.ray(center, center, northAngle, headLen, NEEDLE_HEAD)
+            canvas.ray(center, center, northAngle + HALF_TURN_DEG, tailLen, NEEDLE_TAIL)
+            canvas.set(center, center, NEEDLE_HUB)
             return canvas.copyOut()
         }
     }

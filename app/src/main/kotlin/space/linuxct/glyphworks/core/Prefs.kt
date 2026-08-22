@@ -1,18 +1,11 @@
 package space.linuxct.glyphworks.core
 
-
-/**
- * Minimal settings store abstraction. The Android implementation wraps
- * SharedPreferences in DEVICE-PROTECTED storage (Direct Boot safe) — see
- * util/AndroidPrefs. Tests use an in-memory fake.
- */
 interface Prefs {
     fun getBoolean(key: String, def: Boolean): Boolean
     fun getInt(key: String, def: Int): Int
     fun getLong(key: String, def: Long): Long
     fun getFloat(key: String, def: Float): Float
     fun getString(key: String, def: String): String
-    /** True when [key] has a stored value (distinct from reading back a default). */
     fun contains(key: String): Boolean
     fun remove(key: String)
     fun putBoolean(key: String, v: Boolean)
@@ -24,65 +17,30 @@ interface Prefs {
     fun removeChangeListener(listener: (String) -> Unit)
 }
 
-/** Every persisted key with its default. */
 object PrefKeys {
     const val PREFS_VERSION = "prefs_version"
     const val PREFS_VERSION_DEF = 1
 
-    /**
-     * Schema version [PrefsMigration] brings any older store up to. Note the
-     * default above must stay 1: AndroidPrefs stamps it on the first launch of
-     * ANY build (it cannot tell a fresh install from a pre-versioning one), so
-     * version 1 means "possibly legacy" and the migration is what proves
-     * otherwise.
-     */
+    // AndroidPrefs stamps PREFS_VERSION on a first launch, so the default 1 means "maybe legacy".
     const val PREFS_VERSION_CURRENT = 2
 
     const val MASTER_TOGGLE = "master_toggle"
     const val MASTER_TOGGLE_DEF = true
 
-    /**
-     * Show a short on-screen message naming each recognised key gesture and what
-     * it did.
-     *
-     * **Off by default and it must stay that way** — a message on every press is
-     * intolerable in daily use, and the whole point of this key is that it works
-     * without looking at the screen.
-     *
-     * It answers a real question the setup checklist cannot ("is my Essential Key
-     * actually being captured, and as what?"), which is why it is a normal
-     * setting and not hidden behind a debug build. It is also the only way to
-     * *see* what an accessibility service is doing when the thing it drives is a
-     * panel of LEDs on the back of the phone — see the announcement strings.
-     */
     const val KEY_ACTION_TOASTS = "keyActionToasts"
     const val KEY_ACTION_TOASTS_DEF = false
 
-    /** Optional Essential-Key "menu mode": double-press opens a blinking toy selector. */
     const val MENU_MODE_ENABLED = "menuModeEnabled"
     const val MENU_MODE_ENABLED_DEF = false
 
     const val SCREEN_ORDER = "screen_order"
 
-    /**
-     * Appending an id here needs no [PrefsMigration] bump: a store written by an
-     * older build simply does not mention the new screen, and
-     * `ScreenManager.enabledScreens()` appends every roster screen missing from
-     * the stored CSV to the end of the order. A migration would only be needed to
-     * rename or remove an id, which is a different operation entirely.
-     *
-     * `rps` is still listed while Rock Paper Scissors is temporarily disabled, and
-     * that is deliberate. Both readers resolve this CSV against a roster and drop
-     * what they cannot find — the Toys tab against `DISPLAY_NAMES`, the cycle
-     * against `ScreenRegistry` — so the stale id costs nothing, and leaving it in
-     * place means the toy returns to its old position rather than the end of the
-     * list when it is switched back on.
-     */
+    // `rps` stays listed while Rock Paper Scissors is off. Readers drop ids they cannot
+    // resolve, so the toy keeps its place for when it returns.
     const val SCREEN_ORDER_DEF =
         "ambient,clock,eyes,speed,battery,solar,moon,dice,coin,dino,bottle,rps,counter,breathing," +
             "timer,compass,level,visualizer,custom"
 
-    /** Per-screen enable flag: screen_enabled_<id>, default true. */
     fun screenEnabled(id: String) = "screen_enabled_$id"
 
     const val CURRENT_SCREEN = "current_screen"
@@ -91,11 +49,6 @@ object PrefKeys {
     const val BRIGHTNESS = "brightness"
     const val BRIGHTNESS_DEF = 1.0f
 
-    /**
-     * Opportunistic auto-brightness: while a render session is live the light
-     * sensor is sampled periodically and [BRIGHTNESS] is written from it. Off by
-     * default; touching the brightness slider turns it back off.
-     */
     const val AUTO_BRIGHTNESS = "autoBrightness"
     const val AUTO_BRIGHTNESS_DEF = false
 
@@ -107,11 +60,9 @@ object PrefKeys {
     const val SELECTED_DICE = "diceType"
     const val SELECTED_DICE_DEF = "D6"
 
-    /** Coin Flip result design: 0 = H/T letters, 1 = portrait & numeral art. */
     const val COIN_DESIGN = "coinDesign"
     const val COIN_DESIGN_DEF = 0
 
-    /** Show charge power instead of the gauge while charging (Battery toy). */
     const val BATTERY_SHOW_WATTS = "batteryShowWatts"
     const val BATTERY_SHOW_WATTS_DEF = false
 
@@ -127,54 +78,18 @@ object PrefKeys {
     const val TIMER_DURATION = "timerDurationSec"
     const val TIMER_DURATION_DEF = 60
 
-    /**
-     * Selectable timer durations, stored in SECONDS but only ever offered (and
-     * shown) to the user in whole minutes: 1, 3, 5, 7, 10, 13 min. Shared with
-     * [PrefsMigration], which snaps any legacy value onto this list so the
-     * settings dialog can always show the stored one.
-     */
     val TIMER_DURATION_OPTIONS = listOf(60, 180, 300, 420, 600, 780)
 
-    /**
-     * Elapsed milliseconds banked by a PAUSED countdown, 0 when not paused.
-     *
-     * [TIMER_START] alone cannot express "paused": a paused timer has no
-     * deadline, so its start is cleared and idle and paused would both read as
-     * start == 0. This pair makes the four states disjoint (see TimerScreen):
-     * paused is exactly "this value > 0", and it takes precedence over
-     * [TIMER_START] so a crash between the two writes still reads as paused.
-     * Pausing banks at least 1 ms for that reason.
-     */
+    // Above 0 means paused, and it wins over TIMER_START. Pausing banks at least 1 ms.
     const val TIMER_PAUSED_ELAPSED = "timerPausedElapsedMillis"
     const val TIMER_PAUSED_ELAPSED_DEF = 0L
 
-    /** Start timestamp the backstop receiver already chimed for (prevents double chimes). */
     const val TIMER_CHIMED_FOR = "timerChimedFor"
     const val TIMER_CHIMED_FOR_DEF = 0L
 
-    /**
-     * Id of the user design the Custom toy plays, or "" for none chosen yet.
-     *
-     * Only the id is persisted — the art itself lives in a file (see
-     * `designs/DesignStore`) and reaches the screen through
-     * [space.linuxct.glyphworks.core.DesignPort]. An id that no longer
-     * names a stored design is not an error state: both the port and the
-     * settings dialog fall back to the first available design, so deleting the
-     * selected one leaves the toy showing art rather than a placeholder.
-     */
     const val CUSTOM_DESIGN_ID = "customDesignId"
     const val CUSTOM_DESIGN_ID_DEF = ""
 
-    /**
-     * The name stamped into `author` on designs this phone creates, or "" if the
-     * user has never set one.
-     *
-     * Empty is a perfectly good value and is the default on purpose: attribution
-     * is opt-in, and a design with no author is still a valid, shareable file.
-     * It is only ever read when a design is CREATED — `author` is immutable once
-     * set (see `ui/CreateTab.kt`), so changing this later renames nothing that
-     * already exists, which is the whole point of the field.
-     */
     const val CREATOR_NAME = "creatorName"
     const val CREATOR_NAME_DEF = ""
 
@@ -199,79 +114,35 @@ object PrefKeys {
     const val VISUALIZER_THEME = "visualizerTheme"
     const val VISUALIZER_THEME_DEF = 0
 
-    /** FFT gain/decay tuning, 1..6 (higher = hotter response); defaults to the calmest. */
     const val VISUALIZER_TUNING = "visualizerTuning"
     const val VISUALIZER_TUNING_DEF = 1
 
-    /** Set when the system delivers an AOD hint to the visualizer screen. */
     const val VISUALIZER_AOD_HINT = "visualizerAodHint"
     const val VISUALIZER_AOD_HINT_DEF = false
 
     const val SERVICE_HEARTBEAT = "service_heartbeat"
     const val SERVICE_HEARTBEAT_DEF = 0L
 
-    /**
-     * Last time the system bound (or messaged) the AOD toy service. There is
-     * no queryable "selected always-on toy" setting and no SDK query API, and
-     * the system binds the chosen toy lazily — so any recorded bind is taken
-     * as lasting proof of the selection (a latch, not a freshness window).
-     */
+    // Nothing OS exposes no way to read which always-on toy is selected, so a recorded bind
+    // is the only proof. It is a latch: it never goes back down.
     const val TOY_LAST_BOUND = "toyLastBound"
     const val TOY_LAST_BOUND_DEF = 0L
 
-    /**
-     * Whether [TOY_LAST_BOUND] can be believed when it says *no*.
-     *
-     * ## The problem this exists for
-     *
-     * Nothing OS binds the selected always-on toy lazily, and after a **fresh
-     * install** it does not bind a newly-registered toy at all until this app's
-     * process has been through a full restart — an update, a force-stop, or a
-     * reboot. So during the very first run, a user who has just picked GlyphWorks
-     * in the toy picker is told, correctly by the latch and wrongly by any human
-     * measure, that they have not.
-     *
-     * Re-probing does not help: there is nothing new to read. The latch is written
-     * from `AodToyService.onBind`, and the bind is the thing that has not happened.
-     *
-     * So the checklist stops *asserting* anything about the toy until this app has
-     * been seen alive in two different processes. [TOY_PROBE_SEEN_ONCE] records the
-     * first; the second start reads it and sets this. A latch that has tripped is
-     * proof on its own, so an install that is already working arms immediately
-     * rather than waiting a restart.
-     */
+    // After a fresh install Nothing OS binds no new toy until this process has restarted, so
+    // TOY_LAST_BOUND cannot be believed when it says no until the app has been seen alive twice.
     const val TOY_PROBE_ARMED = "toyProbeArmed"
     const val TOY_PROBE_ARMED_DEF = false
 
-    /** One process has started since install. See [TOY_PROBE_ARMED]. */
     const val TOY_PROBE_SEEN_ONCE = "toyProbeSeenOnce"
     const val TOY_PROBE_SEEN_ONCE_DEF = false
 
-
-    /** First-run onboarding completed; MainActivity redirects there until set. */
     const val ONBOARDING_DONE = "onboardingDone"
     const val ONBOARDING_DONE_DEF = false
 
-    /**
-     * The "this device is not the one this app was tested on" notice has been
-     * dismissed. Written when the user taps it away, never reset — the point is
-     * to say it once.
-     *
-     * Only ever shown on hardware that is not a Phone (4a) Pro; see
-     * `isTestedGlyphDevice`.
-     */
     const val UNTESTED_DEVICE_ACK = "untestedDeviceAck"
     const val UNTESTED_DEVICE_ACK_DEF = false
 
-    /**
-     * Whether the "would you like to watch the tutorial?" offer has ever been put
-     * up on the Create tab. **Prompted, not answered** — it is written the moment
-     * the dialog goes on screen, so a process death with it open cannot bring it
-     * back, and a "no" and a swipe away are the same thing as far as this key is
-     * concerned. There is deliberately no way to reset it from the UI: the tour
-     * itself is a row in the Tutorials tab, which is what the follow-up message
-     * points at.
-     */
+    // It records that the dialog was shown, not the answer.
     const val CREATE_TOUR_PROMPTED = "createTourPrompted"
     const val CREATE_TOUR_PROMPTED_DEF = false
 }

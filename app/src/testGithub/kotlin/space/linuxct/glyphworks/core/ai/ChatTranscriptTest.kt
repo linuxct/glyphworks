@@ -6,16 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The stored conversation: that it survives a round trip, that a file from a
- * future build does not take the editor down with it, and that the history it
- * replays to the model is history the API will accept.
- *
- * The forward-compatibility cases matter more here than the round trip. A
- * transcript is read on the way *into* the design editor, so anything this codec
- * throws on is a design the user cannot open — which is why the only two outcomes
- * of [ChatTranscriptCodec.decode] are a transcript and null.
- */
 class ChatTranscriptTest {
     private val transcript = ChatTranscript(
         designId = "abc123",
@@ -102,7 +92,6 @@ class ChatTranscriptTest {
         }
 
         assertEquals(ChatTranscriptCodec.MAX_MESSAGES, grown.messages.size)
-        // The cap keeps the NEWEST, which is the half a conversation is about.
         assertEquals("message ${ChatTranscriptCodec.MAX_MESSAGES + 49}", grown.messages.last().text)
     }
 
@@ -124,8 +113,8 @@ class ChatTranscriptTest {
         assertEquals("turn 7", (input[0] as ChatMessageItem).content.single().let(::textOf))
         assertEquals(ChatMessageItem.ROLE_USER, (input[0] as ChatMessageItem).role)
         assertEquals(ChatMessageItem.ROLE_ASSISTANT, (input[1] as ChatMessageItem).role)
-        // An assistant turn on the INPUT side must be output_text; input_text is
-        // rejected by the API for that role.
+        // An assistant turn on the input side must be output_text. The API
+        // rejects input_text for that role.
         assertTrue((input[1] as ChatMessageItem).content.single() is ChatOutputText)
         assertTrue((input[0] as ChatMessageItem).content.single() is ChatInputText)
     }
@@ -143,17 +132,10 @@ class ChatTranscriptTest {
 
         val input = messy.asInput()
 
-        // An empty content array is rejected outright, and replaying an error as
-        // though the assistant had said it teaches it to say that.
         assertEquals(2, input.size)
         assertEquals("still there?", (input[1] as ChatMessageItem).content.single().let(::textOf))
     }
 
-    /**
-     * The rule behind `ai/GlyphAiSession`'s deferred-apply correction: a turn
-     * that *said* it changed the design and then did not must be corrected —
-     * but only where the claim actually is.
-     */
     @Test
     fun `a correction is appended to the conversation that made the claim`() {
         val corrected = transcript.withCorrection(
@@ -163,7 +145,6 @@ class ChatTranscriptTest {
         assertNotNull(corrected)
         assertEquals(3, corrected!!.messages.size)
         assertEquals("Actually, it didn't land.", corrected.messages.last().text)
-        // Never replayed: the model is not taught to retract its own work.
         assertEquals(2, corrected.asInput().size)
     }
 
@@ -172,7 +153,6 @@ class ChatTranscriptTest {
         assertEquals("Read your design", ChatToolNote.labelFor(GlyphAiTools.GET_CURRENT_DESIGN))
         assertEquals("Applied a change", ChatToolNote.labelFor(GlyphAiTools.APPLY_DESIGN))
         assertEquals("Checked a design", ChatToolNote.labelFor(GlyphAiTools.VALIDATE_DESIGN))
-        // A tool this build has never heard of still redisplays as something.
         assertEquals("Image to grid", ChatToolNote.labelFor("image_to_grid"))
     }
 

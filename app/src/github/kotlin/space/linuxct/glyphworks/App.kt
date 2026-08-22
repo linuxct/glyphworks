@@ -5,13 +5,10 @@ import android.app.NotificationManager
 import androidx.work.Configuration
 
 /**
- * The GitHub build's `Application`: everything in [BaseApp], plus the two things
- * only this flavour has.
- *
- * `Configuration.Provider` together with the `WorkManagerInitializer` removal in
- * this flavour's manifest defers WorkManager init until the first
- * `getInstance()` call (from `MainActivity`). This process also starts in Direct
- * Boot, where WorkManager's credential-encrypted store must not be touched.
+ * Configuration.Provider plus the WorkManagerInitializer removal in this flavour's
+ * manifest defers WorkManager init to the first getInstance() call. This process also
+ * starts in Direct Boot, where WorkManager's credential-encrypted store must not be
+ * touched.
  */
 class App : BaseApp(), Configuration.Provider {
 
@@ -26,10 +23,8 @@ class App : BaseApp(), Configuration.Provider {
                 NotificationManager.IMPORTANCE_DEFAULT,
             ),
         )
-        // IMPORTANCE_LOW: this one is the required notice for a foreground
-        // service the user started themselves and is waiting on. It has to be
-        // visible — it is the only way back to the design being worked on — and
-        // it must not make a sound, because it appears on every single turn.
+        // Visible but silent: the notice is the way back to the design, and it appears on
+        // every turn.
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_AI,
@@ -41,8 +36,6 @@ class App : BaseApp(), Configuration.Provider {
 
     companion object {
         const val CHANNEL_UPDATES = "app_updates"
-
-        /** The assistant working on a design. See `ai/GlyphAiTurnService`. */
         const val CHANNEL_AI = "ai_turn"
     }
 }

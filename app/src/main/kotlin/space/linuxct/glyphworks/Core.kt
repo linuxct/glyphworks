@@ -36,10 +36,8 @@ import space.linuxct.glyphworks.util.SystemClockPort
 import space.linuxct.glyphworks.util.TrafficSpeedPort
 
 /**
- * Process-wide object graph. Both entry points (accessibility service, AOD
- * toy service) and the UI run in this single process and share these
- * instances; init() is idempotent and safe from any component (including in
- * Direct Boot, since Prefs use device-protected storage).
+ * The process-wide object graph, shared by the services and the UI. [init] is safe to call
+ * from anywhere, more than once, and during Direct Boot.
  */
 object Core {
 
@@ -49,11 +47,6 @@ object Core {
     lateinit var prefs: Prefs
         private set
 
-    /**
-     * Single owner of the design directory. Shared by [ports]' design port and
-     * the settings UI on purpose: the store caches its listing, and two
-     * instances would be two caches that disagree the moment one of them writes.
-     */
     lateinit var designStore: DesignStore
         private set
 
@@ -83,34 +76,13 @@ object Core {
         if (built) return
         val app = context.applicationContext
 
-        // Install the logcat sink FIRST so every later init step is visible.
-        DebugLog.sink = { level, component, message ->
-            val line = "[$component] $message"
-            when (level) {
-                DebugLog.Level.DEBUG -> android.util.Log.d(DebugLog.TAG, line)
-                DebugLog.Level.INFO -> android.util.Log.i(DebugLog.TAG, line)
-                DebugLog.Level.WARN -> android.util.Log.w(DebugLog.TAG, line)
-            }
-        }
+        installLogcatSink()
         DebugLog.i("Core", "init on ${android.os.Build.MODEL} (matrix=${Common.getDeviceMatrixLength()})")
 
         prefs = AndroidPrefs(app)
-        // Must precede every prefs reader below (ScreenManager and the arbiter
-        // read the screen order and current screen as they are built).
         if (PrefsMigration.run(prefs)) DebugLog.i("Core", "prefs migrated to v${PrefKeys.PREFS_VERSION_CURRENT}")
         armToyProbe()
-        // Device-protected, like prefs — CustomScreen reads a design during
-        // onActivate, and arbiter.revive() at the end of this method can trigger
-        // that before the first unlock after a reboot.
         designStore = DesignStore(app)
-        // The one place `designs/` and `ai/` are joined, and it is joined from
-        // here rather than by an import inside DesignStore: deleting a design has
-        // to take its conversation with it, but the storage layer the always-on
-        // display depends on must not depend on the assistant. Registration only;
-        // nothing credential-protected is touched until the first delete, which
-        // is what makes this safe to run during Direct Boot.
-        // GitHub build only. `DesignChatCleanup`'s KDoc promised removing the
-        // assistant would cost one line here; this is that line.
         installOptionalHooks(app, designStore)
         glyphLink = GlyphLink(app)
         scheduler = AndroidRenderScheduler()
@@ -143,8 +115,6 @@ object Core {
         ) { frame -> glyphLink.pushFrame(frame) }
 
         autoBrightness = AutoBrightness(prefs, ports.light, scheduler) {
-            // Already on the scheduler thread (the controller marshals), so the
-            // re-push can call straight into the manager.
             screenManager.reapplyBrightness()
         }
         screenState = ScreenStateWatcher(app) { on -> autoBrightness.setScreenOn(on) }
@@ -152,7 +122,6 @@ object Core {
         arbiter = SessionArbiter(glyphLink, scheduler, screenManager, prefs) { running ->
             if (running) {
                 shake.start()
-                // start() seeds the screen state, so it must precede the poller.
                 screenState.start()
                 autoBrightness.start()
             } else {
@@ -171,18 +140,7 @@ object Core {
         prefs.addChangeListener { key ->
             when (key) {
                 PrefKeys.MASTER_TOGGLE -> arbiter.onMasterToggleChanged()
-                // Turning auto-brightness off (including implicitly, by dragging
-                // the brightness slider) must stop the polling right away.
                 PrefKeys.AUTO_BRIGHTNESS -> autoBrightness.onEnabledChanged()
-                // Choosing a different design has to reach a `custom` screen that
-                // is already on the matrix — it read its design in onActivate and
-                // will not read it again on its own. Handled at the pref rather
-                // than at the toy's settings dialog because that dialog is only
-                // one of the writers; see ScreenManager.onSelectedDesignChanged.
-                //
-                // Marshalled like the shake handler above: this listener fires on
-                // whichever thread did the write, and every ScreenManager method
-                // is scheduler-thread only.
                 PrefKeys.CUSTOM_DESIGN_ID -> scheduler.run {
                     screenManager.onSelectedDesignChanged(CustomScreen.ID)
                 }
@@ -190,30 +148,26 @@ object Core {
         }
 
         built = true
-        // Bring the DIRECT session up right away (master toggle defaults on):
-        // from process start — including before first unlock after boot — the
-        // current screen renders and the system decides whether it is shown.
         arbiter.revive()
     }
 
+    private fun installLogcatSink() {
+        DebugLog.sink = { level, component, message ->
+            val line = "[$component] $message"
+            when (level) {
+                DebugLog.Level.DEBUG -> android.util.Log.d(DebugLog.TAG, line)
+                DebugLog.Level.INFO -> android.util.Log.i(DebugLog.TAG, line)
+                DebugLog.Level.WARN -> android.util.Log.w(DebugLog.TAG, line)
+            }
+        }
+    }
+
     /**
-     * Decide whether the always-on-toy check may call a negative a negative yet.
-     *
-     * See [PrefKeys.TOY_PROBE_ARMED]: Nothing OS will not bind a freshly-installed
-     * toy until this process has restarted once, so on the very first run the
-     * checklist would tell a user who has just selected GlyphWorks that they have
-     * not. This runs once per process — every process, including one started by
-     * the accessibility service or the toy itself — and arms on the second.
-     *
-     * Idempotent and cheap: two boolean reads on the already-open store, and after
-     * arming, one.
+     * Nothing OS will not bind a freshly installed toy until this process has restarted once,
+     * so the always-on-toy check may not believe a negative before then.
      */
     private fun armToyProbe() {
         if (prefs.getBoolean(PrefKeys.TOY_PROBE_ARMED, PrefKeys.TOY_PROBE_ARMED_DEF)) return
-        // A latch that has already tripped proves binding works here, so an
-        // install that is already fine does not have to sit through a restart.
-        // This is also what carries an upgrade from an older build straight to
-        // armed rather than muting its checklist for one process.
         val alreadyBound = prefs.getLong(PrefKeys.TOY_LAST_BOUND, PrefKeys.TOY_LAST_BOUND_DEF) > 0L
         val seenOnce = prefs.getBoolean(PrefKeys.TOY_PROBE_SEEN_ONCE, PrefKeys.TOY_PROBE_SEEN_ONCE_DEF)
         when {

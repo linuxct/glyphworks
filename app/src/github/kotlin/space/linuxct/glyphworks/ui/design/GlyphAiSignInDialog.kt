@@ -39,33 +39,8 @@ import space.linuxct.glyphworks.ui.MotionDialog
 import space.linuxct.glyphworks.ui.dialogCardWidth
 
 /**
- * The sparkles button's second door: sign in to OpenAI.
- *
- * ## Where this sits
- *
- * `aiGate` shows the disclosure first, this second, and the chat third — so by
- * the time this is composed the user has read what leaves the device and agreed
- * to it, and the moment `signedIn` flips true the editor replaces this with
- * `GlyphAiChatSheet` without another tap. The signed-in branch below is therefore
- * a single frame in normal use; it stays because a state this class can be in is
- * a state it has to be able to draw. **Signing out lives in the chat's own
- * header**, which is the only place it is reachable once there is a token.
- *
- * ## Structure
- *
- * [MotionDialog] and a 28 dp [Surface] at [dialogCardWidth], exactly as
- * `KeyTutorialDialog` and the editor's own `DesignSettingsCard` do — the app has
- * one dialog idiom and this is it, springs and width included. No new colours: the
- * only non-text element is a progress indicator, which takes the theme's.
- *
- * ## Dismissal is cancellation
- *
- * Every way out of this dialog — the close button, an outside tap, a back gesture
- * — goes through [MotionDialog]'s `dismiss` and then calls
- * [GlyphAiViewModel.cancelSignIn]. Leaving a sign-in running behind a dialog
- * nobody can see would hold port 1455 for ten minutes, so that a second attempt
- * failed to bind it; see that method for why cancelling has to close the socket
- * rather than merely cancel the job.
+ * Every way out calls [GlyphAiViewModel.cancelSignIn]: a sign-in left running behind a
+ * dialog nobody can see would hold port 1455 for ten minutes and break the next attempt.
  */
 @Composable
 internal fun GlyphAiSignInDialog(onDismiss: () -> Unit) {
@@ -102,9 +77,6 @@ internal fun GlyphAiSignInDialog(onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Only while the browser is out in front. A 16 dp indicator beside
-                // the sentence rather than a bar across the card: this is a wait on
-                // somebody else's screen, not progress through a task of ours.
                 if (state.busy) {
                     Spacer(Modifier.height(14.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -121,10 +93,8 @@ internal fun GlyphAiSignInDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                // The failure, in the app's own words, with the platform's
-                // message under it — "Token request failed 400: invalid_grant"
-                // is the difference between a bug report somebody can act on and
-                // "it didn't work".
+                // The platform's own message goes under ours: "Token request failed 400:
+                // invalid_grant" is something a user can act on.
                 state.failure?.let { failure ->
                     Spacer(Modifier.height(14.dp))
                     Text(
@@ -149,9 +119,8 @@ internal fun GlyphAiSignInDialog(onDismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     when {
-                        // Mid-flight: the only two useful actions are "give up"
-                        // and "leave it running while I go back to the browser",
-                        // and the second is the close button.
+                        // Mid-flight the close button is the other useful action: leave the
+                        // sign-in running and go back to the browser.
                         state.busy -> TextButton(onClick = { viewModel.cancelSignIn() }) {
                             Text(stringResource(R.string.ai_cancel))
                         }
@@ -167,9 +136,7 @@ internal fun GlyphAiSignInDialog(onDismiss: () -> Unit) {
                         ) {
                             Text(
                                 stringResource(
-                                    // A second attempt after a failure is a retry,
-                                    // and saying so is how the user knows the tap
-                                    // registered at all.
+                                    // "Retry" is how the user knows the tap registered.
                                     if (state.failure != null) R.string.ai_retry else R.string.ai_sign_in,
                                 ),
                             )
@@ -183,7 +150,6 @@ internal fun GlyphAiSignInDialog(onDismiss: () -> Unit) {
     }
 }
 
-/** One sentence per [SignInFailure]; the recoveries differ, so the copy does. */
 private fun SignInFailure.messageRes(): Int = when (this) {
     SignInFailure.TIMED_OUT -> R.string.ai_error_timeout
     SignInFailure.PORT_BUSY -> R.string.ai_error_port
@@ -192,15 +158,8 @@ private fun SignInFailure.messageRes(): Int = when (this) {
 }
 
 /**
- * The activity-scoped [GlyphAiViewModel].
- *
- * Resolved through [ViewModelProvider] against the host Activity rather than with
- * the `viewModel()` composable, because that helper lives in
- * `lifecycle-viewmodel-compose`, which this app does not depend on — and this
- * feature's standing constraint is **zero new dependencies**. `ViewModelProvider`
- * and the Activity's own default factory come with `activity-compose` already,
- * and give exactly the same store: one instance per Activity, surviving every
- * configuration change.
+ * [ViewModelProvider] rather than the `viewModel()` composable, which lives in
+ * `lifecycle-viewmodel-compose` and this app does not depend on it. Same store either way.
  */
 @Composable
 internal fun glyphAiViewModel(): GlyphAiViewModel {
@@ -211,7 +170,6 @@ internal fun glyphAiViewModel(): GlyphAiViewModel {
     return remember(owner) { ViewModelProvider(owner)[GlyphAiViewModel::class.java] }
 }
 
-/** Unwraps whatever `LocalContext` happens to be down to the hosting Activity. */
 private tailrec fun Context.findActivity(): ComponentActivity? = when (this) {
     is ComponentActivity -> this
     is ContextWrapper -> baseContext.findActivity()

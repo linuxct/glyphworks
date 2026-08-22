@@ -74,14 +74,6 @@ import space.linuxct.glyphworks.ui.design.DeviceBack
 import space.linuxct.glyphworks.ui.design.drawDeviceBack
 import space.linuxct.glyphworks.ui.design.drawMatrix
 
-/**
- * Essential Key tutorial pop-up: a Nothing-settings-style illustration of the
- * phone lying face down — camera island, Glyph Matrix and the Essential Key on
- * the right edge just below the island — animated entirely in Compose (no
- * image or animation assets). Each step loops a small timeline showing what a
- * single, double or triple press does, in both regular and menu mode. The
- * blink cadence and the 5 s auto-set countdown match the real implementation.
- */
 @Composable
 fun KeyTutorialDialog(onDismiss: () -> Unit) {
     MotionDialog(onDismiss) { dismiss ->
@@ -103,89 +95,15 @@ fun KeyTutorialDialog(onDismiss: () -> Unit) {
     }
 }
 
-/**
- * The scale a dialog grows from / shrinks back to, per MD3's dialog motion —
- * a magnitude, not a duration: the spring that travels it is the theme's.
- */
 private const val DIALOG_ENTER_SCALE = 0.85f
 
-/**
- * A hand-rolled [Dialog] that enters and leaves with MD3 motion instead of
- * popping into place.
- *
- * The platform dialog WINDOW cannot be animated — it is added to and removed
- * from the window manager, and its scrim fades on the system's own schedule —
- * so the motion lives entirely on the content inside it: a
- * [MutableTransitionState] that starts `false` and is flipped to `true` as it
- * is constructed, which makes the very first composition an enter transition.
- *
- * The exit is the same transition run backwards, and it is why [content]
- * receives its own `dismiss` rather than calling the caller's [onDismiss]: the
- * window must not be torn down until the content has finished scaling out, so
- * dismissal means "start the exit", and the real [onDismiss] fires when the
- * transition idles at `false`. Back gestures and outside taps go through the
- * same path.
- *
- * Both halves take their springs from the theme's expressive motion scheme, the
- * same as every other animation in the app: scale is a SIZE → the (under-damped,
- * so it lands with a small pop) spatial spring; alpha is an effect → the effects
- * spring, which never bounces. Nothing here is a tween or a literal duration.
- */
 @Composable
 internal fun MotionDialog(
     onDismiss: () -> Unit,
-    /**
-     * Lets the content take the whole window instead of a dialog-sized card.
-     *
-     * Exactly three things change, and all of them are about the *window* rather
-     * than the motion:
-     *
-     * - `usePlatformDefaultWidth` is turned off, so the window is measured against
-     *   the display rather than against `config_prefDialogWidth` (see
-     *   [dialogCardWidth] for what that cap normally does for us);
-     * - `decorFitsSystemWindows` is turned off with it — see below;
-     * - the vertical margin that keeps a card off the status bar is dropped,
-     *   because a full-screen surface handles its own insets.
-     *
-     * ## Why `decorFitsSystemWindows` has to go with it
-     *
-     * **A dialog is its own window, and it does not inherit the activity's
-     * edge-to-edge.** Every Activity in this app calls `enableEdgeToEdge()`; a
-     * `Dialog` opened from one still gets a window whose decor fits system windows,
-     * which means the *window* is resized or panned when the IME appears and the
-     * insets are consumed before the content ever sees them. Full-screen content
-     * that then applies `safeDrawingPadding()` — which includes the IME — pays for
-     * the keyboard twice: the window shrinks by the keyboard's height AND the
-     * content pads by it again, leaving the composer squashed against the top of
-     * the screen with an empty list under it. That is exactly the jump the
-     * assistant's chat showed the moment its input was tapped, and why it appeared
-     * to fix itself on the first keystroke: the next recomposition re-measured
-     * against insets that had by then settled.
-     *
-     * Turning it off makes the content the only thing accounting for the keyboard.
-     * The library does the whole job from this one flag — `setDecorFitsSystemWindows(false)`,
-     * a non-floating window theme, `fitInsetsTypes = 0`, and a soft-input mode of
-     * `ADJUST_NOTHING` (S and above; `ADJUST_RESIZE` below it) — applied while the
-     * window is being built rather than poked at afterwards through
-     * `DialogWindowProvider`. Compose's own KDoc recommends the pair, in as many
-     * words: use `decorFitsSystemWindows = false` when `usePlatformDefaultWidth` is
-     * false, "to support using the entire screen and avoiding UI glitches on some
-     * devices when the IME animates in".
-     *
-     * Both stay ON for the card dialogs, which are floating windows sized by the
-     * platform and correct as they are.
-     *
-     * A parameter rather than a second implementation so that every pop-up in
-     * this app still enters and leaves on the same springs. The one full-screen
-     * caller is the assistant's chat, which is a conversation and not a card.
-     */
     fullScreen: Boolean = false,
     content: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     val visible = remember { MutableTransitionState(false).apply { targetState = true } }
-    // Guarded by `targetState`: at the first composition currentState is false
-    // but the transition is already running towards true, so isIdle is false and
-    // this cannot dismiss the dialog on the frame it opens.
     LaunchedEffect(visible.isIdle, visible.currentState) {
         if (visible.isIdle && !visible.currentState) onDismiss()
     }
@@ -198,50 +116,9 @@ internal fun MotionDialog(
             decorFitsSystemWindows = !fullScreen,
         ),
     ) {
-        // **A dialog is its own window, and the status bar's icons are a property
-        // of a window — so this one starts with the platform default rather than
-        // the app's.**
-        //
-        // The same sentence the `decorFitsSystemWindows` note above is built on,
-        // costing something different. `enableEdgeToEdge()` gives the Activity's
-        // window dark status-bar icons under a light theme; a `Dialog` opened
-        // from it gets a fresh window that was never told, so its icons stay
-        // light — white on the light background, i.e. an empty status bar. Dark
-        // theme was unaffected because white-on-dark is what it wanted anyway,
-        // which is exactly why this only ever showed up in light mode, and only
-        // while a dialog was open.
-        //
-        // **[fullScreen] only, and that is not caution — it is the rule.**
-        //
-        // What the status bar has to be legible against is not the app's theme,
-        // it is whatever is drawn behind it, and the two kinds of dialog differ
-        // there. A full-screen one *is* the background: its own surface runs
-        // under the status bar, so the icons must match the app. A floating card
-        // leaves the page behind it visible and **dimmed by the platform scrim**
-        // — a mid grey in either theme — and light icons are what reads on that.
-        // Forcing the app's appearance onto a card would put dark icons on that
-        // grey and break the one case that was already right.
-        //
-        // Keyed on `dark` so a theme change while a dialog is open re-applies;
-        // no `onDispose` restore, because the dialog window is destroyed with the
-        // dialog and the Activity's own window was never touched.
-        val dark = isSystemInDarkTheme()
-        val dialogView = LocalView.current
-        if (fullScreen) {
-            DisposableEffect(dialogView, dark) {
-                (dialogView.parent as? DialogWindowProvider)?.window?.let { dialogWindow ->
-                    WindowCompat.getInsetsController(dialogWindow, dialogView).apply {
-                        isAppearanceLightStatusBars = !dark
-                        isAppearanceLightNavigationBars = !dark
-                    }
-                }
-                onDispose { }
-            }
-        }
+        if (fullScreen) MatchDialogWindowSystemBarIconsToTheme()
         AnimatedVisibility(
             visibleState = visible,
-            // Outside the Surface, so it caps how tall these dialogs may grow
-            // without padding the short ones. See [DIALOG_VERTICAL_MARGIN].
             modifier = if (fullScreen) Modifier else Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
             enter = fadeIn(fade) + scaleIn(scale, initialScale = DIALOG_ENTER_SCALE),
             exit = fadeOut(fade) + scaleOut(scale, targetScale = DIALOG_ENTER_SCALE),
@@ -252,119 +129,57 @@ internal fun MotionDialog(
     }
 }
 
-/**
- * How wide a dialog card is — **in both of the places this app draws one**.
- *
- * ## The drift this exists to stop
- *
- * Design settings is shown two ways. In the app it is a [MotionDialog], i.e. a
- * platform `Dialog` window; in the guided tour it is the same card composed
- * *in place*, because a real dialog is its own window and would sit above the
- * tour's spotlight (see `DesignSettingsCard`). Those two contexts measure a
- * wrap-content card completely differently:
- *
- * - **In a window.** `usePlatformDefaultWidth` leaves the dialog window
- *   `WRAP_CONTENT`, and `ViewRootImpl.measureHierarchy` measures a wrap-content
- *   window at `AT_MOST(config_prefDialogWidth)` before it will consider the full
- *   display width — 320 dp on a phone, 580 dp at sw600dp. That cap is why every
- *   dialog in this app, ours and material3's `AlertDialog` alike, comes out the
- *   same width.
- * - **In the tour.** There is no window and no cap: the card is measured against
- *   the screen, and a `Text` takes every dp it is offered. On the 411 dp window
- *   this app runs on, the tour's copy measured **363 dp** (411 minus the sheet's
- *   2 x 24 dp) against the real dialog's **320** — visibly wider, which is
- *   exactly what was reported.
- *
- * So the card asks for a width instead of accepting one, and both contexts ask
- * *here*. Nothing is copied into the tour: [dialogCardWidth] is applied inside
- * the shared card composable itself, so a caller cannot forget it and the two
- * cannot disagree.
- *
- * ## What it resolves to
- *
- * The platform's own preferred dialog width, clamped into material3's
- * [DIALOG_MIN_WIDTH]..[DIALOG_MAX_WIDTH] and never wider than the window can
- * hold. Taking it from the platform rather than writing 320 dp down keeps the
- * windowed case a no-op — the card asks for precisely the width the window was
- * going to give it — on tablets and foldables as well as on this phone.
- *
- * `config_prefDialogWidth` is a framework resource with no public id, hence the
- * lookup by name and the fallback: if it ever disappears, [FALLBACK_DIALOG_WIDTH]
- * is what it has been on every phone-sized device since it was introduced, and
- * the two contexts still agree with each other, which is the property that
- * matters.
- */
+@Composable
+private fun MatchDialogWindowSystemBarIconsToTheme() {
+    val dark = isSystemInDarkTheme()
+    val dialogView = LocalView.current
+    DisposableEffect(dialogView, dark) {
+        (dialogView.parent as? DialogWindowProvider)?.window?.let { dialogWindow ->
+            WindowCompat.getInsetsController(dialogWindow, dialogView).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+        onDispose { }
+    }
+}
+
 @Composable
 internal fun dialogCardWidth(): Dp {
     val context = LocalContext.current
-    // The WINDOW, and deliberately the same window in both contexts: Compose
-    // derives this from the ACTIVITY (`calculateWindowSize` unwraps to it), so a
-    // card composed inside a dialog window reads the task's width here rather
-    // than the dialog's own — which is what stops this from being circular.
-    val available = LocalWindowInfo.current.containerDpSize.width
+    val windowWidth = LocalWindowInfo.current.containerDpSize.width
     val preferred = remember(context) { platformDialogWidth(context) }
-    return dialogCardWidth(preferred, available)
+    return dialogCardWidth(preferred, windowWidth)
 }
 
-/**
- * The clamp itself, pure so it can be tested: the platform's [preferred] width,
- * held inside MD3's own bounds and inside the window.
- *
- * The order matters at both ends. The MD3 clamp comes first because it is about
- * the dialog (a 700 dp one is a slab, a 200 dp one is a column of hyphenated
- * words); the window clamp comes last because it is about physics — on a window
- * narrower than [DIALOG_MIN_WIDTH] the minimum has to give way, and a card wider
- * than the window it is centred in would be cut off at both edges.
- *
- * An [available] width that is [Dp.Unspecified] or zero means the window has not
- * measured itself yet, which is a state exactly one composition long. It is
- * answered with the unclamped width rather than with a guess, because that is
- * the value the following frame will settle on anyway.
- */
 internal fun dialogCardWidth(preferred: Dp, available: Dp): Dp {
-    val bounded = preferred.coerceIn(DIALOG_MIN_WIDTH, DIALOG_MAX_WIDTH)
-    if (!available.isSpecified || available <= 0.dp) return bounded
-    return bounded.coerceAtMost((available - DIALOG_HORIZONTAL_MARGIN * 2).coerceAtLeast(0.dp))
+    val boundedByMd3 = preferred.coerceIn(DIALOG_MIN_WIDTH, DIALOG_MAX_WIDTH)
+    val windowNotMeasuredYet = !available.isSpecified || available <= 0.dp
+    if (windowNotMeasuredYet) return boundedByMd3
+    return boundedByMd3.coerceAtMost(
+        (available - DIALOG_HORIZONTAL_MARGIN * 2).coerceAtLeast(0.dp),
+    )
 }
 
-/** MD3's own dialog width bounds — the pair `AlertDialog` applies internally. */
 internal val DIALOG_MIN_WIDTH = 280.dp
 internal val DIALOG_MAX_WIDTH = 560.dp
 
-/**
- * The least breathing room a dialog keeps at each side of the window, matching
- * [DIALOG_VERTICAL_MARGIN]'s job on the other axis. It only ever binds on a
- * window too narrow for the platform's preferred width.
- */
 private val DIALOG_HORIZONTAL_MARGIN = 24.dp
 
-/** What [platformDialogWidth] falls back to: the AOSP value for a phone. */
+private const val PLATFORM_DIALOG_WIDTH_RES = "config_prefDialogWidth"
+
 private val FALLBACK_DIALOG_WIDTH = 320.dp
 
-/**
- * `config_prefDialogWidth`, the width the window manager measures a wrap-content
- * dialog window at. Not public API — read by name, and defaulted if absent.
- */
 @SuppressLint("DiscouragedApi")
 private fun platformDialogWidth(context: Context): Dp {
     val resources = context.resources
-    val id = resources.getIdentifier("config_prefDialogWidth", "dimen", "android")
+    val id = resources.getIdentifier(PLATFORM_DIALOG_WIDTH_RES, "dimen", "android")
     if (id == 0) return FALLBACK_DIALOG_WIDTH
     val px = runCatching { resources.getDimension(id) }.getOrNull() ?: return FALLBACK_DIALOG_WIDTH
     if (px <= 0f) return FALLBACK_DIALOG_WIDTH
     return (px / resources.displayMetrics.density).dp
 }
 
-/**
- * "Hand over the Essential Key": the two system settings that stop Nothing OS
- * acting on the key before this app sees it.
- *
- * Named rather than assembled at each call site because there are two — the
- * Tutorials tab and onboarding's key-mode page — and this is a set of numbered
- * instructions about someone else's Settings app. Two copies would be two things
- * to correct the day a firmware update moves a menu, and the one that got missed
- * would be the one walking a first-run user into a dead end.
- */
 @Composable
 fun HandoverTutorialDialog(onDismiss: () -> Unit) {
     TutorialInfoDialog(
@@ -379,10 +194,6 @@ fun HandoverTutorialDialog(onDismiss: () -> Unit) {
     )
 }
 
-/**
- * A short numbered-steps guide pop-up (styled like the tutorial dialog):
- * title, intro, numbered steps, optional note and optional action button.
- */
 @Composable
 fun TutorialInfoDialog(
     title: String,
@@ -443,8 +254,6 @@ fun TutorialInfoDialog(
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (actionLabel != null && onAction != null) {
-                        // Unchanged: the action leaves for system Settings and
-                        // deliberately does NOT close the dialog behind it.
                         TextButton(onClick = onAction) { Text(actionLabel) }
                     }
                     Spacer(Modifier.weight(1f))
@@ -455,60 +264,18 @@ fun TutorialInfoDialog(
     }
 }
 
-/**
- * The tutorial itself — mode chips plus the swipeable animated steps, shown
- * inside [KeyTutorialDialog].
- */
 @Composable
 private fun KeyTutorialContent(modifier: Modifier = Modifier) {
     var menuMode by remember { mutableStateOf(false) }
     val steps = if (menuMode) MENU_STEPS else CLASSIC_STEPS
 
     Column(modifier) {
-        // "Regular mode" / "Menu mode" is a pick-ONE-of-two, which is exactly
-        // what MD3 specifies segmented buttons for (2–5 mutually exclusive
-        // options). Hence [SingleChoiceSegmentedButtonRow] rather than a
-        // ButtonGroup of ToggleButtons: the single-choice row wraps its items in
-        // a `selectableGroup()` and each button reports `Role.RadioButton`,
-        // while a ToggleButton is a `Role.Checkbox` with no notion of its peers —
-        // right for "bold on/off", wrong for "one of these two".
-        //
-        // Everything that used to be hand-rolled here now comes from the
-        // library: the check mark wipes in on the theme's effects/fast-spatial
-        // springs and pushes the label aside as it grows, and the container and
-        // outline take their colours from SegmentedButtonDefaults (so this
-        // theme's monochrome scheme flows through untouched).
-        // A segmented button already animates its own selection; see [NoRipple].
-        NoRipple {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = !menuMode,
-                    onClick = { menuMode = false },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) {
-                    Text(stringResource(R.string.onb_mode_regular))
-                }
-                SegmentedButton(
-                    selected = menuMode,
-                    onClick = { menuMode = true },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) {
-                    Text(stringResource(R.string.onb_mode_menu))
-                }
-            }
-        }
+        ModeSwitcher(menuMode = menuMode, onModeChange = { menuMode = it })
         Spacer(Modifier.height(8.dp))
-
-        // Swipe through the selected mode's steps; key() recreates the
-        // pager on mode change so it starts back at the first step.
         key(menuMode) {
             val pagerState = rememberPagerState(pageCount = { steps.size })
             HorizontalPager(
                 state = pagerState,
-                // Settle on MD3's expressive spatial spring, not foundation's
-                // hardcoded `spring(StiffnessMediumLow)` default — a released
-                // swipe here has to land like every other movement in the app,
-                // and the step dots below are driven off this pager.
                 flingBehavior = PagerDefaults.flingBehavior(
                     state = pagerState,
                     snapAnimationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
@@ -517,138 +284,69 @@ private fun KeyTutorialContent(modifier: Modifier = Modifier) {
                 TutorialPage(steps[page])
             }
             Spacer(Modifier.height(6.dp))
+            StepDots(count = steps.size, current = pagerState.currentPage)
+        }
+    }
+}
 
-            val base = MaterialTheme.colorScheme.onSurface
-            // Same treatment as the onboarding page indicator, so the two read
-            // as one component: the selected dot stretches into a pill (a SIZE
-            // → spatial) while its fill fades (a COLOUR → effects). Fast on
-            // both counts — a step dot is a small contained element. These used
-            // to have no animation at all, which made swiping the tutorial feel
-            // unrelated to swiping onboarding.
-            val dotWidthSpec = MaterialTheme.motionScheme.fastSpatialSpec<Dp>()
-            val dotColorSpec = MaterialTheme.motionScheme.fastEffectsSpec<Color>()
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+@Composable
+private fun ModeSwitcher(menuMode: Boolean, onModeChange: (Boolean) -> Unit) {
+    NoRipple {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = !menuMode,
+                onClick = { onModeChange(false) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
             ) {
-                steps.forEachIndexed { i, _ ->
-                    val selected = i == pagerState.currentPage
-                    val dotWidth by animateDpAsState(
-                        targetValue = if (selected) 18.dp else 7.dp,
-                        animationSpec = dotWidthSpec,
-                        label = "stepDotWidth",
-                    )
-                    val dotColor by animateColorAsState(
-                        targetValue = if (selected) base else base.copy(alpha = 0.2f),
-                        animationSpec = dotColorSpec,
-                        label = "stepDotColor",
-                    )
-                    Box(
-                        Modifier
-                            .padding(horizontal = 3.dp)
-                            .height(7.dp)
-                            // The under-damped spring undershoots below the
-                            // 7 dp resting width; a negative width is not a
-                            // legal constraint.
-                            .width(dotWidth.coerceAtLeast(0.dp))
-                            .background(dotColor, CircleShape),
-                    )
-                }
+                Text(stringResource(R.string.onb_mode_regular))
+            }
+            SegmentedButton(
+                selected = menuMode,
+                onClick = { onModeChange(true) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            ) {
+                Text(stringResource(R.string.onb_mode_menu))
             }
         }
     }
 }
 
-/**
- * How tall the phone illustration is — **and the number that decides whether the
- * drawing reads as a phone at all.**
- *
- * The tutorial's camera is width-bound on a dialog (see [tutorialCamera]), so the
- * body's *width* is [TUTORIAL_BODY_WIDTH] of the canvas whatever this says. What
- * this sets is the body's visible *height*: how much phone the reader sees below
- * the plate.
- *
- * At **205 dp**, the 280 dp canvas a phone-width dialog gives makes the body 174 dp
- * wide over 195 dp of visible height — **1.12 body widths** of phone, which is the
- * plate, the Essential Key, and a short strip of body under it. That is the whole
- * job: the illustration exists to show where the matrix and the key are.
- *
- * **A note against repeating a mistake.** A previous revision raised this to 270 dp
- * on the reasoning that the drawing's *visible aspect* (0.89 wide-to-tall) was what
- * four rejected revisions had in common, and that no zoom could fix it in a 205 dp
- * frame. Both halves were wrong. The accepted drawing has that same 0.89, so it was
- * never the defect; the defect was [DeviceBack]'s island width, modelled at `0.63`
- * of the body instead of the real `0.91`. That KDoc even recorded the disproof and
- * misread it — it observed that the original drawing's island was `0.89` of the
- * body's width and called it "oversized" against "the real device's `0.63`", when
- * `0.89` was very nearly the correct figure and `0.63` was the invention. Once the
- * island was corrected, 205 dp read as a phone immediately, and 270 dp read as a
- * slab with blank body under the key.
- *
- * It is deliberately not taller. At this height the dialog's content comes to
- * roughly 510 dp — 36 padding + 28 title + 14 + 40 switcher + 8 + (205 + 126 of
- * page) + 6 + 7 dots + 40 button — against a window height less the 2 x
- * [DIALOG_VERTICAL_MARGIN] the surface is capped at, so on any phone-shaped window
- * the mode switcher above the illustration and the caption below it are both on
- * screen at once. The `verticalScroll` that makes a taller illustration affordable
- * at all is then what it was for: large font scales and short windows, not ordinary
- * use.
- *
- * The floor is [TUTORIAL_SPAN_Y] body widths of drawing — 180 dp at this canvas —
- * below which the camera would stop being width-bound and the phone would simply
- * stop growing. The height and the aspect it produces are both pinned by
- * `GlyphCanvasTest`; the aspect is the assertion that matters, and is the one
- * nobody was making while this was being rejected.
- *
- * `205` shows 1.12 body widths of phone on a phone-sized dialog: the plate, the key
- * and a short strip of body below it, and nothing more. A revision that raised this
- * to `270` was rejected on sight — the extra 65 dp bought no content, only blank
- * body under the key, and the phone read as a slab. The number to change when the
- * drawing needs more room is the camera's, not this one.
- */
+private val STEP_DOT_SELECTED_WIDTH = 18.dp
+private val STEP_DOT_WIDTH = 7.dp
+private const val STEP_DOT_UNSELECTED_ALPHA = 0.2f
+
+@Composable
+private fun StepDots(count: Int, current: Int) {
+    val base = MaterialTheme.colorScheme.onSurface
+    val dotWidthSpec = MaterialTheme.motionScheme.fastSpatialSpec<Dp>()
+    val dotColorSpec = MaterialTheme.motionScheme.fastEffectsSpec<Color>()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        repeat(count) { i ->
+            val selected = i == current
+            val dotWidth by animateDpAsState(
+                targetValue = if (selected) STEP_DOT_SELECTED_WIDTH else STEP_DOT_WIDTH,
+                animationSpec = dotWidthSpec,
+                label = "stepDotWidth",
+            )
+            val dotColor by animateColorAsState(
+                targetValue =
+                    if (selected) base else base.copy(alpha = STEP_DOT_UNSELECTED_ALPHA),
+                animationSpec = dotColorSpec,
+                label = "stepDotColor",
+            )
+            Box(
+                Modifier
+                    .padding(horizontal = 3.dp)
+                    .height(STEP_DOT_WIDTH)
+                    .width(dotWidth.coerceAtLeast(0.dp))
+                    .background(dotColor, CircleShape),
+            )
+        }
+    }
+}
+
 internal val ILLUSTRATION_HEIGHT = 205.dp
 
-/**
- * **The tutorial's camera**: the whole phone, filling the illustration area and
- * cropped by it.
- *
- * The other of the app's two views of `DeviceBack` — see `GlyphCanvas`'s KDoc for
- * why the framing is a per-caller parameter and the drawing is not. This one is
- * zoomed *out*: the reader has to recognise a phone lying face down and find the
- * key on its right edge, so the subject is the device, not the panel.
- *
- * - **[TUTORIAL_BODY_WIDTH]** — the whole scale of the drawing, and the number this
- *   has been got wrong at three times: **the body is 0.62 of the canvas's width**,
- *   with the remaining 0.38 the gutters the Essential Key's ripple expands into —
- *   it is a canvas annotation rather than a part of the phone and needs somewhere
- *   to be. At `0.83` — five sixths, which is where a previous phase put it — the
- *   body was a third wider without being any taller, and the phone read as a squat
- *   block instead of a device. **[TUTORIAL_SPAN_X]** is its reciprocal, because a
- *   camera is expressed in how much of the *device* fits across the frame.
- * - **[TUTORIAL_SPAN_Y]** — how many body widths must fit down it, from the top of
- *   the body to just past the key: [TUTORIAL_TOP_MARGIN] plus the key's lower edge,
- *   plus clearance. It only binds on a dialog wide enough that the phone would
- *   otherwise outgrow the illustration's height, i.e. a tablet's. It is derived
- *   from [DeviceBack], not guessed: when the plate's true width put its bottom edge
- *   0.16 body widths further down, the key it sits above went with it, and a span
- *   fixed at `0.95` cropped the key off a 540 dp dialog.
- * - **[TUTORIAL_FOCUS_X]** — the point of the device at the centre of the frame,
- *   horizontally. `0.53` rather than `0.5` puts a little more of the gutter on the
- *   right, which is the side the key's annotations live on.
- * - the focus's **y** is derived so that the body's top edge always lands
- *   [TUTORIAL_TOP_MARGIN] below the top of the canvas, whatever the zoom came out
- *   at — 5 % of the illustration's height, at the dialog width a phone gives. The
- *   phone therefore starts at the top and runs off the bottom at every dialog size,
- *   which is what makes it read as a device continuing past the frame rather than
- *   as a card floating in one.
- *
- * Those four numbers and [ILLUSTRATION_HEIGHT] between them fix the one thing a
- * reader actually judges — **the visible body is 0.62 of the canvas wide and 0.67
- * as wide as it is tall** — and both are asserted, because this illustration has
- * been rejected four times for getting exactly that wrong. The aspect is
- * [ILLUSTRATION_HEIGHT]'s to set, not this function's: no zoom can produce it, and
- * four attempts to find one failed. See its KDoc.
- */
 internal fun tutorialCamera(canvas: Size): Camera {
     val zoom = minOf(canvas.width / TUTORIAL_SPAN_X, canvas.height / TUTORIAL_SPAN_Y)
     if (zoom <= 0f) return Camera(0f, Offset.Zero)
@@ -658,45 +356,19 @@ internal fun tutorialCamera(canvas: Size): Camera {
     )
 }
 
-/**
- * **The body takes 0.62 of the canvas's width.** See [tutorialCamera]; pinned by
- * `GlyphCanvasTest.theTutorialDrawsTheBodyAtSixTenthsOfTheCanvasWidth`.
- */
 internal const val TUTORIAL_BODY_WIDTH = 0.62f
 
-/**
- * Where the press markers sit, **in device coordinates**: on the body, `0.09` of a
- * body width in from its right edge, level with the Essential Key.
- *
- * They used to hang 18 dp *past* that edge, out in the gutter, and that is the
- * "small dot floating in the white space beside the key" the last screenshot was
- * rejected for. A mark outside the device has nothing to belong to and reads as a
- * rendering fault rather than as an annotation — and the accurate, smaller island
- * made it worse, because in a gutter that is now mostly empty a stray dot is the
- * only thing in it. On the body, beside the key it is counting, it reads as what
- * it is.
- *
- * `0.91` rather than anything closer to the edge because the key's nub straddles
- * `1.0` — it is [DeviceBack.KEY_WIDTH] wide with 45 % of that inside the body — so
- * a marker further right would touch it. Expressed as a device point and mapped
- * through the camera, like every other annotation here, so it cannot drift out from
- * under the phone when a framing changes; the gutter offset it replaces could not
- * say the same. Pinned by `GlyphCanvasTest`.
- */
 internal const val TUTORIAL_MARKER_X = 0.91f
 
 private const val TUTORIAL_SPAN_X = 1f / TUTORIAL_BODY_WIDTH
 private const val TUTORIAL_FOCUS_X = 0.53f
 private const val TUTORIAL_TOP_MARGIN = 0.059f
+private const val TUTORIAL_BOTTOM_MARGIN = 0.034f
 private const val TUTORIAL_SPAN_Y =
-    TUTORIAL_TOP_MARGIN + DeviceBack.KEY_TOP + DeviceBack.KEY_HEIGHT + 0.034f
+    TUTORIAL_TOP_MARGIN + DeviceBack.KEY_TOP + DeviceBack.KEY_HEIGHT + TUTORIAL_BOTTOM_MARGIN
 
-/** One swipeable step: its looping animation plus title and description. */
 @Composable
 private fun TutorialPage(step: TutorialStep) {
-    // Millisecond timeline looping over the step's duration; starts fresh each
-    // time the page enters the pager's composition. Read only inside the
-    // Canvas draw block, so each frame is a redraw, not a recomposition.
     var timeMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(step) {
         val t0 = withFrameNanos { it }
@@ -727,13 +399,6 @@ private fun TutorialPage(step: TutorialStep) {
     }
 }
 
-// ---------- step timelines ----------
-
-/**
- * One tutorial frame: the matrix contents, and whether the panel is lit at all
- * (the menu-mode blink turns everything down to the unlit level without changing
- * the pattern, so the two are separate).
- */
 private class MatrixFrame(val cells: IntArray, val on: Boolean)
 
 private class TutorialStep(
@@ -745,11 +410,13 @@ private class TutorialStep(
     val matrix: (Long) -> MatrixFrame,
 )
 
-/** Key held down for this long per press. */
 private const val PRESS_MS = 170L
 
-/** Same cadence as ScreenManager's menu blink (450 ms on / 300 ms off). */
-private fun blinkOn(sinceMs: Long) = sinceMs % 750 < 450
+private const val MENU_BLINK_ON_MS = 450L
+private const val MENU_BLINK_OFF_MS = 300L
+
+private fun blinkOn(sinceMs: Long) =
+    sinceMs % (MENU_BLINK_ON_MS + MENU_BLINK_OFF_MS) < MENU_BLINK_ON_MS
 
 private val CLASSIC_STEPS = listOf(
     TutorialStep(R.string.tut_c1_title, R.string.tut_c1_body, 4200, listOf(600)) { t ->
@@ -759,34 +426,30 @@ private val CLASSIC_STEPS = listOf(
             else -> MatrixFrame(DICE_5, true)
         }
     },
-    // Two double-presses: dice -> clock -> compass, then the loop restarts on
-    // dice — three toys, so the carousel reads as a cycle, not a toggle.
     TutorialStep(R.string.tut_c2_title, R.string.tut_c2_body, 5200, listOf(600, 960, 2600, 2960)) { t ->
         MatrixFrame(
             when {
                 t < 1400 -> DICE_5
-                t < 3400 -> CLOCK
-                else -> COMPASS
+                t < 3400 -> CLOCK_1234
+                else -> COMPASS_NORTH
             },
             true,
         )
     },
     TutorialStep(R.string.tut_c3_title, R.string.tut_c3_body, 4400, listOf(600, 960, 1320)) { t ->
-        MatrixFrame(if (t < 1800) COMPASS else AMBIENT, true)
+        MatrixFrame(if (t < 1800) COMPASS_NORTH else AMBIENT_ANALOG_1008, true)
     },
 )
 
 private val MENU_STEPS = listOf(
     TutorialStep(R.string.tut_m1_title, R.string.tut_m1_body, 5600, listOf(600, 960)) { t ->
-        if (t < 1400) MatrixFrame(CLOCK, true) else MatrixFrame(CLOCK, blinkOn(t - 1400))
+        if (t < 1400) MatrixFrame(CLOCK_1234, true) else MatrixFrame(CLOCK_1234, blinkOn(t - 1400))
     },
-    // Two single presses: clock -> dice -> compass, all still blinking, before
-    // the loop circles back to the clock.
     TutorialStep(R.string.tut_m2_title, R.string.tut_m2_body, 7200, listOf(1800, 3800)) { t ->
         when {
-            t < 2100 -> MatrixFrame(CLOCK, blinkOn(t))
+            t < 2100 -> MatrixFrame(CLOCK_1234, blinkOn(t))
             t < 4100 -> MatrixFrame(DICE_5, blinkOn(t - 2100))
-            else -> MatrixFrame(COMPASS, blinkOn(t - 4100))
+            else -> MatrixFrame(COMPASS_NORTH, blinkOn(t - 4100))
         }
     },
     TutorialStep(R.string.tut_m3_title, R.string.tut_m3_body, 5600, listOf(1800, 2160)) { t ->
@@ -799,59 +462,47 @@ private val MENU_STEPS = listOf(
         if (t < 5800) MatrixFrame(DICE_5, blinkOn(t)) else MatrixFrame(DICE_5, true)
     },
     TutorialStep(R.string.tut_m5_title, R.string.tut_m5_body, 5400, listOf(1400, 1760, 2120)) { t ->
-        if (t < 2600) MatrixFrame(DICE_5, blinkOn(t)) else MatrixFrame(AMBIENT, true)
+        if (t < 2600) MatrixFrame(DICE_5, blinkOn(t)) else MatrixFrame(AMBIENT_ANALOG_1008, true)
     },
 )
 
-// ---------- the illustration ----------
-
-/** The Glyph Matrix this tutorial illustrates: the Phone (4a) Pro's 13x13. */
 private const val TUTORIAL_MATRIX_SIZE = 13
+
+private const val COUNTDOWN_RING_ALPHA = 0.65f
+private val COUNTDOWN_RING_GAP = 7.dp
+private val COUNTDOWN_RING_STROKE = 3.dp
+private const val COUNTDOWN_RING_START_ANGLE = -90f
+
+private const val RIPPLE_MS = 480L
+private const val RIPPLE_START_ALPHA = 0.5f
+private val RIPPLE_START_RADIUS = 10.dp
+private val RIPPLE_GROWTH = 26.dp
+private val RIPPLE_STROKE = 2.dp
+
+private const val SEPARATE_GESTURE_GAP_MS = 600L
+private const val MARKER_LEAD_IN_MS = 400L
+private const val MARKER_LIT_AFTER_PRESS_MS = 90L
+private const val MARKER_UNLIT_BEFORE_LOOP_MS = 250L
+private const val MARKER_LIT_ALPHA = 0.85f
+private const val MARKER_UNLIT_ALPHA = 0.18f
+private val MARKER_RADIUS = 3.dp
+private val MARKER_SPACING = 12.dp
 
 private fun DrawScope.drawTutorialPhone(base: Color, step: TutorialStep, t: Long) {
     val camera = tutorialCamera(size)
-    // The phone, key included: the key is a feature of the device and lives in
-    // `DeviceBack` with the rest of it, so all this page contributes is whether it
-    // is being pressed at this instant. Everything below is annotation drawn
-    // *over* the device — a countdown ring, a ripple, press markers — and is
-    // positioned by mapping device points through the camera rather than by
-    // resolving any geometry of its own.
-    val pressed = step.presses.any { t in it..(it + PRESS_MS) }
-    val disc = drawDeviceBack(base, camera, keyPressed = pressed)
-    val mc = disc.center
-    val mr = disc.radius
+    val keyPressed = step.presses.any { t in it..(it + PRESS_MS) }
+    val disc = drawDeviceBack(base, camera, keyPressed = keyPressed)
 
     val frame = step.matrix(t)
-    // The blink's "off" phase is an ALL-DARK panel, not a hidden pattern: the
-    // real matrix drops every LED to nothing and the illustration draws each
-    // unlit cell at its resting alpha. Handing [drawMatrix] a blank frame is
-    // therefore the same picture the old `frame.on` branch drew, one code path
-    // fewer.
-    drawMatrix(mc, mr, TUTORIAL_MATRIX_SIZE, if (frame.on) frame.cells else BLANK_MATRIX)
+    drawMatrix(
+        disc.center,
+        disc.radius,
+        TUTORIAL_MATRIX_SIZE,
+        if (frame.on) frame.cells else BLANK_MATRIX,
+    )
 
-    // Auto-set countdown: a depleting ring around the matrix.
-    step.countdown?.let { range ->
-        if (t >= range.first) {
-            val span = (range.last - range.first).toFloat()
-            val fraction = 1f - ((t - range.first) / span).coerceIn(0f, 1f)
-            if (fraction > 0f) {
-                val pad = 7.dp.toPx()
-                drawArc(
-                    base.copy(alpha = 0.65f),
-                    startAngle = -90f,
-                    sweepAngle = 360f * fraction,
-                    useCenter = false,
-                    topLeft = Offset(mc.x - mr - pad, mc.y - mr - pad),
-                    size = Size((mr + pad) * 2f, (mr + pad) * 2f),
-                    style = Stroke(width = 3.dp.toPx()),
-                )
-            }
-        }
-    }
+    step.countdown?.let { drawCountdownRing(base, disc.center, disc.radius, it, t) }
 
-    // Where the Essential Key ended up on screen: the middle of the nub itself,
-    // mapped like everything else here rather than the body's edge plus a nudge.
-    // The ripple is centred on it and the press markers sit level with it.
     val keyCenter = camera.map(
         Offset(
             DeviceBack.KEY_LEFT + DeviceBack.KEY_WIDTH / 2f,
@@ -859,84 +510,97 @@ private fun DrawScope.drawTutorialPhone(base: Color, step: TutorialStep, t: Long
         ),
         size,
     )
+    drawPressRipples(base, keyCenter, step.presses, t)
+    drawPressCounter(base, keyCenter, camera.map(Offset(TUTORIAL_MARKER_X, 0f), size).x, step, t)
+}
 
-    // Expanding ripple per press.
-    step.presses.forEach { p ->
-        val dt = t - p
-        if (dt in 0..480) {
-            val progress = dt / 480f
-            drawCircle(
-                base.copy(alpha = (1f - progress) * 0.5f),
-                radius = 10.dp.toPx() + 26.dp.toPx() * progress,
-                center = keyCenter,
-                style = Stroke(width = 2.dp.toPx()),
-            )
-        }
-    }
+private fun DrawScope.drawCountdownRing(
+    base: Color,
+    center: Offset,
+    radius: Float,
+    range: LongRange,
+    t: Long,
+) {
+    if (t < range.first) return
+    val span = (range.last - range.first).toFloat()
+    val remaining = 1f - ((t - range.first) / span).coerceIn(0f, 1f)
+    if (remaining <= 0f) return
+    val gap = COUNTDOWN_RING_GAP.toPx()
+    drawArc(
+        base.copy(alpha = COUNTDOWN_RING_ALPHA),
+        startAngle = COUNTDOWN_RING_START_ANGLE,
+        sweepAngle = 360f * remaining,
+        useCenter = false,
+        topLeft = Offset(center.x - radius - gap, center.y - radius - gap),
+        size = Size((radius + gap) * 2f, (radius + gap) * 2f),
+        style = Stroke(width = COUNTDOWN_RING_STROKE.toPx()),
+    )
+}
 
-    // Press counter: one small dot per press of the current gesture, lit as
-    // each press lands, stacked ON the body beside the key — see
-    // [TUTORIAL_MARKER_X], which is where the stray dot in the gutter came from.
-    // Presses > 600 ms apart are separate gestures (bursts); the dots reset for
-    // each burst, so repeated gestures read as "x2, twice" rather than one long
-    // chain.
-    val bursts = mutableListOf<MutableList<Long>>()
-    step.presses.forEach { p ->
-        if (bursts.isEmpty() || p - bursts.last().last() > 600) {
-            bursts += mutableListOf(p)
-        } else {
-            bursts.last() += p
-        }
-    }
-    val burst = bursts.lastOrNull { t >= it.first() - 400 } ?: bursts.firstOrNull()
-    val markerX = camera.map(Offset(TUTORIAL_MARKER_X, 0f), size).x
-    burst?.forEachIndexed { i, p ->
-        val lit = t >= p + 90 && t <= step.durationMs - 250
+private fun DrawScope.drawPressRipples(
+    base: Color,
+    keyCenter: Offset,
+    presses: List<Long>,
+    t: Long,
+) {
+    presses.forEach { press ->
+        val sincePress = t - press
+        if (sincePress !in 0..RIPPLE_MS) return@forEach
+        val progress = sincePress / RIPPLE_MS.toFloat()
         drawCircle(
-            if (lit) base.copy(alpha = 0.85f) else base.copy(alpha = 0.18f),
-            radius = 3.dp.toPx(),
+            base.copy(alpha = (1f - progress) * RIPPLE_START_ALPHA),
+            radius = RIPPLE_START_RADIUS.toPx() + RIPPLE_GROWTH.toPx() * progress,
+            center = keyCenter,
+            style = Stroke(width = RIPPLE_STROKE.toPx()),
+        )
+    }
+}
+
+private fun DrawScope.drawPressCounter(
+    base: Color,
+    keyCenter: Offset,
+    markerX: Float,
+    step: TutorialStep,
+    t: Long,
+) {
+    val bursts = pressBursts(step.presses)
+    val burst = bursts.lastOrNull { t >= it.first() - MARKER_LEAD_IN_MS } ?: bursts.firstOrNull()
+    burst?.forEachIndexed { i, press ->
+        val lit = t >= press + MARKER_LIT_AFTER_PRESS_MS &&
+            t <= step.durationMs - MARKER_UNLIT_BEFORE_LOOP_MS
+        drawCircle(
+            base.copy(alpha = if (lit) MARKER_LIT_ALPHA else MARKER_UNLIT_ALPHA),
+            radius = MARKER_RADIUS.toPx(),
             center = Offset(
                 markerX,
-                keyCenter.y + (i - (burst.size - 1) / 2f) * 12.dp.toPx(),
+                keyCenter.y + (i - (burst.size - 1) / 2f) * MARKER_SPACING.toPx(),
             ),
         )
     }
 }
 
-// ---------- 13x13 matrix patterns ----------
-//
-// [CLOCK], [AMBIENT] and [COMPASS] are transcribed from ASCII goldens of the
-// real renderer's 13x13 output (app/src/test/resources/goldens/), so the
-// tutorial shows what the hardware actually shows. Golden charset
-// '#'/'+'/'.'/' ' maps to this file's '#'/'+'/':'/'.' (off).
-//
-// The DICE_* faces are the deliberate exception: hand-authored rather than
-// golden-derived. On the real 13x13 matrix a D6 face is drawn a half cell
-// up-and-left of centre, which is barely visible on the hardware but obvious
-// in this much larger illustration. The faces below re-centre it, trading
-// fidelity for legibility. See [DICE_2] for the placement and why it is what
-// it is.
-//
-// Each row MUST be exactly 13 characters: [charsetFrame] indexes rows[r][c] for
-// r,c in 0..12 with no bounds guard.
+private fun pressBursts(presses: List<Long>): List<List<Long>> {
+    val bursts = mutableListOf<MutableList<Long>>()
+    presses.forEach { press ->
+        val startsNewBurst =
+            bursts.isEmpty() || press - bursts.last().last() > SEPARATE_GESTURE_GAP_MS
+        if (startsNewBurst) bursts += mutableListOf(press) else bursts.last() += press
+    }
+    return bursts
+}
 
-/** An unlit panel — see the blink handling in [drawTutorialPhone]. */
+//
+// Charset: '#' full, '+' mid, ':' dim, anything else off. Rows must be 13 characters.
+// The goldens in app/src/test/resources/goldens/ write off as ' ' and dim as '.', so
+// transcribe them with a script, not by eye.
+
 private val BLANK_MATRIX = IntArray(TUTORIAL_MATRIX_SIZE * TUTORIAL_MATRIX_SIZE)
 
-/**
- * These patterns' four shading levels, as the 0..4095 brightnesses
- * [drawMatrix] speaks — resolved ONCE per pattern, at class-init, so the
- * animation loop allocates nothing per frame.
- *
- * The illustration used to compute an alpha per character directly (1 / 0.55 /
- * 0.25 / off) and these are those alphas expressed as panel levels, which is
- * *nearly* but not exactly a lossless conversion: `drawMatrix` divides by 4095,
- * so `2252` is alpha 0.549939 rather than 0.55 and `1024` is 0.250061 rather
- * than 0.25. It makes no difference to a single rendered pixel. Compose packs an
- * sRGB colour as 8-bit channels — `(alpha * 255 + 0.5).toInt()` — and both pairs
- * land on the same byte (140 and 64), so every LED in this dialog draws the
- * exact colour it drew before. `#` is 4095, i.e. alpha 1.0 exactly.
- */
+private const val LEVEL_FULL = 4095
+private const val LEVEL_MID = 2252
+private const val LEVEL_DIM = 1024
+private const val LEVEL_OFF = 0
+
 private fun charsetFrame(rows: List<String>): IntArray {
     val size = rows.size
     val out = IntArray(size * size)
@@ -944,30 +608,16 @@ private fun charsetFrame(rows: List<String>): IntArray {
         val row = rows[r]
         for (c in 0 until size) {
             out[r * size + c] = when (row[c]) {
-                '#' -> 4095
-                '+' -> 2252
-                ':' -> 1024
-                else -> 0
+                '#' -> LEVEL_FULL
+                '+' -> LEVEL_MID
+                ':' -> LEVEL_DIM
+                else -> LEVEL_OFF
             }
         }
     }
     return out
 }
 
-/**
- * Dice toy showing a 2.
- *
- * All four faces place their 2x2 pips on the row/column pairs {2,3} (low),
- * {5,6} (middle) and {9,10} (high), so every face's lit bounding box is 2..10
- * on both axes — margins 2|2 — and reads as centred on the disc.
- *
- * Not 3-wide pips at 1..3 / 5..7 / 9..11, which would be both symmetric and
- * evenly spaced: the panel is a disc and only has LEDs out to 6.5 cells from the
- * centre (`PanelMask` — the grid's inscribed circle, counted off a photograph of
- * the real panel), while cell (1,1) sits at sqrt(50) = 7.07 cells, so the outer
- * pips would render visibly notched. The 2x2 placement's furthest cell (2,2) is
- * at sqrt(32) = 5.66 cells, comfortably inside.
- */
 private val DICE_2 = charsetFrame(
     listOf(
         ".............",
@@ -986,7 +636,6 @@ private val DICE_2 = charsetFrame(
     ),
 )
 
-/** Dice toy showing a 3; pip placement per [DICE_2]. */
 private val DICE_3 = charsetFrame(
     listOf(
         ".............",
@@ -1005,7 +654,6 @@ private val DICE_3 = charsetFrame(
     ),
 )
 
-/** Dice toy showing a 5; pip placement per [DICE_2]. */
 private val DICE_5 = charsetFrame(
     listOf(
         ".............",
@@ -1024,7 +672,6 @@ private val DICE_5 = charsetFrame(
     ),
 )
 
-/** Dice toy showing a 6; pip placement per [DICE_2]. */
 private val DICE_6 = charsetFrame(
     listOf(
         ".............",
@@ -1045,12 +692,7 @@ private val DICE_6 = charsetFrame(
 
 private val ROLL = listOf(DICE_3, DICE_6, DICE_2, DICE_6, DICE_3)
 
-/**
- * The Compass toy pointing north, taken from the real renderer's 13x13
- * output (the compass_13_north golden): '#' needle, ':' tail, cardinal ring
- * with '+' W/E/S markers and ':' intercardinal dots.
- */
-private val COMPASS = charsetFrame(
+private val COMPASS_NORTH = charsetFrame(
     listOf(
         "......#......",
         "......#......",
@@ -1068,11 +710,7 @@ private val COMPASS = charsetFrame(
     ),
 )
 
-/**
- * The Clock toy on its plain-digits theme reading 12:34, stacked "12"
- * over "34" — the clock_13_1234_t0 golden.
- */
-private val CLOCK = charsetFrame(
+private val CLOCK_1234 = charsetFrame(
     listOf(
         ".............",
         "....#..###...",
@@ -1090,20 +728,7 @@ private val CLOCK = charsetFrame(
     ),
 )
 
-/**
- * The Ambient toy — the *analog* clock background at 10:08 (hour and minute
- * hands, inside the panel border), from the ambient_13_bg_analog_1008 golden.
- * Deliberately not the default digital background: digits here would look almost
- * identical to [CLOCK] and the "cycle between toys" animations would read as no
- * change at all.
- *
- * **The two formats invert each other**, so this is transcribed with a script
- * rather than by eye: a golden writes OFF as a space and a dim cell as `.`, while
- * [charsetFrame] writes OFF as `.` and reads `:` as its dimmest level. Copying a
- * golden straight in turns every off cell into a lit one — which is the whole
- * panel, since the border made most rows non-empty.
- */
-private val AMBIENT = charsetFrame(
+private val AMBIENT_ANALOG_1008 = charsetFrame(
     listOf(
         "....:::::....",
         "..::.....::..",

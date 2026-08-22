@@ -28,55 +28,23 @@ import space.linuxct.glyphworks.ui.design.GlyphAiSignInDialog
 import space.linuxct.glyphworks.ui.design.glyphAiViewModel
 
 /**
- * The design assistant, entire: the sparkles button, the gate, the bridge onto
- * the canvas and all three dialogs.
- *
- * ## Why it is one composable rather than several
- *
- * This used to be spread through `EditorScaffold` — a `rememberSaveable` flag
- * near the top, a ViewModel, a `GlyphEditorBridge` built with `remember`, a
- * `DisposableEffect` registering it, an `IconButton` in the app bar's `actions`
- * row, and a `when (aiGate(...))` block hundreds of lines further down beside
- * the other dialogs. Six places, all of them naming AI types, in a file the Play
- * flavour has to compile without the assistant.
- *
- * Gathering it here costs nothing, because **a dialog is its own window**:
- * `MotionDialog` adds to the window manager rather than to the layout, so
- * composing the chat from inside the app bar's `Row` puts it on screen exactly
- * where composing it from the `Scaffold` did. That is the whole trick that lets
- * the seam be one function, and it is why `main` never names
- * [GlyphEditorBridge], [GlyphApplyResult], [AiGate] or [GlyphToolContext].
- *
- * [onEdit] is the editor's ordinary "something changed" callback — the one that
- * arms the debounced save and claims the panel. The assistant deliberately goes
- * through it rather than around it: a design the assistant drew into is a design
- * that was edited, and every guarantee in `DesignEditorActivity`'s KDoc then
- * applies to an assistant's change unaltered.
+ * The whole assistant in one composable, so `main` never names [GlyphEditorBridge],
+ * [GlyphApplyResult], [AiGate] or [GlyphToolContext]. It fits in the app bar's `Row`
+ * because `MotionDialog` renders in its own window. [onEdit] is the editor's ordinary
+ * change callback, so an assistant's change gets every guarantee an edit gets.
  */
 @Composable
 internal fun RowScope.AssistantActionImpl(state: EditorState, onEdit: () -> Unit) {
-    // Only the DIALOG's visibility lives here — the flow it starts is in an
-    // activity-scoped ViewModel, so rotating the phone while the browser is in
-    // front does not abandon a bound socket.
-    //
-    // `rememberSaveable` is the other half of surviving rotation: a sign-in
-    // leaves for the browser and comes back minutes later, and the phone may
-    // well have been turned over in between. A plain `remember` would keep the
-    // JOB alive and still drop the dialog that reports it finished.
+    // `rememberSaveable`: a sign-in leaves for the browser and comes back minutes later,
+    // quite possibly after a rotation.
     var aiOpen by rememberSaveable { mutableStateOf(false) }
 
-    // Held outside the chat modal so a turn survives the modal being closed, and
-    // so the gate can be decided without composing anything.
+    // Outside the chat modal, so a turn survives it closing.
     val ai = glyphAiViewModel()
     val aiState by ai.state.collectAsStateWithLifecycle()
 
-    // How the assistant reads and writes the canvas.
-    //
-    // Registered rather than injected: the ViewModel outlives this composition,
-    // and a turn that started before a rotation must apply its design to the
-    // editor that exists *after* it. Keyed on the state, so a new editor replaces
-    // the old registration; `clearEditor` is identity-checked for the frame in
-    // which both compositions exist.
+    // Registered, not injected: a turn started before a rotation must apply to the editor
+    // that exists after it. `clearEditor` is identity-checked for the frame where both do.
     val bridge = remember(state) {
         object : GlyphEditorBridge {
             override fun snapshot(): GlyphToolContext = GlyphToolContext(
@@ -86,14 +54,10 @@ internal fun RowScope.AssistantActionImpl(state: EditorState, onEdit: () -> Unit
             )
 
             override fun apply(design: Design): GlyphApplyResult {
-                // No `recordUndo`: the way back from a chat turn is the revert
-                // banner on the message that caused it, which is what `previous`
-                // is handed to. See `EditorState.replaceDesign` for why one
-                // affordance rather than two.
+                // No `recordUndo`: the way back from a turn is the revert banner, which is
+                // what `previous` feeds. See `EditorState.replaceDesign`.
                 val previous = state.replaceDesign(design)
-                    // Model-facing, not user-facing: the orchestrator hands this
-                    // back as a failed tool result so the model does not go on to
-                    // describe a change that did not happen.
+                    // Model-facing, not user-facing: it returns as a failed tool result.
                     ?: return GlyphApplyResult.Refused(
                         "The editor could not open that document, so nothing was changed.",
                     )
@@ -107,9 +71,6 @@ internal fun RowScope.AssistantActionImpl(state: EditorState, onEdit: () -> Unit
         onDispose { ai.clearEditor(bridge) }
     }
 
-    // Sparkles is the app-wide convention for "an assistant does this", so the
-    // icon carries the meaning without a label. It sits where somebody is looking
-    // when they realise placing 137 dots by hand is slow.
     IconButton(onClick = { aiOpen = true }) {
         Icon(
             Icons.Outlined.AutoAwesome,
@@ -117,10 +78,6 @@ internal fun RowScope.AssistantActionImpl(state: EditorState, onEdit: () -> Unit
         )
     }
 
-    // The three doors, in the order [aiGate] puts them: nothing leaves the device
-    // before the disclosure, and nothing reaches OpenAI before the sign-in. The
-    // gate is re-evaluated on every state change, so accepting the disclosure
-    // moves straight on to the sign-in and completing the sign-in opens the chat.
     if (aiOpen) {
         when (aiGate(consented = aiState.consented, signedIn = aiState.signedIn)) {
             AiGate.CONSENT -> GlyphAiConsentDialog(

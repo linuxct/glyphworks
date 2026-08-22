@@ -4,12 +4,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 
-/**
- * Production scheduler: a single background HandlerThread hosts the tickers
- * and all ScreenManager/screen work; GlyphLink hops the final SDK push to
- * its own "glyph-io" looper. Neither is the main thread, so a blocking Glyph
- * binder call can never stall a frame of the UI.
- */
 class AndroidRenderScheduler : RenderScheduler {
 
     private val thread = HandlerThread("compositor-worker").apply { start() }
@@ -17,33 +11,29 @@ class AndroidRenderScheduler : RenderScheduler {
     private var ticker: Runnable? = null
 
     override fun setTicker(intervalMs: Long, tick: () -> Unit) {
-        run {
-            ticker?.let { handler.removeCallbacks(it) }
-            val r = object : Runnable {
-                override fun run() {
-                    if (ticker !== this) return
-                    tick()
-                    if (ticker === this) handler.postDelayed(this, intervalMs)
-                }
+        ticker?.let { handler.removeCallbacks(it) }
+        val next = object : Runnable {
+            override fun run() {
+                if (ticker !== this) return
+                tick()
+                if (ticker === this) handler.postDelayed(this, intervalMs)
             }
-            ticker = r
-            handler.post(r)
         }
+        ticker = next
+        handler.post(next)
     }
 
     override fun clearTicker() {
-        run {
-            ticker?.let { handler.removeCallbacks(it) }
-            ticker = null
-        }
+        ticker?.let { handler.removeCallbacks(it) }
+        ticker = null
     }
 
     override fun postDelayed(delayMs: Long, action: () -> Unit): Cancelable {
-        val r = Runnable { action() }
-        handler.postDelayed(r, delayMs)
+        val scheduled = Runnable { action() }
+        handler.postDelayed(scheduled, delayMs)
         return object : Cancelable {
             override fun cancel() {
-                handler.removeCallbacks(r)
+                handler.removeCallbacks(scheduled)
             }
         }
     }

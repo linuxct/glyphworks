@@ -11,76 +11,13 @@ import space.linuxct.glyphworks.core.design.MarqueeText
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * Builds the system prompt for the design assistant.
- *
- * ## What this has to teach, and why
- *
- * The model on the other end has never seen this app, has never held the phone,
- * and cannot see the panel. Everything it needs is in this string, and the
- * ordering below is not cosmetic — the disc comes first and loudest because
- * **every** hand-authoring failure during this project traced to the same
- * mistake: art drawn to fill a 13x13 square, on hardware that is a 13-cell
- * circle. The corner cells accept characters and never light. A model that does
- * not understand that produces work that looks correct in its own head and
- * arrives on the user's phone with its edges missing.
- *
- * ## Why the numbers are read, not written
- *
- * Every limit quoted here comes from [DesignCodec] and [PanelMask] at build
- * time. A prompt that hardcoded "240 frames" would keep saying so after the
- * constant moved, and the model would be confidently wrong about the one thing
- * it cannot check for itself. The mask counts (137 and 489) are likewise
- * counted, not typed.
- *
- * ## Variant gating
- *
- * The prompt names **only the geometries this design actually carries**. A
- * bellsprout-only design produces a prompt in which the word `arbok` does not
- * appear at all: the model cannot ask for a panel it has never been told about,
- * which makes the tool-level refusal in [GlyphAiTools] a backstop rather than
- * the first line of defence. Adding a geometry to a design is a decision the
- * user makes in the editor, not one the assistant can take.
- *
- * The prompt is sent on every turn, so this distils `docs/glyph-design-format.md`
- * rather than reproducing it. The spec remains authoritative; if the two ever
- * disagree, the spec is right and this is a bug.
- */
 object GlyphAiPrompt {
 
-    /**
-     * The mask rule, written exactly as the model should think about it.
-     *
-     * Kept as a constant because it is asserted by test: this sentence
-     * disappearing from the prompt is a silent regression of the single most
-     * important fact in it.
-     */
     const val MASK_RULE: String = "dx*dx + dy*dy <= (size/2)*(size/2)"
 
-    /**
-     * The palette the worked example uses: off, and full.
-     *
-     * Two entries rather than the default three, deliberately. It is the shortest
-     * possible demonstration of the fact the prose right above it states and that
-     * models get wrong — **a cell character is an index into `levels`, not a
-     * brightness**. With `[0, 4095]` the character `'1'` means 4095, which is
-     * impossible to read as "1 is dim" and therefore impossible to
-     * pattern-match wrongly.
-     */
     val EXAMPLE_LEVELS: List<Int> = listOf(0, 4095)
 
-    /**
-     * Frame 0 of the worked example: a face with its eyes open, 13x13.
-     *
-     * Every lit cell is inside the disc and the drawing is centred on (6, 6) —
-     * the example has to *demonstrate* the rule the prompt shouts about, not just
-     * be legal. `GlyphAiPromptTest` asserts both, so it cannot drift into a
-     * picture that teaches the opposite of the section above it.
-     */
     const val EXAMPLE_CELLS_EYES_OPEN: String =
-        // One source line per panel row, so the face is legible here too. The
-        // model is shown the concatenation, which is what the format wants: 169
-        // characters, row-major, no separators.
         "0000000000000" +
             "0000000000000" +
             "0000000000000" +
@@ -95,7 +32,6 @@ object GlyphAiPrompt {
             "0000000000000" +
             "0000000000000"
 
-    /** Frame 1: the same face mid-blink, the eyes shut to two short bars. */
     const val EXAMPLE_CELLS_EYES_SHUT: String =
         "0000000000000" +
             "0000000000000" +
@@ -111,40 +47,6 @@ object GlyphAiPrompt {
             "0000000000000" +
             "0000000000000"
 
-    /**
-     * One complete, legal `glyph.design` document for [codename], or null if the
-     * example's art cannot be centred on that geometry.
-     *
-     * ## Why an example at all
-     *
-     * Everything before it in the prompt *describes* the format. A model
-     * pattern-matches a filled-in document far better than it reasons from a
-     * description, and `cells` is an unusual enough encoding — base36 palette
-     * indices, row-major, exactly `size*size` of them, corners included — that a
-     * description alone leaves several plausible-but-wrong readings open. This
-     * closes them: two real frames, real strings, and the renderings that go with
-     * them.
-     *
-     * ## Why it is built per panel rather than written out once
-     *
-     * Because the prompt names **only the geometries this design carries** (see
-     * this file's KDoc), and an example is text like any other: a hardcoded
-     * `"bellsprout"` example in an `arbok`-only conversation would put the word
-     * `bellsprout` in front of a model that must never be offered it. The art is
-     * authored once at 13x13 and translated to the centre of any larger panel, so
-     * there is still one drawing and one place to change it.
-     *
-     * ## Why a test can reach it
-     *
-     * So the example can be fed through the real [DesignCodec] and the real
-     * tools. An example that quietly became illegal — a limit moved, a field
-     * renamed — would be worse than no example at all, because it carries the
-     * authority of the prompt: the model would faithfully reproduce a document
-     * this app refuses. `GlyphAiPromptTest` fails the build instead.
-     *
-     * App-managed fields are omitted, which is itself part of the lesson: the
-     * paragraph above it tells the model not to send them, so it must not.
-     */
     fun workedExample(codename: PokemonCodename): String? {
         val open = centred(EXAMPLE_CELLS_EYES_OPEN, codename.size) ?: return null
         val shut = centred(EXAMPLE_CELLS_EYES_SHUT, codename.size) ?: return null
@@ -167,18 +69,6 @@ object GlyphAiPrompt {
         """.trimIndent()
     }
 
-    /**
-     * The 13x13 art of [cells13] placed in the middle of a [size] x [size] frame.
-     *
-     * Translation, never scaling. The art is small, so on a larger panel it stays
-     * exactly as drawn and simply sits in the middle with a wider margin — which
-     * is a *correct* design rather than an interpolated one, and it keeps every
-     * lit cell well inside the larger disc by construction (a cell within 6.5
-     * cells of the centre at 13 is within 6.5 of the centre at 25 too).
-     *
-     * Null for a geometry the translation cannot centre on: smaller than the art,
-     * or of the opposite parity, where "the middle" would be half a cell out.
-     */
     private fun centred(cells13: String, size: Int): String? {
         val source = PokemonCodename.BELLSPROUT.size
         if (size < source || (size - source) % 2 != 0) return null
@@ -192,14 +82,8 @@ object GlyphAiPrompt {
         return String(out)
     }
 
-    /**
-     * The example at 13x13, which is the one every test asserts against. Empty
-     * only if [centred] refused a geometry it is built to handle, which is a
-     * failing test rather than a broken prompt.
-     */
     val WORKED_EXAMPLE: String = workedExample(PokemonCodename.BELLSPROUT).orEmpty()
 
-    /** The system prompt for a conversation about [design]. */
     fun build(design: Design): String {
         val carried = variantsPresent(design)
         return buildString {
@@ -221,28 +105,9 @@ object GlyphAiPrompt {
         }
     }
 
-    /**
-     * The geometries [design] carries — the permitted edit scope, and the same
-     * expression the editor uses for its variant switcher
-     * (`DesignEditorActivity.EditorState.variantsPresent`).
-     */
     fun variantsPresent(design: Design): List<PokemonCodename> =
         PokemonCodename.entries.filter { design.variantFor(it) != null }
 
-    /**
-     * The band of rows on a [size] x [size] panel that has an LED in **every**
-     * column, or null for a geometry that has none.
-     *
-     * This is the one fact a marquee needs and cannot get from the mask rule
-     * without arithmetic: art that stays inside this band never touches the
-     * disc's curve, so it can be shifted horizontally to any offset without a
-     * single cell falling off the panel. At 13x13 it is rows 4-8; at 25x25 rows
-     * 9-15. Computed from [GlyphAsciiPreview.liveSpans], not typed, for the
-     * reason this file's KDoc gives about every other number in the prompt.
-     *
-     * The disc is convex, so the qualifying rows are contiguous and a range
-     * describes them exactly.
-     */
     fun fullWidthRows(size: Int): IntRange? {
         val rows = GlyphAsciiPreview.liveSpans(size).withIndex()
             .filter { (_, span) -> span != null && span.first == 0 && span.last == size - 1 }
@@ -264,13 +129,6 @@ object GlyphAiPrompt {
         costs them a step, so check your work with validate_design first.
     """.trimIndent()
 
-    /**
-     * The disc, its rule, and a picture of each panel the design carries.
-     *
-     * The per-row column table is not redundant with the picture: the picture is
-     * how a model *notices* the shape, the table is how it places a glyph on an
-     * exact row without counting dots.
-     */
     private fun discSection(carried: List<PokemonCodename>): String = buildString {
         append(
             """
@@ -300,24 +158,18 @@ object GlyphAiPrompt {
             ${GlyphAsciiPreview.LEGEND}
             """.trimIndent(),
         )
-        // Built by appending rather than by interpolating into a raw string:
-        // trimIndent() measures the string AFTER interpolation, so dropping a
-        // multi-line panel map into an indented template would make the map's
-        // own indentation the common prefix and leave the surrounding prose
-        // indented. The pictures have to line up, so they are appended whole.
         for (codename in carried) {
             val size = codename.size
             append("\n\n---- ")
             append(codename.codename)
             append(": ${size}x$size, ${size * size} cells per frame, ")
             append("${PanelMask.count(size)} of them are real LEDs ----\n\n")
+            // Appended, not interpolated. `trimIndent()` measures after interpolation, so a
+            // picture dropped into a template sets the common prefix and flattens the prose.
             append("The panel, '#' where an LED exists:\n\n")
             append(GlyphAsciiPreview.panelMap(size).prependIndent("  "))
             append("\n\nLive columns per row (x from 0 on the left, y from 0 at the top):\n\n")
             append(GlyphAsciiPreview.liveSpanTable(size))
-            // Computed rather than written down: the same sentence was hardcoded
-            // for 13x13 and had to be right for every geometry the animation
-            // section quotes it back at.
             fullWidthRows(size)?.let { rows ->
                 val band = "${rows.first} to ${rows.last}"
                 append("\n\n")
@@ -333,21 +185,8 @@ object GlyphAiPrompt {
         }
     }
 
-    /**
-     * The format, then one whole document that obeys it.
-     *
-     * Appended rather than interpolated for the reason [discSection] gives at
-     * length: `trimIndent()` measures the string *after* interpolation, so
-     * dropping a multi-line JSON document into an indented template would make
-     * the document's own indentation the common prefix and leave the prose
-     * indented instead. The example's shape is the point, so it goes in whole.
-     */
     private fun formatSection(carried: List<PokemonCodename>): String = buildString {
         append(formatProse())
-        // The example is drawn for a panel this design carries — the first of
-        // them — so an arbok-only conversation is never shown the word
-        // bellsprout. A design carrying nothing gets no example: it gets told it
-        // cannot be edited instead.
         val codename = carried.firstOrNull() ?: return@buildString
         val example = workedExample(codename) ?: return@buildString
         val size = codename.size
@@ -401,11 +240,6 @@ object GlyphAiPrompt {
         )
     }
 
-    /**
-     * A frame of the worked example drawn by the *real* renderer, so the picture
-     * and the string beside it cannot disagree. Empty rather than null-checked
-     * loudly: a prompt is not a place to throw, and the test proves it renders.
-     */
     private fun examplePreview(cells13: String, codename: PokemonCodename): String =
         centred(cells13, codename.size)
             ?.let { GlyphAsciiPreview.renderCells(it, EXAMPLE_LEVELS, codename) }
@@ -413,30 +247,6 @@ object GlyphAiPrompt {
             .orEmpty()
             .prependIndent("  ")
 
-    /**
-     * A rendered picture with its row indices down the left and a bar at each end.
-     *
-     * ## Why the example is labelled rather than merely described
-     *
-     * The prompt says twice which way y runs, and a model still drew a "10"
-     * upside down and then "rotated it 180 degrees" wrongly. A described mapping
-     * is something to recall; a labelled one is something to read off. So the
-     * worked example — the thing a model pattern-matches hardest — now shows the
-     * index beside every row, and the reader can see that row 0 is the row at the
-     * top rather than take it on trust.
-     *
-     * The bars matter for a second reason: an off-panel cell renders as a SPACE
-     * (see [GlyphAsciiPreview.OFF_PANEL]), so the left and right ends of a row
-     * are invisible without something to mark them, and a row of thirteen cells
-     * whose first four are blank looks nine characters wide. The bars make the
-     * width countable, which is what "is this glyph in the same columns as in the
-     * last frame?" needs.
-     *
-     * Deliberately NOT part of [GlyphAsciiPreview]: the tool results feed a
-     * preview back to the model dozens of times per turn, and adding six
-     * characters to every row of a 25-row frame is real context spent on
-     * decoration. The prompt shows this once, where it teaches something.
-     */
     fun labelledRows(picture: String): String =
         picture.lines().withIndex().joinToString("\n") { (y, line) ->
             "row ${y.toString().padStart(2)} |$line|"
@@ -512,10 +322,6 @@ object GlyphAiPrompt {
         when you mean to change it.
     """.trimIndent()
 
-    /**
-     * The per-conversation injection: what the user is editing right now, and
-     * the closed set of geometries this conversation is allowed to touch.
-     */
     private fun thisDesignSection(design: Design, carried: List<PokemonCodename>): String = buildString {
         append(
             """
@@ -567,35 +373,8 @@ object GlyphAiPrompt {
         }
     }
 
-    /**
-     * The refusal to guess, stated as a sentence a test can hold onto.
-     *
-     * pulseloop's `CoachPromptBuilder` is blunt about this — "Always call tools
-     * to fetch fresh data before answering. Never fabricate numbers." — and it is
-     * blunt for a reason: a model asked about data it cannot see will produce a
-     * confident, plausible, invented answer unless it is told not to. Here the
-     * stakes are higher than a wrong number. `apply_design` replaces the WHOLE
-     * document, so a model that writes from an imagined canvas does not merely
-     * describe the user's art wrongly, it deletes it.
-     */
     const val NO_FABRICATION: String = "YOU CANNOT SEE THE CANVAS."
 
-    /**
-     * Permission to ask instead of guessing — one sentence, so a test can hold it.
-     *
-     * A turn against this backend takes a minute or two, most of it spent drawing
-     * 137 base36 characters and checking them. That makes a wrong guess expensive
-     * in a way it is not in an ordinary chat: the user waits two minutes to find
-     * out the model drew the wrong thing, and then waits two more. Where a fast
-     * assistant should attempt and be corrected, this one is better off asking
-     * once when the request genuinely underdetermines the picture.
-     *
-     * Deliberately worded as **one** question and hedged hard in the prose
-     * underneath, because the failure mode on the other side is worse: an
-     * assistant that interrogates somebody who typed "a smiley" has made a
-     * one-sentence task into a conversation, and this app's whole pitch is that
-     * describing a drawing beats placing 137 dots by hand.
-     */
     const val ONE_QUESTION: String =
         "IF THE REQUEST IS GENUINELY AMBIGUOUS, ASK ONE SHORT QUESTION BEFORE YOU DRAW."
 
@@ -662,87 +441,21 @@ object GlyphAiPrompt {
         you.
     """.trimIndent()
 
-    /**
-     * That a photograph is something to distil, not something to reproduce.
-     *
-     * On device, an attached image of a plain "10" took eight attempts and then
-     * six more, and a logo was on its seventh draft at two and a half minutes.
-     * The pattern in both was the same: the model read the reference as a target,
-     * drew for the detail in it, saw the preview lose that detail to the panel,
-     * and drew the same idea again slightly differently. Nothing in the prompt
-     * told it that the detail was never going to survive — the geometry section
-     * says which cells exist, not what a picture becomes at this resolution.
-     */
     const val REFERENCE_NOT_TARGET: String =
         "A PHOTO, A LOGO OR A SCREENSHOT IS A REFERENCE, NOT A TARGET."
 
-    /**
-     * That the app will do the downscaling, in one line a test holds.
-     *
-     * ## Why this comes first and [REFERENCE_NOT_TARGET] second
-     *
-     * They look as though they disagree and they do not. "Distil, do not
-     * reproduce" is about the *drawing*; this is about the one measurement
-     * nobody in this conversation can take. The model can see an attached photo
-     * perfectly well — what it cannot do is say what that photo averages to at
-     * cell (7, 4), and it was being asked to, 169 times per attempt, with no way
-     * to check any of them. That is the same class of work `scroll_frames`
-     * exists to remove, and it produced the same symptom: an image of a plain
-     * "10" that took eight attempts and then six more.
-     *
-     * So the literal conversion is a tool call, and it is named first because it
-     * is *cheap and informative*: one call shows what this panel actually makes
-     * of the picture. Then the judgement in [REFERENCE_NOT_TARGET] applies to
-     * something real rather than to something imagined — keep it if it reads,
-     * and draw the essence by hand if it does not.
-     */
     const val IMAGE_TOOL_FIRST: String =
         "IF THE USER ATTACHES A PICTURE THEY WANT ON THE PANEL, CALL ${GlyphAiTools.IMAGE_TO_GRID} " +
             "FIRST. DO NOT TRANSCRIBE A PHOTOGRAPH BY HAND."
 
-    /**
-     * That a passing check is a statement about legality and nothing else.
-     *
-     * `validate_design` exists so a document can be corrected before it disturbs
-     * the canvas, and it answers exactly one question: would this app store it. A
-     * model that reads "valid" as "not yet good enough to apply" spends the user's
-     * minutes re-deciding something it already decided, which is what the eight
-     * and then six attempts were made of.
-     */
     const val VALID_IS_NOT_GOOD: String =
         "A DESIGN PASSING validate_design MEANS IT IS LEGAL. IT DOES NOT MEAN IT IS UNFINISHED."
 
-    /**
-     * The ladder, in one line a test holds.
-     *
-     * The instruction that was missing is not "simplify" — it is *how far, and in
-     * what order*. Without a named next step a rejected draft becomes a retry of
-     * the same idea, and a model can spend every round it has on variations that
-     * fail for the identical reason. The rungs below are ordered by how much
-     * legibility each one buys at this size.
-     */
     const val SIMPLIFY_LADDER: String =
         "IF A DRAFT DOES NOT READ, DO NOT NUDGE IT. GO ONE STEP DOWN THIS LADDER AND REDRAW."
 
-    /**
-     * The user's own sentence, kept as close to their words as a prompt allows.
-     *
-     * *"This is about being able to deliver something, which is better than
-     * nothing."* The orchestrator now enforces the same thing from the other end —
-     * a turn that runs out of rounds applies the last draft that validated rather
-     * than failing empty-handed — but that is a backstop for a model that never
-     * decided. This is the instruction to decide.
-     */
     const val LAND_SOMETHING: String = "LANDING SOMETHING BEATS LANDING NOTHING."
 
-    /**
-     * How to spend a budget: simplify by steps, then commit.
-     *
-     * Deliberately its own section between the workflow and the style notes, and
-     * deliberately not inside [STYLE]. Style is taste the user can overrule; this
-     * is about what the assistant does with the user's *time*, which they cannot
-     * see coming and cannot correct halfway through.
-     */
     private val SIMPLIFY = """
         ========================================================================
         WHEN A DRAFT DOES NOT WORK: SIMPLIFY, THEN LAND IT
@@ -804,173 +517,47 @@ object GlyphAiPrompt {
         that ended empty-handed. Never spend your whole budget chasing a perfect drawing.
     """.trimIndent()
 
-    /**
-     * That the app will do the windowing, in one line a test holds.
-     *
-     * ## Why this outranks the method below it
-     *
-     * [ONE_WIDE_BITMAP] is the right construction and it did help. What it cannot
-     * do is *execute* itself: a 19-frame scroll of a 5-row glyph is around sixteen
-     * thousand characters that must all agree, written by a reader that has no way
-     * to check them and no error signal if they do not. Guidance can pick the
-     * method; it cannot make the model reliable at carrying it out.
-     *
-     * `scroll_frames` carries it out instead. The model supplies the one thing it
-     * is good at — a single still picture of the whole message — and the app cuts
-     * every frame out of it. So the tool is named first, and the hand method that
-     * follows is kept as the fallback and as the explanation of what the tool
-     * does, not as the instruction.
-     */
     const val SCROLL_TOOL_FIRST: String =
         "FOR ANY SCROLLING TEXT OR MOVING PICTURE, CALL ${GlyphAiTools.SCROLL_FRAMES}. " +
             "DO NOT WINDOW IT BY HAND."
 
-    /**
-     * The method for scrolling text, in one line a test holds.
-     *
-     * ## The evidence this exists for
-     *
-     * Asked for a "HI" scrolling right to left, the model returned nine frames in
-     * which frame 0 was blank, the brightness changed from `4095` to `2048`
-     * partway through, and the H sheared apart: its uprights were at columns 1
-     * and 3 on rows 4-5 and at columns 2 and 4 on rows 6-8. That last one is the
-     * diagnosis for all of it. **It was shifting each row separately**, five
-     * independent decisions per frame, and an off-by-one in any of them tears the
-     * letter in half — which is exactly what a model is bad at and what nothing
-     * in this prompt had told it not to do.
-     *
-     * So the prompt no longer says "scroll the text". It gives a construction
-     * with one degree of freedom per frame: lay the message out once as a wide
-     * bitmap, then take a panel-width window of it at successive offsets. One
-     * number changes per frame, and the rows cannot disagree because there is
-     * only one offset for all of them.
-     *
-     * That construction is now also a tool — see [SCROLL_TOOL_FIRST] — so this
-     * survives as the fallback and as the description of what `scroll_frames`
-     * does. It is still worth stating: a model that understands the window reads
-     * the tool's output correctly, and a model that does not will hand-nudge rows
-     * the moment the tool does not quite fit what it wants.
-     */
     const val ONE_WIDE_BITMAP: String =
         "BUILD THE WHOLE MESSAGE ONCE AS ONE WIDE BITMAP, THEN CUT EVERY FRAME OUT OF IT."
 
-    /** The invariant [ONE_WIDE_BITMAP] enforces, stated on its own so it is checkable. */
     const val SAME_SHIFT_EVERY_ROW: String =
         "EVERY ROW OF A FRAME MOVES BY THE SAME AMOUNT, OR THE PICTURE TEARS."
 
-    /**
-     * That words get the tool that owns the letterforms, in one line a test
-     * holds.
-     *
-     * [SCROLL_TOOL_FIRST] moved the *windowing* out of the model's hands and
-     * left the drawing with it, which was the right split for a moving picture
-     * and half of one for text. The half it left behind produces a failure
-     * nothing catches: not a torn letter — those are impossible now — but a
-     * merely *bad* one. An `S` that reads as a `5`, a `G` with no crossbar, a
-     * `W` two columns too narrow to be a `W`. Every preview shows it faithfully
-     * and it still ships, because it is not wrong enough to look wrong one frame
-     * at a time.
-     *
-     * A nine-row alphabet is not a judgement the model should be re-deriving per
-     * request. It is settled, so it lives in `MarqueeFont` and the model supplies
-     * the phrase. This line is what stops the model reaching for the more
-     * general tool out of habit.
-     */
     const val MARQUEE_TOOL_FOR_WORDS: String =
         "FOR SCROLLING WORDS, CALL ${GlyphAiTools.MARQUEE_TEXT}. DO NOT DRAW THE LETTERS YOURSELF."
 
-    /**
-     * That the letters are meant to fill the panel, in one line a test holds.
-     *
-     * The five-row band is the safest place to put art and it is not where a
-     * marquee wants to be: it spends 60 % of the panel's height buying an
-     * immunity to clipping at the two columns nobody reads a letter in. The
-     * clipping is the *effect* — Nothing's own big-letter marquee does exactly
-     * this — and a model that does not know that will read the previews, see a
-     * letter cut by the rim and "fix" it by making everything smaller.
-     */
     const val CLIPPING_IS_THE_POINT: String =
         "BIG LETTERS ARE CLIPPED BY THE RIM AS THEY ENTER AND LEAVE. THAT IS THE EFFECT, NOT A FAULT."
 
-    /** The phrase the marquee section is worked through. Short, and all letters. */
     const val MARQUEE_EXAMPLE_TEXT: String = "GLYPH"
 
-    /**
-     * [MARQUEE_EXAMPLE_TEXT] as `MarqueeFont` lays it out — the picture the
-     * prompt shows, generated rather than typed.
-     *
-     * The point of showing it at all is that the model should know what it is
-     * asking for before it asks: nine rows tall, proportional, and legible at a
-     * size where the model's own guess at a letterform would not be. A picture
-     * typed into this file by hand would be a picture of a font that does not
-     * exist the moment anybody adjusts a glyph.
-     */
     val MARQUEE_EXAMPLE_PICTURE: List<String> = MarqueeFont.picture(MARQUEE_EXAMPLE_TEXT)
 
-    /** How wide [MARQUEE_EXAMPLE_TEXT] lays out, in columns. */
     val MARQUEE_EXAMPLE_WIDTH: Int = MarqueeFont.stripWidth(MARQUEE_EXAMPLE_TEXT)
 
-    /**
-     * The frames the example actually produces on [codename] — used by the
-     * prompt for its frame count and by `GlyphAiPromptTest` to put the example
-     * through the real [DesignCodec], so a prompt that quotes a number this app
-     * would refuse fails the build rather than the conversation.
-     */
     fun marqueeExampleFrames(codename: PokemonCodename): List<DesignFrame> =
         MarqueeText.frames(MARQUEE_EXAMPLE_TEXT, codename.size, paletteIndex = EXAMPLE_LEVELS.size - 1)
 
-    /**
-     * That a marquee has an arithmetic length, in one line a test holds.
-     *
-     * Nine frames cannot carry two letters across a 13-wide panel: the message
-     * has to enter, cross and leave, which is a panel's width plus the message's.
-     * The model had no reason to know that and produced a frame count that could
-     * not have worked whatever was in the frames.
-     */
     const val MARQUEE_BUDGET: String =
         "A MARQUEE NEEDS ABOUT PANEL WIDTH + MESSAGE WIDTH FRAMES."
 
-    /** That an empty frame is a beat of darkness, not a free frame. */
     const val NO_BLANK_FRAMES: String =
         "NEVER SHIP A BLANK FRAME UNLESS THE BLANK IS THE ANIMATION."
 
-    /**
-     * That an element's palette index is a property of the element, not of the
-     * frame — the failed "HI" drew frame 1 at `4095` and frames 2-3 at `2048`,
-     * which on the panel is a flicker.
-     */
     const val STEADY_BRIGHTNESS: String =
         "AN ELEMENT KEEPS THE SAME PALETTE INDEX IN EVERY FRAME, UNLESS THE BRIGHTNESS " +
             "CHANGE IS THE ANIMATION."
 
-    /**
-     * Which way y runs, repeated where rows are actually written.
-     *
-     * Stated once in the format section was not enough: a model drew a "10"
-     * upside down, was told, "rotated it 180 degrees" and got it wrong again.
-     * That is not a lapse, it is a mapping it never had — so the prompt now says
-     * it beside the format, labels the worked example's rows with their indices
-     * (see [labelledRows]), and says it a third time in the animation section
-     * with the three string operations that flip a frame.
-     */
     const val ROW_ZERO_IS_TOP: String = "ROW 0 IS THE TOP ROW. y INCREASES DOWNWARD."
 
-    /**
-     * The instruction that catches every other failure in this section.
-     *
-     * A sheared letter, a blank frame and a flicker are all obvious in the ASCII
-     * previews the tools already return, and invisible in the base36 the model
-     * wrote. It was reading the previews one at a time, if at all; what these
-     * defects need is the frames read *against each other*.
-     */
     const val COMPARE_THE_FRAMES: String =
         "COMPARE THE FRAME PREVIEWS AGAINST EACH OTHER BEFORE YOU APPLY."
 
-    /**
-     * The rows of [MARQUEE_BITMAP], declared here because [MARQUEE_WIDTH] reads
-     * them at initialisation and an `object`'s properties initialise in source
-     * order.
-     */
+    // Declared before MARQUEE_WIDTH, which reads it: an object initialises in source order.
     private val MARQUEE_BITMAP_ROWS: List<String> = listOf(
         // H . I
         "1010111",
@@ -980,41 +567,12 @@ object GlyphAiPrompt {
         "1010111",
     )
 
-    /** How wide the worked marquee bitmap is, in columns. See [MARQUEE_BITMAP]. */
     val MARQUEE_WIDTH: Int = MARQUEE_BITMAP_ROWS.first().length
 
-    /** How tall it is, in rows. */
     val MARQUEE_HEIGHT: Int = MARQUEE_BITMAP_ROWS.size
 
-    /**
-     * "HI" as one wide bitmap: the worked example for [ONE_WIDE_BITMAP].
-     *
-     * Deliberately the exact request that failed, and deliberately laid out the
-     * way the prompt tells the model to lay one out — every letter at full
-     * height, one blank column between them, the whole message written down once
-     * before any frame exists. Three columns for the H, one blank, three for the
-     * I. `GlyphAiPromptTest` asserts it is rectangular, because a ragged bitmap
-     * in the prompt would teach precisely the defect this section is about.
-     */
     val MARQUEE_BITMAP: List<String> get() = MARQUEE_BITMAP_ROWS
 
-    /**
-     * Animation, and the mechanics of moving a picture without breaking it.
-     *
-     * ## Why this is its own section, between the ladder and the style notes
-     *
-     * It is neither. The simplify ladder is about what to draw when a draft does
-     * not read; the style notes are taste. This is arithmetic — a frame budget, a
-     * window offset, an axis direction — and every item in it came from a decoded
-     * failure rather than from a preference. It sits after the ladder because one
-     * of its jobs is to fence the ladder off: "fewer frames" is good advice about
-     * poses and ruinous advice about a marquee, and without that sentence the two
-     * sections contradict each other.
-     *
-     * The per-panel arithmetic is generated from [carried] for the reason the
-     * whole prompt is: a bellsprout-only conversation must never see the word
-     * arbok, and a frame count is text like any other.
-     */
     private fun animationSection(carried: List<PokemonCodename>): String = buildString {
         append(ANIMATION_HEADER)
         append("\n\n")
@@ -1022,10 +580,7 @@ object GlyphAiPrompt {
         append("\n\n")
         append(ANIMATION_INTRO)
         append("\n\n")
-        // Appended whole rather than interpolated, for the reason discSection
-        // gives at length: trimIndent() measures AFTER interpolation, so a
-        // multi-line block dropped into an indented template flattens the prose
-        // around it. The bitmap's columns have to line up or it teaches nothing.
+        // Appended, not interpolated; see discSection. The columns have to line up.
         append(MARQUEE_BITMAP_ROWS.joinToString("\n").prependIndent("      "))
         append("\n\n")
         append(MARQUEE_METHOD_TAIL)
@@ -1045,38 +600,9 @@ object GlyphAiPrompt {
         append(SET_FRAMES_SECTION)
     }
 
-    /**
-     * Scrolling **words**, which is a different job from scrolling a picture and
-     * now has a different tool.
-     *
-     * ## Why it comes first, before `scroll_frames`
-     *
-     * Almost every marquee anybody asks for is words. Reaching the general tool
-     * first means drawing an alphabet first, and the alphabet is the part that
-     * comes back subtly wrong — see [MARQUEE_TOOL_FOR_WORDS] for the failure this
-     * is aimed at. So the specialised tool is met first and the general one is
-     * introduced immediately after as what to use when the thing moving is *not*
-     * words.
-     *
-     * ## Why the picture is generated
-     *
-     * The section shows what `GLYPH` actually looks like in this face, and the
-     * numbers it quotes — the width in columns, the frame count on each carried
-     * panel, how long that runs for — come from `MarqueeFont` and `MarqueeText`
-     * rather than from this file. A prompt that quoted a frame count the tool
-     * would not produce would be teaching the model to argue with the tool, and
-     * `GlyphAiPromptTest` puts the example through the real [DesignCodec] so it
-     * cannot quietly become one this app refuses.
-     *
-     * Per-panel arithmetic is generated from [carried] for the reason the whole
-     * prompt is: a bellsprout-only conversation must never see the word arbok.
-     */
     private fun marqueeTextSection(carried: List<PokemonCodename>): String = buildString {
         append(MARQUEE_TEXT_HEAD)
         append("\n\n")
-        // Appended whole rather than interpolated: trimIndent() measures AFTER
-        // interpolation, so a multi-line block dropped into an indented template
-        // flattens the prose around it, and this one's columns have to line up.
         append(MARQUEE_EXAMPLE_PICTURE.joinToString("\n").prependIndent("      "))
         append("\n\n")
         append(MARQUEE_TEXT_BODY)
@@ -1282,26 +808,10 @@ object GlyphAiPrompt {
         invisible in the base36 you just wrote.
     """.trimIndent()
 
-    /**
-     * That a partial edit is a partial send, in one line a test holds.
-     *
-     * `apply_design` is the right primitive and it is also a trap on a long
-     * animation: a 240-frame `arbok` design is around 150 kB of base36, so
-     * "make frame 7 brighter" was a request to retype every frame. Slow and
-     * expensive, and worse than that — 239 of those frames were already correct,
-     * and each one retyped is a fresh chance to drop a character in art nobody
-     * was even looking at. `set_frames` writes a window and reads nothing
-     * outside it, so "leave the rest alone" stops being an instruction the model
-     * has to carry out perfectly.
-     */
     const val SET_FRAMES_FOR_PART: String =
         "TO CHANGE PART OF AN ANIMATION THAT ALREADY EXISTS, CALL ${GlyphAiTools.SET_FRAMES}. " +
             "DO NOT RE-SEND EVERY FRAME."
 
-    /**
-     * How to edit frames without rewriting a design. Last in the animation
-     * section, because it only makes sense once frames exist.
-     */
     private val SET_FRAMES_SECTION = """
         ---- Changing some frames and not others ----
 
@@ -1327,50 +837,11 @@ object GlyphAiPrompt {
         how the design plays.
     """.trimIndent()
 
-    /**
-     * That the user's "bigger" beats this file's taste, in one line a test holds.
-     *
-     * The margin advice this replaced ("Leave a margin... a one-cell gap all round
-     * makes the art look intentional rather than cropped") sat directly under the
-     * loudest section in the prompt, which is about the disc. Together they read
-     * as one instruction — *stay away from the edge* — and on device that showed
-     * up as an assistant that argued when the user asked for a bolder shape and
-     * said in as many words that it was fine for the art to overflow.
-     *
-     * So the fact and the taste are split. The fact (cells outside the inscribed
-     * circle have no LED) stays exactly as loud as it was, because it is still
-     * true and still the thing that goes wrong. The taste is demoted to a default,
-     * and this sentence puts the user above it: a stated preference is not
-     * something to weigh against a style note.
-     */
     const val BOLD_BEATS_MARGIN: String =
         "IF THE USER ASKS FOR BIGGER OR BOLDER, OR SAYS THEY ACCEPT OVERFLOW, THAT WINS OUTRIGHT."
 
-    /**
-     * That grey exists and is worth using, in one line a test holds.
-     *
-     * On device the model produced pure on/off every single time, and both causes
-     * were this file's: the old style note said to use mid levels "not for the
-     * main shape", which reads as *avoid grey*, and nothing anywhere told it that
-     * a mid level is already in the palette. It is — [DEFAULT_LEVELS] is
-     * `[0, 2048, 4095]`, so on a default design `'1'` is a half-brightness cell it
-     * can place without touching `levels` at all. The music note that prompted
-     * this had hard aliased curves that one grey per step would have softened.
-     *
-     * The true half of the old note is kept below: a drawing made entirely of mid
-     * grey does look dim, and plenty of icons are right in pure on/off. This is
-     * "grey is available and often better", not "always use grey".
-     */
     const val GREY_AVAILABLE: String = "INTERMEDIATE BRIGHTNESS IS AVAILABLE, AND OFTEN BETTER."
 
-    /**
-     * Taste, kept apart from fact.
-     *
-     * Everything above this point in the prompt is checkable: a length, a limit, a
-     * mask rule, a document that either validates or does not. This section is
-     * advice, and the two must not blur into each other — see [BOLD_BEATS_MARGIN]
-     * for what happened when they did.
-     */
     private val STYLE = """
         ========================================================================
         MAKING ART THAT READS ON THIS PANEL

@@ -8,24 +8,10 @@ import space.linuxct.glyphworks.core.design.DesignVariant
 import space.linuxct.glyphworks.core.design.KeyMode
 import space.linuxct.glyphworks.core.design.PokemonCodename
 
-/**
- * Designs the `core/ai` tests share, in the shape [space.linuxct.glyphworks.core.design.DesignCodec]
- * would hand back: canonical timestamps, a safe id, palette entries in range.
- *
- * That matters — several tests assert that a document goes through `apply_design`
- * and comes back *identical*, which is only meaningful if the fixture is already
- * normalised. A fixture the codec would rewrite would make those assertions
- * either fail or, worse, pass for the wrong reason.
- *
- * Following `Fakes.kt`'s idiom of keeping shared test material out of the test
- * classes themselves.
- */
 object TestDesigns {
 
-    /** Every cell at palette index 0 — an LED that exists and is off. */
     fun blank(codename: PokemonCodename): String = "0".repeat(codename.cellCount)
 
-    /** Every cell at palette index 2 — full brightness under [DEFAULT_LEVELS]. */
     fun lit(codename: PokemonCodename): String = "2".repeat(codename.cellCount)
 
     fun design(
@@ -64,6 +50,5 @@ object TestDesigns {
         ),
     )
 
-    /** A design carrying artwork for no panel this build knows. Not editable. */
     fun noVariants(): Design = design(emptyMap())
 }

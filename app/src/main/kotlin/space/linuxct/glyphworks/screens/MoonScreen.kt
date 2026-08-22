@@ -2,13 +2,13 @@ package space.linuxct.glyphworks.screens
 
 import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.ScreenContext
+import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import kotlin.math.cos
 import kotlin.math.sqrt
 
 /**
- * Lunar phase from the mean synodic month (29.530588853 days) anchored at
- * the new moon of 2000-01-06 18:14 UTC. Accurate to a few hours — plenty for
- * a 13x13 rendering.
+ * Lunar phase from the mean synodic month (29.530588853 days), anchored at the new
+ * moon of 2000-01-06 18:14 UTC. Good to a few hours, which is plenty here.
  */
 object MoonMath {
     private const val NEW_MOON_EPOCH_MS = 947_182_440_000L
@@ -23,13 +23,6 @@ object MoonMath {
     }
 }
 
-/**
- * Moon Phase: a textured lunar disc showing the real near-side surface
- * (maria as dim regions, highlands bright) with the current phase carved out
- * by a soft terminator. The dark side glows faintly (earthshine) so the full
- * disc stays readable. The surface brightness maps below are our own coarse
- * downsample of the real Moon's near-side — an astronomical fact, north up.
- */
 class MoonScreen : GlyphScreen {
     override val id = "moon"
     override val interactive = false
@@ -38,7 +31,7 @@ class MoonScreen : GlyphScreen {
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
-        ctx.scheduler.setTicker(60_000) { tick() }
+        ctx.scheduler.setTicker(TICK_MS) { tick() }
     }
 
     override fun onDeactivate() {
@@ -51,9 +44,14 @@ class MoonScreen : GlyphScreen {
     }
 
     companion object {
+        const val TICK_MS = 60_000L
+
         private const val REF_MAX = 147 // brightest cell in the surface maps
         private const val EARTHSHINE = 0.09f // faint glow on the unlit side
         private const val SOFT = 0.14f // terminator softness (fraction of radius)
+
+        private const val FULL_MOON_PHASE = 0.5
+        private const val CHORD_EPSILON = 0.0001f
 
         fun renderFrame(size: Int, phase: Double): IntArray {
             val n = if (size >= 25) 25 else 13
@@ -62,31 +60,30 @@ class MoonScreen : GlyphScreen {
             val center = (n - 1) / 2f
             val r = n / 2f
             val terminator = cos(2.0 * Math.PI * phase).toFloat()
-            val waxing = phase <= 0.5
+            val waxing = phase <= FULL_MOON_PHASE
 
             for (y in 0 until n) {
                 for (x in 0 until n) {
                     val ref = map[y * n + x]
                     if (ref == 0) continue // outside the lunar disc
-                    val base = ref * 4095 / REF_MAX
+                    val base = ref * MAX_BRIGHTNESS / REF_MAX
 
                     val dx = x - center
                     val dy = y - center
-                    val chord = sqrt((r * r - dy * dy).coerceAtLeast(0.0001f))
+                    val chord = sqrt((r * r - dy * dy).coerceAtLeast(CHORD_EPSILON))
                     val xn = (dx / chord).coerceIn(-1f, 1f)
-                    // Signed distance past the terminator (>0 = lit side).
+                    // Signed distance past the terminator, positive on the lit side.
                     val signed = if (waxing) xn - terminator else -xn - terminator
                     val litFactor = (0.5f + signed / (2f * SOFT)).coerceIn(0f, 1f)
 
                     val bright = base * (EARTHSHINE + (1f - EARTHSHINE) * litFactor)
-                    out[y * size + x] = bright.toInt().coerceIn(0, 4095)
+                    out[y * size + x] = bright.toInt().coerceIn(0, MAX_BRIGHTNESS)
                 }
             }
             return out
         }
 
-        // Coarse brightness maps of the real Moon's near-side (0..147),
-        // north up, row-major — one per matrix size.
+        // Brightness maps of the Moon's near-side, 0..147, north up, row-major.
         private val MOON_13 = intArrayOf(
             0, 0, 0, 15, 20, 25, 37, 36, 24, 13, 0, 0, 0,
             0, 0, 11, 22, 20, 25, 46, 57, 44, 43, 26, 0, 0,

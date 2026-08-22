@@ -7,19 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The SSE parse and the request body — the two halves of the wire format, and the
- * only two parts of the network path that can be executed without a network.
- *
- * The stream cases below are not hypothetical. Every one of them is a shape a
- * real Responses API stream produces: keep-alive comments between events, the
- * `event:` line that precedes every `data:` line, a response whose visible text
- * arrives in two output items, a function call whose arguments come in six
- * fragments, and — the case that costs a user their turn if it is wrong — a
- * connection that dies with half a JSON object on the wire.
- */
 class ChatWireTest {
-    // region text
 
     @Test
     fun `text deltas are streamed in order and the completed response wins`() {
@@ -50,7 +38,6 @@ class ChatWireTest {
             lines(
                 created("resp_3"),
                 textDelta("msg_1", "The panel is "),
-                // The connection died here: half an event, no completed, no [DONE].
                 """data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"rou""",
             ),
             onTextDelta = { seen += it },
@@ -60,10 +47,6 @@ class ChatWireTest {
         assertEquals("The panel is ", ok.response.outputText)
         assertEquals(listOf("The panel is "), seen)
     }
-
-    // endregion
-
-    // region function calls
 
     @Test
     fun `function call arguments are assembled from their fragments`() {
@@ -108,8 +91,6 @@ class ChatWireTest {
         )
 
         val response = (result as ChatStreamResult.Ok).response
-        // The `reasoning` item is a type this build has no use for and must not
-        // choke on — the array will grow more of them over time.
         assertEquals(1, response.functionCalls.size)
         assertEquals("get_current_design", response.functionCalls[0].name)
         assertEquals("{}", response.functionCalls[0].arguments)
@@ -129,10 +110,6 @@ class ChatWireTest {
         assertEquals("Let me look.", response.outputText)
         assertEquals(1, response.functionCalls.size)
     }
-
-    // endregion
-
-    // region failures and noise
 
     @Test
     fun `an error event fails the stream and stops reading`() {
@@ -161,7 +138,7 @@ class ChatWireTest {
                 "not an sse line at all",
                 "data: ",
                 "data: {this is not json}",
-                """data: {"type":"response.output_text.delta"}""", // no delta field
+                """data: {"type":"response.output_text.delta"}""",
                 """data: ["an","array","not","an","object"]""",
                 """data: {"type":"response.something.we.have.never.heard.of","x":1}""",
                 "event: response.output_text.delta",
@@ -175,10 +152,6 @@ class ChatWireTest {
         assertEquals(listOf("survived"), seen)
     }
 
-    // endregion
-
-    // region request
-
     @Test
     fun `a request carries the streaming and no-store flags it depends on`() {
         val body = ChatWire.encodeRequest(
@@ -189,9 +162,7 @@ class ChatWireTest {
             ),
         )
 
-        // `stream` is a default, so a serializer that dropped defaults would
-        // silently ask for a non-streaming response and the whole parse above
-        // would see one JSON document and no events.
+        // `stream` is a default. Drop defaults and the response stops streaming.
         assertTrue(body, body.contains("\"stream\":true"))
         assertTrue(body, body.contains("\"store\":false"))
         assertTrue(body, body.contains("\"model\":\"${ChatWire.MODEL}\""))
@@ -246,13 +217,10 @@ class ChatWireTest {
     fun `tool specs are embedded verbatim except for strict, which the backend rejects`() {
         val specs = ChatWire.toolSpecs(GlyphAiTools.build())
 
-        // Counted from the tools rather than written down: adding one is a
-        // routine change, and a literal here would fail for no reason.
         assertEquals(GlyphAiTools.build().size, specs.size)
         specs.forEach { assertTrue(it.toString(), !it.toString().contains("strict")) }
         assertTrue(specs.any { it.toString().contains("\"name\":\"apply_design\"") })
 
-        // Kept when asked for, since the standard API requires it.
         val strict = ChatWire.toolSpecs(GlyphAiTools.build(), dropStrict = false)
         assertTrue(strict.any { it.toString().contains("strict") })
     }
@@ -264,18 +232,6 @@ class ChatWireTest {
         assertNotNull(ChatWire.toolSpec("""{"type":"function","name":"x"}"""))
     }
 
-    // endregion
-
-    // region model
-
-    /**
-     * The whole point of the override is to rescue a signed-in user whose model
-     * id has stopped being accepted, so the one outcome that must be impossible
-     * is this function producing something the backend will reject on its own
-     * account. Blank, spaces and a null (nothing stored at all) are the three
-     * ways a text field arrives empty, and all three are a request for the
-     * default rather than a request for `"model": ""`.
-     */
     @Test
     fun `an empty override of any kind falls back to the built-in model`() {
         assertEquals(ChatWire.MODEL, ChatWire.resolveModel(""))
@@ -313,6 +269,4 @@ class ChatWireTest {
 
     private fun completed(id: String, vararg items: String) =
         """data: {"type":"response.completed","response":{"id":"$id","output":[${items.joinToString(",")}]}}"""
-
-    // endregion
 }

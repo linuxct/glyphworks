@@ -10,13 +10,6 @@ import android.os.Looper
 import space.linuxct.glyphworks.core.ShakePort
 import kotlin.math.sqrt
 
-/**
- * Shake detection: total acceleration magnitude > 2.7 g with a 500 ms
- * debounce. Runs only while a render session is live (start/stop from the
- * session controller). Feeds both the ShakePort recency window (ambient
- * shake-to-show gating, 30 s) and an immediate onShake callback (dice/coin
- * roll, counter reset).
- */
 class ShakeDetector(app: Context) : ShakePort, SensorEventListener {
 
     private val sensorManager = app.getSystemService(SensorManager::class.java)
@@ -52,10 +45,10 @@ class ShakeDetector(app: Context) : ShakePort, SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
-        val x = event.values[0]
-        val y = event.values[1]
-        val z = event.values[2]
-        val gForce = sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
+        val accelX = event.values[0]
+        val accelY = event.values[1]
+        val accelZ = event.values[2]
+        val gForce = sqrt(accelX * accelX + accelY * accelY + accelZ * accelZ) / SensorManager.GRAVITY_EARTH
         if (gForce > SHAKE_THRESHOLD_G) {
             val now = System.currentTimeMillis()
             if (now - lastTriggerAt > DEBOUNCE_MS) {

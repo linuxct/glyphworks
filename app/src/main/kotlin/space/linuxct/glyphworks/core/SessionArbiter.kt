@@ -1,29 +1,11 @@
 package space.linuxct.glyphworks.core
 
-/**
- * The slice of the arbiter the key router depends on. Kept as an interface so
- * the router can be unit-tested without the Android-coupled GlyphLink.
- */
 interface SessionControl {
-    /** True while some source (toy / direct / preview) wants the session running. */
     val sessionShouldRun: Boolean
 
-    /** Re-evaluate conditions and (re)start the session if it should be running. */
     fun revive()
 }
 
-/**
- * Decides when the single render session runs and on behalf of whom.
- * All sources drive the same ScreenManager, so ownership changes never
- * restart the session — the session runs while ANY source wants it:
- *
- *  - TOY:     the system bound our AOD toy service (highest authority)
- *  - DIRECT:  master toggle on + supported device (accessibility-driven mode)
- *  - PREVIEW: MainActivity is showing an in-app preview
- *
- * One shared GlyphLink lease is held while the session runs; GlyphLink's 3 s
- * teardown grace absorbs quick rebind cycles.
- */
 class SessionArbiter(
     private val glyphLink: GlyphLink,
     private val scheduler: RenderScheduler,
@@ -58,7 +40,6 @@ class SessionArbiter(
         recompute()
     }
 
-    /** Re-evaluates conditions; used by the key router to revive a dead session. */
     @Synchronized
     override fun revive() {
         recompute()

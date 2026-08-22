@@ -13,14 +13,6 @@ import kotlin.math.atan2
 
 private val SIZES = intArrayOf(13, 25)
 
-// ===================== Dino =====================
-
-/**
- * Pins the spawner to one cactus variant and one gap. [DinoGame] asks for the
- * variant with bound VARIANTS.size and for the gap spread with bound
- * GAP_SPREAD_UNITS + 1, which are different numbers, so the two calls can be
- * told apart and driven independently.
- */
 private class FixedRandom(private val variant: Int, private val gapExtra: Int = 0) : RandomPort {
     override fun nextInt(bound: Int): Int =
         if (bound == DinoGame.VARIANTS.size) variant else gapExtra
@@ -28,7 +20,6 @@ private class FixedRandom(private val variant: Int, private val gapExtra: Int = 
     override fun nextFloat(): Float = 0f
 }
 
-/** The smallest cactus at the widest spacing: nothing to trip over. */
 private class EasyRandom : RandomPort {
     override fun nextInt(bound: Int): Int =
         if (bound == DinoGame.VARIANTS.size) 0 else bound - 1
@@ -39,15 +30,11 @@ private class EasyRandom : RandomPort {
 class DinoScreenTest {
     private fun obst(x: Int, w: Int, h: Int) = DinoScreen.Companion.Obst(x, w, h)
 
-    // ---------- goldens ----------
-
     @Test
     fun `idle running and game over render at both sizes`() {
         GoldenAscii.check("dino_13_idle", DinoScreen.renderIdle(13), 13)
         GoldenAscii.check("dino_25_idle", DinoScreen.renderIdle(25), 25)
 
-        // Mid-run: grounded on stride A with a tall thin cactus and a wide low
-        // one inbound (both real [DinoGame.VARIANTS], scaled to each matrix).
         GoldenAscii.check(
             "dino_13_run",
             DinoScreen.renderRun(13, 0, 0, 0, listOf(obst(7, 1, 2), obst(11, 2, 1))),
@@ -58,7 +45,6 @@ class DinoScreenTest {
             DinoScreen.renderRun(25, 0, 0, 0, listOf(obst(14, 2, 4), obst(21, 4, 2))),
             25,
         )
-        // Mid-jump, legs tucked, right over a cactus.
         GoldenAscii.check(
             "dino_13_jump",
             DinoScreen.renderRun(13, 4, -1, 5, listOf(obst(3, 1, 2))),
@@ -73,13 +59,6 @@ class DinoScreenTest {
         GoldenAscii.check("dino_25_over_42", DinoScreen.renderGameOver(25, 42, true), 25)
     }
 
-    // ---------- physics ----------
-
-    /**
-     * Measures the real jump arc by driving a real [DinoGame] (nothing is
-     * re-derived here): the per-tick height in cells, from the impulse until
-     * touchdown.
-     */
     private fun jumpArc(size: Int): List<Int> {
         val g = DinoGame(size, EasyRandom())
         g.jump()
@@ -88,7 +67,6 @@ class DinoScreenTest {
             g.step()
             heights += g.jumpCells()
         }
-        // One clean hop: off the ground on the first tick, back down on the last.
         assertTrue("the jump did not leave the ground", heights.first() > 0)
         assertEquals("the jump did not land", 0, heights.last())
         assertTrue("suspiciously short arc: $heights", heights.size > 8)
@@ -101,14 +79,9 @@ class DinoScreenTest {
             val u = DinoScreen.unit(size)
             val arc = jumpArc(size)
 
-            // The apex clears the tallest cactus outright.
             val tallest = DinoGame.MAX_OBSTACLE_H * u
             assertTrue("apex ${arc.max()} < $tallest on $size", arc.max() >= tallest)
 
-            // ...and it stays high enough for long enough. A cactus overlaps the
-            // character's box over (charW + cactusW) cells of travel, so the ticks
-            // spent at or above its top must cover more ground than that. Note the
-            // SLOWEST scroll is the hard case: the same overlap takes more ticks.
             for ((wu, hu) in DinoGame.VARIANTS) {
                 val needed = hu * u
                 val ticksAbove = arc.count { it >= needed }
@@ -126,40 +99,28 @@ class DinoScreenTest {
         }
     }
 
-    // ---------- state machine ----------
-
     @Test
     fun `never jumping ends the run and a press restarts it`() {
         val h = TestHarness(13)
         val screen = DinoScreen()
         screen.onActivate(h.context)
         assertTrue(h.lastFrame().contentEquals(DinoScreen.renderIdle(13)))
-        assertNull(h.scheduler.tickerInterval) // idle is one static frame
+        assertNull(h.scheduler.tickerInterval)
 
-        screen.onEvent(Events.CHANGE) // start
+        screen.onEvent(Events.CHANGE)
         assertEquals(DinoScreen.TICK_MS, h.scheduler.tickerInterval)
 
-        // Stand still and let the first cactus arrive: the run must end. How
-        // many ticks that takes is a physics detail (a run opens with
-        // DinoGame.INITIAL_LEAD_UNITS of clear ground), and a fixed count also
-        // left the score blink on whichever phase it happened to land on — so
-        // wait for the state change itself, which ends on the LIT half by
-        // construction: the switch to the blink ticker fires its first tick
-        // immediately.
         var guard = 0
         while (h.scheduler.tickerInterval == DinoScreen.TICK_MS && guard++ < 400) h.scheduler.tick()
         assertEquals(DinoScreen.BLINK_MS, h.scheduler.tickerInterval)
         val score = (0..999).first { s ->
             h.lastFrame().contentEquals(DinoScreen.renderGameOver(13, s, true))
         }
-        // The score blinks: the very next tick is the blank half, the one after
-        // is the score again.
         h.scheduler.tick()
         assertTrue(h.lastFrame().all { it == 0 })
         h.scheduler.tick()
         assertTrue(h.lastFrame().contentEquals(DinoScreen.renderGameOver(13, score, true)))
 
-        // One press restarts: back on the fast ticker, running again.
         screen.onEvent(Events.CHANGE)
         assertEquals(DinoScreen.TICK_MS, h.scheduler.tickerInterval)
         h.scheduler.tick(3)
@@ -180,10 +141,7 @@ class DinoScreenTest {
     }
 }
 
-// ===================== Spin the Bottle =====================
-
 class BottleScreenTest {
-    /** Brightness-weighted aim of a frame, in the 0 = up, clockwise convention. */
     private fun aimOf(frame: IntArray, size: Int): Float {
         val c = size / 2
         var sx = 0.0
@@ -207,17 +165,11 @@ class BottleScreenTest {
     private fun litCells(frame: IntArray, size: Int) =
         (0 until size * size).filter { frame[it] > 0 }.map { (it % size) to (it / size) }
 
-    // ---------- goldens ----------
-
     @Test
     fun `the idle sprite the pointer and the burst render at both sizes`() {
-        // The sprite survives untouched, and only ever upright.
         GoldenAscii.check("bottle_13_idle", BottleScreen.renderIdle(13), 13)
         GoldenAscii.check("bottle_25_idle", BottleScreen.renderIdle(25), 25)
         for (size in SIZES) {
-            // 0 and 90 are the easy angles. 37 and 113 are the awkward ones the
-            // old rotated sprite turned into confetti; read these two as ASCII
-            // when they change - they are the proof the pointer is legible.
             for (a in intArrayOf(0, 37, 90, 113)) {
                 GoldenAscii.check(
                     "bottle_${size}_point_$a",
@@ -234,14 +186,6 @@ class BottleScreenTest {
         }
     }
 
-    // ---------- the sprite ----------
-
-    // ---------- the pointer ----------
-
-    /**
-     * The whole point of the rewrite: an awkward angle must be as legible as a
-     * right angle. The rotated sprite this replaces failed every one of these.
-     */
     @Test
     fun `the pointer aims where it is told at every whole degree`() {
         for (size in SIZES) {
@@ -256,10 +200,6 @@ class BottleScreenTest {
         }
     }
 
-    // ---------- spin timing ----------
-
-    // ---------- the screen ----------
-
     @Test
     fun `a press spins the pointer and it comes to rest after the burst`() {
         val h = TestHarness(13)
@@ -270,22 +210,17 @@ class BottleScreenTest {
 
         screen.onEvent(Events.CHANGE)
         assertEquals(BottleScreen.SPIN_TICK_MS, h.scheduler.tickerInterval)
-        // The bottle actually moves during the spin.
         val early = h.lastFrame()
         h.scheduler.tick(10)
         assertTrue(!h.lastFrame().contentEquals(early))
 
-        // Run the spin out: the ticker slows to the burst period.
-        var guard = 10 // the 10 ticks already spent above
+        var guard = 10
         while (h.scheduler.tickerInterval == BottleScreen.SPIN_TICK_MS && guard++ < 400) {
             h.scheduler.tick()
         }
         assertEquals(BottleScreen.BURST_MS, h.scheduler.tickerInterval)
-        // ~2.9 s of spin at 40 ms a frame.
         assertTrue("spin ran for $guard frames", guard in 70..77)
 
-        // The burst is two alternating frames and nothing else, and it is
-        // bounded: the ticker stops on its own.
         val burst = ArrayList<List<Int>>()
         burst += h.lastFrame().toList()
         guard = 0
@@ -297,8 +232,6 @@ class BottleScreenTest {
         assertEquals("burst must be a 2-phase pulse", 2, burst.distinct().size)
         assertEquals(BottleScreen.BURST_FRAMES, guard)
 
-        // It settles on the bare resting pointer - the dark half of the pulse,
-        // with the flourish gone - and never on the bottle sprite.
         val rest = h.lastFrame()
         val dark = burst.distinct().minByOrNull { p -> p.count { it > 0 } }!!
         assertEquals("resting frame still carries the burst", dark, rest.toList())
@@ -311,8 +244,6 @@ class BottleScreenTest {
 
     @Test
     fun `the resting angle comes from the random port`() {
-        // Two different seeds must be able to disagree; and a spin from a rest
-        // position never pops back to upright first.
         val h = TestHarness(25)
         val screen = BottleScreen()
         screen.onActivate(h.context)
@@ -326,18 +257,13 @@ class BottleScreenTest {
         assertNull(h.scheduler.tickerInterval)
 
         screen.onEvent(Events.CHANGE)
-        // First frame of the new spin is still where it was resting, not
-        // upright: no wind-up, no jump-cut back to vertical.
         assertTrue(h.lastFrame().contentEquals(firstRest))
         runOut()
         assertTrue(!h.lastFrame().contentEquals(firstRest))
     }
 }
 
-// ===================== Rock Paper Scissors =====================
-
 class RpsScreenTest {
-    // ---------- goldens ----------
 
     @Test
     fun `idle banner countdown and all three throws render at both sizes`() {
@@ -356,8 +282,6 @@ class RpsScreenTest {
         }
     }
 
-    // ---------- the symbols ----------
-
     @Test
     fun `there are exactly three distinct throws and rock is the idle symbol`() {
         for (size in SIZES) {
@@ -367,24 +291,15 @@ class RpsScreenTest {
                 RpsScreen.renderThrow(size, RpsScreen.ROCK)
                     .contentEquals(RpsScreen.renderIdle(size)),
             )
-            // Out-of-range ids fall back to rock rather than crashing or blanking.
             assertTrue(
                 RpsScreen.renderThrow(size, 9).contentEquals(RpsScreen.renderIdle(size)),
             )
         }
     }
 
-    /** Lit cells of a frame as (x, y). */
     private fun litCells(f: IntArray, size: Int) =
         (0 until size * size).filter { f[it] > 0 }.map { (it % size) to (it / size) }
 
-    // ---------- the banner ----------
-
-    // ---------- the countdown ----------
-
-    // ---------- the state machine ----------
-
-    /** Names the phase a pushed frame belongs to, or "?" if it matches nothing. */
     private fun classify(f: IntArray, size: Int): String = when {
         f.contentEquals(RpsScreen.renderBanner(size)) -> "banner"
         (0..24).any { b -> f.contentEquals(RpsScreen.renderCountdown(size, 3, b)) } -> "3"
@@ -401,13 +316,11 @@ class RpsScreenTest {
             val screen = RpsScreen()
             screen.onActivate(h.context)
             assertTrue(h.lastFrame().contentEquals(RpsScreen.renderIdle(size)))
-            assertNull(h.scheduler.tickerInterval) // idle is static
+            assertNull(h.scheduler.tickerInterval)
 
             screen.onEvent(Events.CHANGE)
             assertEquals(RpsScreen.TICK_MS, h.scheduler.tickerInterval)
             val from = h.frames.size - 1
-            // 2800 ms of sequence at 70 ms per tick = 40 ticks; a couple more to
-            // land on the reveal.
             h.scheduler.tick(44)
             assertNull("the reveal must stop the ticker", h.scheduler.tickerInterval)
 
@@ -417,7 +330,6 @@ class RpsScreenTest {
             phases.forEach { if (collapsed.lastOrNull() != it) collapsed += it }
             assertEquals(listOf("banner", "3", "2", "1", "reveal"), collapsed)
 
-            // The reveal holds: more time changes nothing.
             val held = h.lastFrame()
             h.scheduler.advanceTime(10_000)
             assertTrue(h.lastFrame().contentEquals(held))
@@ -429,8 +341,6 @@ class RpsScreenTest {
 
     @Test
     fun `the throw comes from the random port`() {
-        // Over several presses with the seeded fake, more than one throw shows
-        // up — the pick is not hard-coded.
         val h = TestHarness(13)
         val screen = RpsScreen()
         screen.onActivate(h.context)

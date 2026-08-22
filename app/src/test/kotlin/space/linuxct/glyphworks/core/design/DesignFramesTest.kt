@@ -6,6 +6,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
+private fun cellIndex(x: Int, y: Int, size: Int) = y * size + x
+
 class DesignFramesTest {
     private val palette = DEFAULT_LEVELS
 
@@ -13,20 +15,19 @@ class DesignFramesTest {
     fun `decodes a bellsprout frame against the palette`() {
         val size = PokemonCodename.BELLSPROUT.size
         val cells = StringBuilder("0".repeat(size * size)).apply {
-            setCharAt(0, '1')                 // (0,0) -> 50% grey
-            setCharAt(2 * size + 3, '2')      // (3,2) -> white
-            setCharAt(size * size - 1, '2')   // (12,12) -> white
+            setCharAt(cellIndex(0, 0, size), '1')
+            setCharAt(cellIndex(3, 2, size), '2')
+            setCharAt(cellIndex(size - 1, size - 1, size), '2')
         }.toString()
 
         val frame = DesignFrames.decode(cells, palette, size)
 
         assertNotNull(frame)
         assertEquals(size * size, frame!!.size)
-        assertEquals(2048, frame[0])
-        // Row-major: the cell at (x=3, y=2) is at index y * size + x.
-        assertEquals(4095, frame[2 * size + 3])
-        assertEquals(4095, frame[size * size - 1])
-        assertEquals(0, frame[1])
+        assertEquals(2048, frame[cellIndex(0, 0, size)])
+        assertEquals(4095, frame[cellIndex(3, 2, size)])
+        assertEquals(4095, frame[cellIndex(size - 1, size - 1, size)])
+        assertEquals(0, frame[cellIndex(1, 0, size)])
     }
 
     @Test
@@ -59,33 +60,29 @@ class DesignFramesTest {
     fun `a frame of the wrong length does not decode`() {
         assertNull(DesignFrames.decode("0".repeat(168), palette, 13))
         assertNull(DesignFrames.decode("0".repeat(170), palette, 13))
-        // An arbok frame handed to a bellsprout panel is a length mismatch, not
-        // something to crop.
         assertNull(DesignFrames.decode("0".repeat(625), palette, 13))
     }
 
     @Test
     fun `a character outside the palette does not decode`() {
-        // '3' is a legal base36 digit but this palette only defines indices 0..2.
         val cells = "3" + "0".repeat(168)
         assertNull(DesignFrames.decode(cells, palette, 13))
     }
 
     @Test
     fun `upper case is accepted on decode and never written on encode`() {
-        // A 20-entry palette, so base36 'j' (= index 19) is the last legal digit.
-        val long = List(20) { it * 200 }
+        val palette20 = List(20) { it * 200 }
         val size = 13
         val upper = "J" + "0".repeat(168)
         val lower = "j" + "0".repeat(168)
 
-        val fromLower = DesignFrames.decode(lower, long, size)
+        val fromLower = DesignFrames.decode(lower, palette20, size)
         assertNotNull(fromLower)
-        assertEquals(long[19], fromLower!![0])
-        assertArrayEquals(fromLower, DesignFrames.decode(upper, long, size))
+        assertEquals(palette20[19], fromLower!![0])
+        assertArrayEquals(fromLower, DesignFrames.decode(upper, palette20, size))
 
-        val frame = IntArray(size * size).also { it[0] = long[19] }
-        val encoded = DesignFrames.encode(frame, long, size)!!
+        val frame = IntArray(size * size).also { it[0] = palette20[19] }
+        val encoded = DesignFrames.encode(frame, palette20, size)!!
         assertEquals(encoded, encoded.lowercase())
     }
 
@@ -94,8 +91,8 @@ class DesignFramesTest {
         val size = 13
         val frame = IntArray(size * size)
         frame[0] = 0
-        frame[1] = 900      // nearer 0 than 2048
-        frame[2] = 1500     // nearer 2048
+        frame[1] = 900
+        frame[2] = 1500
         frame[3] = 4095
 
         val cells = DesignFrames.encode(frame, palette, size)!!

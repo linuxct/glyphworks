@@ -28,16 +28,10 @@ import androidx.compose.ui.unit.dp
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 
-/**
- * Prominent pre-flight disclosure shown before sending the user to the
- * system accessibility settings (Play-policy style consent).
- */
 class DisclosureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Every activity the user can see makes the same request, so hopping
-        // between them never shows a mode switch mid-transition.
         requestPeakRefreshRateWhileVisible()
         enableEdgeToEdge()
         setContent {
@@ -50,9 +44,6 @@ class DisclosureActivity : ComponentActivity() {
                             .verticalScroll(rememberScrollState())
                             .padding(24.dp),
                     ) {
-                        // Same component onboarding's first page shows, so the
-                        // two cannot say different things — see
-                        // ui/AccessibilityDisclosure.kt.
                         AccessibilityDisclosureText()
                         Spacer(Modifier.height(24.dp))
                         AccessibilityDisclosureActions(

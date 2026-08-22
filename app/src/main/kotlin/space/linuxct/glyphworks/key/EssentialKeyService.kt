@@ -16,25 +16,7 @@ import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.ui.screenDisplayName
 
-/**
- * Captures the Nothing Essential Key globally (including lock screen / AOD /
- * before first unlock — the service is directBootAware and the framework
- * auto-rebinds enabled accessibility services at every boot).
- *
- * Mechanism: accessibility key-event filtering (flagRequestFilterKeyEvents in
- * the XML config, re-asserted at runtime in onServiceConnected — some builds
- * only honour the runtime flag). The Essential Key arrives as KEYCODE_UNKNOWN
- * with a vendor-specific SCAN code that differs between firmware/hardware
- * revisions (250 and 304 observed so far); we match against that explicit
- * set rather than keyCode 0, which would over-match other unmapped keys.
- * Unmatched keys are logged with their scan code so new revisions are easy
- * to add. While the master toggle is on, DOWN, UP and repeats are all
- * consumed so stock Essential Space never sees the press; toggle off means
- * full pass-through.
- *
- * NOTE: this class's component name is persisted by the system in
- * Settings.Secure — never rename or move it.
- */
+/** Settings.Secure stores this class's component name. Never rename or move it. */
 class EssentialKeyService : AccessibilityService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -58,18 +40,6 @@ class EssentialKeyService : AccessibilityService() {
         DebugLog.i(C, "onServiceConnected: heartbeat written, session revived")
     }
 
-    /**
-     * The optional on-screen announcement of a resolved gesture.
-     *
-     * Reached from [KeyActionRouter.onAction], which fires on the render thread
-     * for most outcomes and on the key thread for the two early returns — hence
-     * the hop to the main looper, which a Toast requires.
-     *
-     * Reads the preference at fire time rather than caching it, so turning the
-     * setting on takes effect on the very next press with no service restart.
-     * That matters: the alternative is telling someone to toggle accessibility
-     * off and on again to see it work.
-     */
     private fun announce(clicks: Int, action: KeyAction, screenId: String) {
         if (!Core.prefs.getBoolean(PrefKeys.KEY_ACTION_TOASTS, PrefKeys.KEY_ACTION_TOASTS_DEF)) return
         mainHandler.post {
@@ -89,11 +59,7 @@ class EssentialKeyService : AccessibilityService() {
         }
     }
 
-    /**
-     * The decisive attribute for receiving onKeyEvent at all. The XML config
-     * requests it, but log the resolved state and re-assert it at runtime —
-     * if flags lack FLAG_REQUEST_FILTER_KEY_EVENTS, onKeyEvent NEVER fires.
-     */
+    /** Without FLAG_REQUEST_FILTER_KEY_EVENTS onKeyEvent never fires, and some builds drop the XML flag. */
     private fun logAndEnsureKeyFilterFlag() {
         val info = serviceInfo
         if (info == null) {
@@ -121,14 +87,10 @@ class EssentialKeyService : AccessibilityService() {
         val desc = "action=${event.action} keyCode=${event.keyCode} scanCode=${event.scanCode} " +
             "repeat=${event.repeatCount} device=${event.deviceId}"
         if (event.scanCode !in KNOWN_SCAN_CODES) {
-            // Log everything: if the Essential Key arrives with yet another
-            // scan code on a future firmware, this line reveals it.
             DebugLog.d(C, "key ignored (scanCode not in ${KNOWN_SCAN_CODES.contentToString()}): $desc")
             return super.onKeyEvent(event)
         }
         if (!Core.prefs.getBoolean(PrefKeys.MASTER_TOGGLE, PrefKeys.MASTER_TOGGLE_DEF)) {
-            // User decision: toggle off = the key behaves completely normally,
-            // even on the lock screen.
             DebugLog.i(C, "essential key PASS-THROUGH (master toggle off): $desc")
             return super.onKeyEvent(event)
         }
@@ -139,35 +101,28 @@ class EssentialKeyService : AccessibilityService() {
             lastConsumedPressAt = SystemClock.uptimeMillis()
             val pressNumber = counter.onPress(SystemClock.uptimeMillis())
             DebugLog.i(C, "essential key DOWN consumed: press #$pressNumber in burst ($desc)")
-            expiry?.let(mainHandler::removeCallbacks)
-            val r = Runnable {
-                expiry = null
-                val clicks = counter.finish()
-                DebugLog.i(C, "click window closed: $clicks click(s) -> routing")
-                Core.router.execute(clicks)
-            }
-            expiry = r
-            mainHandler.postDelayed(r, ClickCounter.WINDOW_MS)
+            restartClickWindow()
         } else {
             DebugLog.d(C, "essential key consumed (up/repeat): $desc")
         }
-        // Consume DOWN, UP and all repeats: an unconsumed UP is exactly the
-        // "Essential Space still triggers" leak.
+        // An unconsumed UP still triggers Essential Space, so consume UP and repeats too.
         return true
     }
 
-    /**
-     * Leak watchdog. On some firmware Nothing triggers Essential Space at the
-     * input pipeline's QUEUEING stage, which runs before the accessibility
-     * key filter — consuming the events cannot suppress that. The config
-     * subscribes to window-state events from the Essential packages only;
-     * when one of their windows appears shortly after a press we consumed,
-     * dismiss it (BACK unlocked / HOME locked). The clean solution is the
-     * system-side handoff (keep the apps enabled!): under Settings →
-     * Intelligence Toolkit, enable Essential Key Settings → "Activate with
-     * single tap before use" and disable Essential Voice → "Activate via
-     * Essential Key"; the watchdog then only covers stragglers.
-     */
+    private fun restartClickWindow() {
+        expiry?.let(mainHandler::removeCallbacks)
+        val closeWindow = Runnable {
+            expiry = null
+            val clicks = counter.finish()
+            DebugLog.i(C, "click window closed: $clicks click(s) -> routing")
+            Core.router.execute(clicks)
+        }
+        expiry = closeWindow
+        mainHandler.postDelayed(closeWindow, ClickCounter.WINDOW_MS)
+    }
+
+    // Some firmware starts Essential Space at input queueing, before the key filter runs,
+    // so consuming the key cannot stop it. Dismiss the window it opens instead.
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
@@ -180,10 +135,6 @@ class EssentialKeyService : AccessibilityService() {
             return
         }
         val locked = getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
-        // Say so on screen when announcements are on. An accessibility service
-        // closing another app's window is the most alarming thing this app does,
-        // and it is the thing a Play reviewer watches happen with no explanation
-        // — naming it as it happens is worth more than any amount of prose.
         if (Core.prefs.getBoolean(PrefKeys.KEY_ACTION_TOASTS, PrefKeys.KEY_ACTION_TOASTS_DEF)) {
             mainHandler.post {
                 Toast.makeText(this, R.string.key_action_dismissed_essential, Toast.LENGTH_SHORT).show()
@@ -193,7 +144,7 @@ class EssentialKeyService : AccessibilityService() {
             val action = if (locked) GLOBAL_ACTION_HOME else GLOBAL_ACTION_BACK
             DebugLog.i(C, "dismissing $pkg leak via ${if (locked) "HOME" else "BACK"}")
             performGlobalAction(action)
-        }, 150)
+        }, DISMISS_DELAY_MS)
     }
 
     private fun vibrate() {
@@ -204,7 +155,7 @@ class EssentialKeyService : AccessibilityService() {
             val effect = if (clickSupported) {
                 VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
             } else {
-                VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+                VibrationEffect.createOneShot(FALLBACK_BUZZ_MS, VibrationEffect.DEFAULT_AMPLITUDE)
             }
             vibrator.vibrate(effect)
         } catch (e: Exception) {
@@ -216,9 +167,6 @@ class EssentialKeyService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         DebugLog.w(C, "onUnbind (service disabled or system rebinding)")
-        // The router outlives this service — it hangs off Core for the life of
-        // the process — so leaving the listener attached would pin a dead
-        // service, and its Context with it, until the next bind replaced it.
         Core.router.onAction = null
         return super.onUnbind(intent)
     }
@@ -226,26 +174,20 @@ class EssentialKeyService : AccessibilityService() {
     companion object {
         private const val C = "KeySvc"
 
-        /**
-         * Essential Key scan codes seen in the wild: 250 (Phone 4a Pro,
-         * firmware observed 2026-07) and 304 (earlier revisions). The key is
-         * unmapped (KEYCODE_UNKNOWN), so the scan code is the only reliable
-         * discriminator.
-         */
-        val KNOWN_SCAN_CODES = intArrayOf(250, 304)
+        // The key is unmapped, so it arrives as KEYCODE_UNKNOWN and only the scan code
+        // identifies it: 250 on the Phone (4a) Pro, 304 on earlier revisions.
+        private const val SCAN_CODE_4A_PRO = 250
+        private const val SCAN_CODE_LEGACY = 304
+        val KNOWN_SCAN_CODES = intArrayOf(SCAN_CODE_4A_PRO, SCAN_CODE_LEGACY)
 
-        /**
-         * Packages the system launches in reaction to the Essential Key:
-         * Essential Space itself plus its screenshot/recorder component
-         * (observed firing on the 4a Pro). Must stay in sync with
-         * android:packageNames in accessibility_service_config.xml.
-         */
+        // Keep in sync with android:packageNames in accessibility_service_config.xml.
         val ESSENTIAL_PACKAGES = setOf(
             "com.nothing.ntessentialspace",
             "com.nothing.ntessentialrecorder",
         )
 
-        /** Essential windows appearing within this of a consumed press count as leaks. */
         const val LEAK_WINDOW_MS = 3000L
+        private const val DISMISS_DELAY_MS = 150L
+        private const val FALLBACK_BUZZ_MS = 50L
     }
 }

@@ -9,18 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import space.linuxct.glyphworks.core.LightPort
 
-/**
- * Ambient light source (TYPE_LIGHT, no runtime permission) for auto-brightness.
- * Self-managing like TiltSensor/CompassSensor: registers on the first poll and
- * unregisters after 5 s without polls, so between the (minutes apart) samples
- * of AutoBrightness it costs nothing.
- *
- * TYPE_LIGHT is an on-change sensor: the first value lands a moment AFTER
- * registering, so the poll that registers returns null. The cached value is
- * dropped when the listener goes away, which means a reading is never served
- * from a stale window — the caller re-polls shortly after touching the sensor
- * (see AutoBrightness's warm-up read) to get a fresh one.
- */
+/** TYPE_LIGHT is on-change, so the poll that registers returns null. Poll again soon after. */
 class LightSensor(app: Context) : LightPort, SensorEventListener {
 
     private val sensorManager = app.getSystemService(SensorManager::class.java)
@@ -51,8 +40,6 @@ class LightSensor(app: Context) : LightPort, SensorEventListener {
         synchronized(this) {
             if (!started) {
                 val sensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT) ?: return null
-                // NORMAL delay is plenty: illuminance changes slowly and this is
-                // an on-change sensor anyway.
                 sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL, mainHandler)
                 started = true
                 mainHandler.removeCallbacks(idleCheck)

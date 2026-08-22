@@ -22,10 +22,6 @@ import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
 import java.util.concurrent.TimeUnit
 
-/**
- * Daily background release check. Notifies at most once per new version;
- * tapping the notification opens the GitHub release page.
- */
 class UpdateCheckWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
@@ -80,9 +76,8 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : Worker(con
         private const val NOTIFICATION_ID = 2002 // Timer uses 2001
 
         /**
-         * Idempotent daily schedule (KEEP preserves the existing cadence).
-         * Called from MainActivity — never from Direct Boot paths, because
-         * WorkManager's store lives in credential-encrypted storage.
+         * Never call this from a Direct Boot path: WorkManager's own store lives in
+         * credential-protected storage.
          */
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<UpdateCheckWorker>(1, TimeUnit.DAYS)

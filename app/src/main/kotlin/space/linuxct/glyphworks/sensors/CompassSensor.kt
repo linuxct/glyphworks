@@ -13,12 +13,6 @@ import android.os.Handler
 import android.os.Looper
 import space.linuxct.glyphworks.core.AzimuthPort
 
-/**
- * Accelerometer + magnetometer fusion with a low-pass filter, plus magnetic
- * declination from the last known location when a location permission is
- * granted (skipped otherwise). Self-managing lifecycle: registers on first
- * poll, unregisters after 5 s without polls.
- */
 class CompassSensor(private val app: Context) : AzimuthPort, SensorEventListener {
 
     private val sensorManager = app.getSystemService(SensorManager::class.java)
@@ -67,19 +61,18 @@ class CompassSensor(private val app: Context) : AzimuthPort, SensorEventListener
                 mainHandler.postDelayed(idleCheck, IDLE_STOP_MS)
             }
         }
-        return azimuth?.let { (it + declination + 360f) % 360f }
+        return azimuth?.let { (it + declination + FULL_TURN_DEGREES) % FULL_TURN_DEGREES }
     }
 
     private fun loadDeclination() {
-        // Coarse is all this needs and all the app asks for: declination changes
-        // over hundreds of kilometres, so a metre-accurate fix would buy nothing.
-        val coarse = app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!coarse) return
+        val hasCoarseLocation =
+            app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasCoarseLocation) return
         try {
-            val lm = app.getSystemService(LocationManager::class.java) ?: return
-            val location = lm.allProviders.firstNotNullOfOrNull { p ->
+            val locationManager = app.getSystemService(LocationManager::class.java) ?: return
+            val location = locationManager.allProviders.firstNotNullOfOrNull { provider ->
                 try {
-                    lm.getLastKnownLocation(p)
+                    locationManager.getLastKnownLocation(provider)
                 } catch (_: SecurityException) {
                     null
                 }
@@ -91,7 +84,7 @@ class CompassSensor(private val app: Context) : AzimuthPort, SensorEventListener
                 System.currentTimeMillis(),
             ).declination
         } catch (_: Exception) {
-            // Declination stays 0 — magnetic north is close enough.
+            // keep the last known declination
         }
     }
 
@@ -107,27 +100,29 @@ class CompassSensor(private val app: Context) : AzimuthPort, SensorEventListener
             }
         }
         if (haveGravity && haveGeo) {
-            val r = FloatArray(9)
-            val i = FloatArray(9)
-            if (SensorManager.getRotationMatrix(r, i, gravity, geomagnetic)) {
+            val rotation = FloatArray(ROTATION_MATRIX_SIZE)
+            val inclination = FloatArray(ROTATION_MATRIX_SIZE)
+            if (SensorManager.getRotationMatrix(rotation, inclination, gravity, geomagnetic)) {
                 val orientation = FloatArray(3)
-                SensorManager.getOrientation(r, orientation)
-                val deg = Math.toDegrees(orientation[0].toDouble()).toFloat()
-                azimuth = (deg + 360f) % 360f
+                SensorManager.getOrientation(rotation, orientation)
+                val degrees = Math.toDegrees(orientation[0].toDouble()).toFloat()
+                azimuth = (degrees + FULL_TURN_DEGREES) % FULL_TURN_DEGREES
             }
         }
     }
 
     private fun lowPass(input: FloatArray, output: FloatArray) {
         for (i in input.indices) {
-            output[i] += ALPHA * (input[i] - output[i])
+            output[i] += LOW_PASS_ALPHA * (input[i] - output[i])
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     private companion object {
-        const val ALPHA = 0.15f
+        const val LOW_PASS_ALPHA = 0.15f
         const val IDLE_STOP_MS = 5000L
+        const val FULL_TURN_DEGREES = 360f
+        const val ROTATION_MATRIX_SIZE = 9
     }
 }

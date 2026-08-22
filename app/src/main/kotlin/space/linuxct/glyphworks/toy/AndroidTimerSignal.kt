@@ -14,13 +14,6 @@ import space.linuxct.glyphworks.BaseApp
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.TimerSignalPort
 
-/**
- * Timer side effects. The exact alarm is only a BACKSTOP for process death
- * — the in-process ticker is the primary completion path. Exact alarms
- * are denied by default on Android 14+: when not granted we degrade to
- * setWindow (1 min slack). The chime plays directly via RingtoneManager so it
- * works even when POST_NOTIFICATIONS is denied; the notification is a bonus.
- */
 class AndroidTimerSignal(private val app: Context) : TimerSignalPort {
 
     private fun pendingIntent(): PendingIntent = PendingIntent.getBroadcast(
@@ -31,22 +24,18 @@ class AndroidTimerSignal(private val app: Context) : TimerSignalPort {
     )
 
     override fun scheduleAlarm(atEpochMillis: Long) {
-        val am = app.getSystemService(AlarmManager::class.java) ?: return
-        val pi = pendingIntent()
-        // Slack past the nominal deadline so the in-process ticker always
-        // wins while the app is alive; the backstop only matters after process
-        // death or a long doze.
-        val at = atEpochMillis + BACKSTOP_SLACK_MS
+        val alarmManager = app.getSystemService(AlarmManager::class.java) ?: return
+        val onFire = pendingIntent()
+        val backstopAt = atEpochMillis + BACKSTOP_SLACK_MS
         try {
-            if (am.canScheduleExactAlarms()) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            if (alarmManager.canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, backstopAt, onFire)
             } else {
-                am.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MS, pi)
+                alarmManager.setWindow(AlarmManager.RTC_WAKEUP, backstopAt, WINDOW_MS, onFire)
             }
         } catch (e: SecurityException) {
-            // Permission revoked between check and call.
             Log.w(TAG, "exact alarm denied, using window", e)
-            am.setWindow(AlarmManager.RTC_WAKEUP, at, WINDOW_MS, pi)
+            alarmManager.setWindow(AlarmManager.RTC_WAKEUP, backstopAt, WINDOW_MS, onFire)
         }
     }
 
@@ -64,18 +53,22 @@ class AndroidTimerSignal(private val app: Context) : TimerSignalPort {
             Log.w(TAG, "chime failed", e)
         }
         if (app.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-            try {
-                val nm = app.getSystemService(NotificationManager::class.java) ?: return
-                val n = Notification.Builder(app, BaseApp.CHANNEL_TIMER)
-                    .setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle(app.getString(R.string.notif_timer_title))
-                    .setContentText(app.getString(R.string.notif_timer_body))
-                    .setAutoCancel(true)
-                    .build()
-                nm.notify(NOTIFICATION_ID, n)
-            } catch (e: Exception) {
-                Log.w(TAG, "notification failed", e)
-            }
+            postTimerNotification()
+        }
+    }
+
+    private fun postTimerNotification() {
+        try {
+            val notificationManager = app.getSystemService(NotificationManager::class.java) ?: return
+            val notification = Notification.Builder(app, BaseApp.CHANNEL_TIMER)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(app.getString(R.string.notif_timer_title))
+                .setContentText(app.getString(R.string.notif_timer_body))
+                .setAutoCancel(true)
+                .build()
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "notification failed", e)
         }
     }
 

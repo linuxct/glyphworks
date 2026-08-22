@@ -10,14 +10,7 @@ import space.linuxct.glyphworks.core.design.DesignFrames
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * The renderer is the model's only eyes, so what is tested here is not that it
- * produces *some* text but that the text agrees with the hardware cell for cell.
- * A preview that disagreed with [PanelMask] would be worse than no preview: it
- * would tell a model its art was fine while the panel clipped it.
- */
 class GlyphAsciiPreviewTest {
-    // region the mask
 
     @Test
     fun `a fully lit frame renders exactly the live cells at each geometry`() {
@@ -81,14 +74,6 @@ class GlyphAsciiPreviewTest {
         }
     }
 
-    // endregion
-
-    // region the ramp
-
-    // endregion
-
-    // region cells
-
     @Test
     fun `rendering cells matches rendering the decoded frame`() {
         val codename = PokemonCodename.BELLSPROUT
@@ -104,17 +89,10 @@ class GlyphAsciiPreviewTest {
     @Test
     fun `cells the codec would refuse are not drawn at all`() {
         val codename = PokemonCodename.BELLSPROUT
-        // Wrong length, a character that is not base36, and a palette index the
-        // design does not define. Drawing any of these would show the model a
-        // picture of a frame the app will not store.
         assertNull(GlyphAsciiPreview.renderCells("0".repeat(codename.cellCount - 1), DEFAULT_LEVELS, codename))
         assertNull(GlyphAsciiPreview.renderCells("!".repeat(codename.cellCount), DEFAULT_LEVELS, codename))
         assertNull(GlyphAsciiPreview.renderCells("5".repeat(codename.cellCount), DEFAULT_LEVELS, codename))
     }
-
-    // endregion
-
-    // region spans
 
     @Test
     fun `live spans describe the same rows the drawing does`() {
@@ -127,8 +105,6 @@ class GlyphAsciiPreviewTest {
                 PanelMask.count(size),
                 spans.sumOf { it?.let { r -> r.last - r.first + 1 } ?: 0 },
             )
-            // The disc is convex, so a row's live cells are one unbroken run —
-            // which is the assumption the first/last pair encodes.
             for (y in 0 until size) {
                 val span = spans[y] ?: continue
                 for (x in span) {
@@ -137,6 +113,4 @@ class GlyphAsciiPreviewTest {
             }
         }
     }
-
-    // endregion
 }

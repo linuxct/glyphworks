@@ -19,15 +19,12 @@ class AutoBrightnessTest {
 
     private fun brightness() = prefs.getFloat(PrefKeys.BRIGHTNESS, PrefKeys.BRIGHTNESS_DEF)
 
-    /** Runs out the warm-up delay so the sample started by the caller lands. */
     private fun settleWarmup() = scheduler.advanceTime(AutoBrightness.WARMUP_MS)
 
     private fun enable() {
         prefs.putBoolean(PrefKeys.AUTO_BRIGHTNESS, true)
         auto.start()
     }
-
-    // ---------- lux -> brightness curve ----------
 
     @Test
     fun `pitch dark returns exactly the floor and never blanks`() {
@@ -55,8 +52,6 @@ class AutoBrightnessTest {
         }
     }
 
-    // ---------- controller ----------
-
     @Test
     fun `disabled pref means no polling at all`() {
         auto.start()
@@ -70,17 +65,14 @@ class AutoBrightnessTest {
         light.lux = 10f
         enable()
         settleWarmup()
-        // 1.0 -> target 0.37, in one go.
         val afterFirst = brightness()
         assertTrue("$afterFirst", afterFirst < 1f && afterFirst > AutoBrightness.FLOOR)
         assertEquals(1, reapplies)
 
-        // Nothing happens between polls, even though the light has moved.
         light.lux = 1_000f
         scheduler.advanceTime(AutoBrightness.POLL_SCREEN_ON_MS - AutoBrightness.WARMUP_MS - 1)
         assertEquals(afterFirst, brightness(), 1e-6f)
 
-        // The next poll (plus its warm-up) picks the new level up.
         scheduler.advanceTime(1)
         settleWarmup()
         assertTrue("${brightness()} should be above $afterFirst", brightness() > afterFirst)
@@ -92,12 +84,9 @@ class AutoBrightnessTest {
         light.lux = 10f
         enable()
         settleWarmup()
-        // Counting sensor polls, not pref writes: the cadence is what is under
-        // test here, independent of the hysteresis policy.
         var polls = light.polls
 
         auto.setScreenOn(false)
-        // The screen-on cadence would have fired several times by now.
         scheduler.advanceTime(AutoBrightness.POLL_SCREEN_ON_MS * 5)
         settleWarmup()
         assertEquals("no sample on the fast cadence while the screen is off", polls, light.polls)
@@ -107,7 +96,6 @@ class AutoBrightnessTest {
         assertTrue("the slow cadence must still sample", light.polls > polls)
         polls = light.polls
 
-        // Coming back on samples right away and restores the fast cadence.
         auto.setScreenOn(true)
         settleWarmup()
         assertTrue("screen-on samples immediately", light.polls > polls)
@@ -124,7 +112,7 @@ class AutoBrightnessTest {
         settleWarmup()
         val held = brightness()
 
-        light.lux = null // sensor absent / nothing reported
+        light.lux = null
         repeat(3) {
             scheduler.advanceTime(AutoBrightness.POLL_SCREEN_ON_MS)
             settleWarmup()
@@ -152,7 +140,6 @@ class AutoBrightnessTest {
     fun `a change below the hysteresis threshold is not written`() {
         light.lux = 400f
         val target = AutoBrightness.luxToBrightness(400f)
-        // Start a hair away from the target: less than the threshold, so no write.
         prefs.putFloat(PrefKeys.BRIGHTNESS, target - AutoBrightness.HYSTERESIS / 2f)
         val before = brightness()
         enable()
@@ -160,7 +147,6 @@ class AutoBrightnessTest {
         assertEquals(before, brightness(), 1e-6f)
         assertEquals("no re-render for an imperceptible change", 0, reapplies)
 
-        // A clearly bigger gap does get written.
         prefs.putFloat(PrefKeys.BRIGHTNESS, 1f)
         scheduler.advanceTime(AutoBrightness.POLL_SCREEN_ON_MS)
         settleWarmup()
@@ -170,7 +156,7 @@ class AutoBrightnessTest {
 
     @Test
     fun `converges toward the target without overshooting`() {
-        light.lux = 0f // pitch dark: target is the floor
+        light.lux = 0f
         enable()
         repeat(20) {
             settleWarmup()
@@ -179,6 +165,4 @@ class AutoBrightnessTest {
         assertEquals(AutoBrightness.FLOOR, brightness(), AutoBrightness.HYSTERESIS)
         assertTrue("never dimmer than the floor", brightness() >= AutoBrightness.FLOOR)
     }
-
-    // ---------- convergence ----------
 }

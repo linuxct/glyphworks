@@ -52,6 +52,10 @@ private class FakeSessionControl(var shouldRun: Boolean = true) : SessionControl
     override fun revive() { reviveCount++ }
 }
 
+private const val SINGLE_PRESS = 1
+private const val DOUBLE_PRESS = 2
+private const val TRIPLE_PRESS = 3
+
 class KeyActionRouterTest {
     private val clock = FakeClock()
     private val prefs = FakePrefs()
@@ -63,17 +67,17 @@ class KeyActionRouterTest {
     )
     private val output = mutableListOf<IntArray>()
 
-    private val a = RouterProbe("ambient")
-    private val b = RouterProbe("clock")
-    private val c = RouterProbe("dice")
+    private val ambient = RouterProbe("ambient")
+    private val clockScreen = RouterProbe("clock")
+    private val dice = RouterProbe("dice")
 
     private val screenManager = ScreenManager(
-        listOf(a, b, c), prefs, ports, scheduler, 13,
+        listOf(ambient, clockScreen, dice), prefs, ports, scheduler, 13,
     ) { output += it.copyOf() }
 
     private val arbiter = FakeSessionControl()
 
-    private fun router(menuMode: Boolean, live: Boolean = true): KeyActionRouter {
+    private fun routerFor(menuMode: Boolean, live: Boolean = true): KeyActionRouter {
         prefs.putString(PrefKeys.SCREEN_ORDER, "ambient,clock,dice")
         prefs.putBoolean(PrefKeys.MENU_MODE_ENABLED, menuMode)
         if (live) screenManager.startSession()
@@ -82,94 +86,86 @@ class KeyActionRouterTest {
 
     private fun persisted() = prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF)
 
-    // ---------- classic mode (menu off) ----------
-
     @Test
     fun `classic single press dispatches glyph change to the active toy`() {
-        val r = router(menuMode = false)
-        r.execute(1)
-        assertEquals(listOf(Events.CHANGE), a.events)
+        val router = routerFor(menuMode = false)
+        router.execute(SINGLE_PRESS)
+        assertEquals(listOf(Events.CHANGE), ambient.events)
         assertFalse(screenManager.inMenu)
     }
 
     @Test
     fun `classic double press cycles to the next toy`() {
-        val r = router(menuMode = false)
-        r.execute(2)
+        val router = routerFor(menuMode = false)
+        router.execute(DOUBLE_PRESS)
         assertEquals("clock", persisted())
         assertFalse(screenManager.inMenu)
     }
 
     @Test
     fun `classic triple press jumps home`() {
-        val r = router(menuMode = false)
-        r.execute(2) // -> clock
-        r.execute(3) // home
+        val router = routerFor(menuMode = false)
+        router.execute(DOUBLE_PRESS)
+        router.execute(TRIPLE_PRESS)
         assertEquals("ambient", persisted())
     }
 
-    // ---------- menu mode, not yet in the menu ----------
-
     @Test
     fun `menu mode double press opens the blinking selector instead of cycling`() {
-        val r = router(menuMode = true)
-        r.execute(2)
+        val router = routerFor(menuMode = true)
+        router.execute(DOUBLE_PRESS)
         assertTrue(screenManager.inMenu)
-        assertEquals("ambient", persisted()) // opening the menu does not persist a cycle
+        assertEquals("ambient", persisted())
     }
-
-    // ---------- menu mode, inside the menu ----------
 
     @Test
     fun `menu mode single press inside the menu cycles the preview without persisting`() {
-        val r = router(menuMode = true)
-        r.execute(2) // open menu (preview ambient)
-        r.execute(1) // cycle -> clock
+        val router = routerFor(menuMode = true)
+        router.execute(DOUBLE_PRESS)
+        router.execute(SINGLE_PRESS)
         assertTrue(screenManager.inMenu)
-        assertEquals(1, b.activations)
+        assertEquals(1, clockScreen.activations)
         assertEquals("ambient", persisted())
     }
 
     @Test
     fun `menu mode double press inside the menu commits the preview`() {
-        val r = router(menuMode = true)
-        r.execute(2) // open menu
-        r.execute(1) // preview clock
-        r.execute(2) // commit
+        val router = routerFor(menuMode = true)
+        router.execute(DOUBLE_PRESS)
+        router.execute(SINGLE_PRESS)
+        router.execute(DOUBLE_PRESS)
         assertFalse(screenManager.inMenu)
         assertEquals("clock", persisted())
     }
 
     @Test
     fun `menu mode triple press inside the menu exits to ambient`() {
-        val r = router(menuMode = true)
-        r.execute(2) // open menu
-        r.execute(1) // preview clock
-        r.execute(3) // home
+        val router = routerFor(menuMode = true)
+        router.execute(DOUBLE_PRESS)
+        router.execute(SINGLE_PRESS)
+        router.execute(TRIPLE_PRESS)
         assertFalse(screenManager.inMenu)
         assertEquals("ambient", persisted())
     }
 
     @Test
     fun `glyph button cycles the preview in the menu and dispatches change outside it`() {
-        val r = router(menuMode = true)
-        r.glyphButtonChange() // outside the menu -> glyph change
-        assertEquals(listOf(Events.CHANGE), a.events)
-        r.execute(2) // open menu
-        r.glyphButtonChange() // inside the menu -> cycle preview
+        val router = routerFor(menuMode = true)
+        router.glyphButtonChange()
+        assertEquals(listOf(Events.CHANGE), ambient.events)
+        router.execute(DOUBLE_PRESS)
+        router.glyphButtonChange()
         assertTrue(screenManager.inMenu)
-        assertEquals(1, b.activations)
+        assertEquals(1, clockScreen.activations)
     }
-
-    // ---------- session gating ----------
 
     @Test
     fun `no session owner revives and swallows the action`() {
-        val r = router(menuMode = false)
+        val router = routerFor(menuMode = false)
         arbiter.shouldRun = false
-        a.events.clear()
-        r.execute(1)
+        ambient.events.clear()
+        router.execute(SINGLE_PRESS)
         assertEquals(1, arbiter.reviveCount)
-        assertTrue(a.events.isEmpty())
+        assertTrue(ambient.events.isEmpty())
     }
 }

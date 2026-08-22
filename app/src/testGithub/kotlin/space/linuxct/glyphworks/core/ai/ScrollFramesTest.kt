@@ -20,42 +20,10 @@ import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * `scroll_frames` exists because of one decoded export, and these tests are that
- * export turned into assertions.
- *
- * A user asked for "HI" scrolling right to left. What came back was nine frames
- * in which frame 0 was blank, the brightness fell from 4095 to 2048 partway
- * through, and the H sheared apart — its uprights at columns 1 and 3 on rows 4-5
- * and at columns 2 and 4 on rows 6-8. Prompt guidance can argue with the first
- * three, because they are decisions. It cannot fix the shear, which is not a
- * decision but sixteen thousand characters of bookkeeping with no error signal.
- *
- * So the arithmetic moved into the app, and what these tests check is that it is
- * now *impossible* rather than discouraged:
- *
- * - [the HI that failed comes back as the full traverse] — the frame count.
- * - [no frame of a default scroll is blank] — frame 0 especially.
- * - [every frame is a pure horizontal translation of the frame before it] — the
- *   anti-shear assertion, and mechanical rather than eyeballed: it compares the
- *   lit cells of each pair of neighbours as sets, so a single row a column out
- *   fails it.
- * - [the palette indices in every frame are the ones the source was drawn with]
- *   — the flicker.
- *
- * Plus the property that makes the whole thing worth having: what the tool hands
- * back is accepted by the real `apply_design` without a character being retyped.
- */
 class ScrollFramesTest {
     private val bellsprout = PokemonCodename.BELLSPROUT
     private val arbok = PokemonCodename.ARBOK
 
-    /**
-     * "HI" as the prompt lays it out, drawn at palette index 2 — full brightness
-     * under the default `[0, 2048, 4095]`, and deliberately not '1', so a frame
-     * that came back at half brightness would be visible as a different
-     * character rather than hidden behind the prompt's own example.
-     */
     private val hi = listOf(
         "2020222",
         "2020020",
@@ -64,18 +32,6 @@ class ScrollFramesTest {
         "2020222",
     )
 
-    // region the "HI" that failed
-
-    /**
-     * The anti-shear assertion, stated mechanically.
-     *
-     * Every lit cell of frame n must appear in frame n+1 exactly `step` columns
-     * to the left, with the same character and on the SAME ROW — and every lit
-     * cell of frame n+1 that did not just enter from the right must have come
-     * from frame n the same way. A single row shifted a column further than its
-     * neighbour breaks both directions at once, which is precisely the defect the
-     * decoded export had and precisely what no amount of prose could prevent.
-     */
     @Test
     fun `every frame is a pure horizontal translation of the frame before it`() {
         for (step in 1..3) {
@@ -87,7 +43,7 @@ class ScrollFramesTest {
 
                 for ((cell, ch) in before) {
                     val moved = cell.copy(x = cell.x - step)
-                    if (moved.x < 0) continue // left the panel; nothing to check
+                    if (moved.x < 0) continue
                     assertEquals(
                         "step $step, frame $n -> ${n + 1}: the cell at $cell did not land at $moved",
                         ch,
@@ -96,7 +52,7 @@ class ScrollFramesTest {
                 }
                 for ((cell, ch) in after) {
                     val came = cell.copy(x = cell.x + step)
-                    if (came.x > bellsprout.size - 1) continue // entered from the right
+                    if (came.x > bellsprout.size - 1) continue
                     assertEquals(
                         "step $step, frame ${n + 1} <- $n: the cell at $cell was not at $came",
                         ch,
@@ -106,10 +62,6 @@ class ScrollFramesTest {
             }
         }
     }
-
-    // endregion
-
-    // region the arithmetic
 
     @Test
     fun `the frame count is panel width plus source width minus one`() {
@@ -137,10 +89,8 @@ class ScrollFramesTest {
     fun `the art is centred in the band of rows that never clips`() {
         val body = ok(scroll(hi))
 
-        // Rows 4-8 at 13x13, and a five-row glyph fills them exactly.
         assertEquals(4, body["top_row"]!!.jsonPrimitive.content.toInt())
         assertEquals(GlyphAiPrompt.fullWidthRows(bellsprout.size)!!.first, body["top_row"]!!.jsonPrimitive.content.toInt())
-        // Every lit cell of every frame has an LED behind it.
         for (cells in framesOf(body)) {
             for ((cell, _) in litCells(cells, bellsprout.size)) {
                 assertTrue("$cell has no LED", PanelMask.contains(cell.x, cell.y, bellsprout.size))
@@ -160,14 +110,6 @@ class ScrollFramesTest {
         assertFalse(ok(scroll(hi)).toString().contains("arbok"))
     }
 
-    // endregion
-
-    // region what it hands back
-
-    /**
-     * The point of the whole tool: the document it returns is applied by the real
-     * `apply_design`, with nothing retyped in between.
-     */
     @Test
     fun `apply_this is a document apply_design accepts as it stands`() {
         val ctx = GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout)
@@ -182,21 +124,13 @@ class ScrollFramesTest {
         assertFalse(applied.json, applied.isError)
         val design = applied.design!!
         assertEquals(19, design.variantFor(bellsprout)!!.frames.size)
-        // It carries "dynamic" itself, or nineteen frames would be refused as a
-        // static design that could only ever show its first.
         assertEquals(
             framesOf(ok(scroll(hi, ctx = ctx))),
             design.variantFor(bellsprout)!!.frames.map { it.cells },
         )
-        // ...and the design the app would store reads back the same.
         assertTrue(DesignCodec.decode(DesignCodec.encode(design)) is DesignCodec.Result.Ok)
     }
 
-    /**
-     * It computes; it does not decide. The frames land on the canvas only when
-     * the model has read the pictures and asked for them, which is the same
-     * bargain every other tool in this file strikes.
-     */
     @Test
     fun `it applies nothing and offers nothing to apply`() {
         val result = scroll(hi)
@@ -215,22 +149,12 @@ class ScrollFramesTest {
         assertEquals(19, frames.size)
         for (frame in frames) {
             assertNotNull(frame.jsonObject["preview"])
-            // The cells live in apply_this, once. Repeating them here would
-            // double the payload and, worse, invite the model to read them back
-            // out and write them again, which is where brightness drifts.
             assertNull(frame.jsonObject["cells"])
         }
     }
 
-    // endregion
-
-    // region the warnings
-
     @Test
     fun `art outside the band that is live across every column is warned about`() {
-        // Row 3 at 13x13 is not live across all 13 columns, so a glyph placed
-        // there loses cells at the start and end of the travel and nowhere in
-        // between - which no single frame's picture can show.
         val body = ok(scroll(hi, topRow = 3))
         val warnings = warningsOf(body)
 
@@ -238,19 +162,9 @@ class ScrollFramesTest {
         assertTrue(warnings[0], warnings[0].contains("clipped"))
         assertTrue(warnings[0], warnings[0].contains("3"))
         assertTrue(warnings[0], warnings[0].contains("Rows 4 to 8"))
-        // Still generated: clipping by the rim is a legitimate design choice.
         assertEquals(19, framesOf(body).size)
     }
 
-    // endregion
-
-    // region every failure is a result
-
-    /**
-     * The property this whole file shares with `GlyphAiToolsTest`: model output is
-     * malformed as a matter of routine, and every shape of malformed must come
-     * back as something the model can read and correct from.
-     */
     @Test
     fun `no shape of nonsense throws, and each failure says what was expected`() {
         val ctx = GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout)
@@ -317,13 +231,11 @@ class ScrollFramesTest {
 
         assertTrue(errorOf(result), errorOf(result).contains("outside a 13-row panel"))
         assertTrue(expected(result).contains("0 to 8"))
-        // And the advice that is actually useful: where a scrolling glyph lives.
         assertTrue(expected(result).contains("Rows 4 to 8"))
     }
 
     @Test
     fun `a scroll that would need more frames than a design may hold is refused`() {
-        // 240 frames is the ceiling; 13 + 240 - 1 needs 252.
         val result = scroll(List(5) { "2".repeat(240) })
 
         assertTrue(errorOf(result), errorOf(result).contains("252 frames"))
@@ -366,7 +278,6 @@ class ScrollFramesTest {
         assertEquals("arbok", body["variant"]!!.jsonPrimitive.content)
     }
 
-    /** Models send a newline-separated block as often as they send an array. */
     @Test
     fun `the source may arrive as one newline-separated string`() {
         val result = GlyphAiTools.run(
@@ -378,13 +289,8 @@ class ScrollFramesTest {
         assertEquals(framesOf(ok(scroll(hi))), framesOf(ok(result)))
     }
 
-    // endregion
-
-    // region helpers
-
     private data class Cell(val x: Int, val y: Int)
 
-    /** Every lit cell of a frame, by position, with the character it carries. */
     private fun litCells(cells: String, size: Int): Map<Cell, Char> =
         cells.indices.filter { cells[it] != '0' }.associate { Cell(it % size, it / size) to cells[it] }
 
@@ -421,7 +327,6 @@ class ScrollFramesTest {
         durationMs?.let { put(GlyphAiTools.ARG_DURATION_MS, it) }
     }.toString()
 
-    /** The generated cells, read back out of the document the tool hands on. */
     private fun framesOf(body: JsonObject): List<String> =
         Json.parseToJsonElement(body[GlyphAiTools.KEY_APPLY_THIS]!!.jsonPrimitive.content)
             .jsonObject["variants"]!!.jsonObject
@@ -447,6 +352,4 @@ class ScrollFramesTest {
 
     private fun expected(result: GlyphToolResult): String =
         body(result)["expected"]!!.jsonPrimitive.content
-
-    // endregion
 }

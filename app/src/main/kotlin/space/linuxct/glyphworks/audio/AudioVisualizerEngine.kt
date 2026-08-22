@@ -14,17 +14,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * The process's single audiofx.Visualizer(0) wrapper (output mix, capture
- * size 256, FFT reads). Both the ambient audio layer and the standalone
- * visualizer screen call bands() so only one Visualizer instance ever exists.
- *
- * Failure-tolerant by contract: without RECORD_AUDIO or when the engine
- * cannot start (e.g. mic appops blocked in background), bands() returns null
- * and callers fall back to their idle/permission patterns. Construction is
- * retried at most every 30 s, never per tick. Self-managing lifecycle:
- * releases the Visualizer after 5 s without polls.
- */
+/** The one audiofx.Visualizer(0) in the process. [bands] returns null when it cannot run. */
 class AudioVisualizerEngine(
     private val app: Context,
     private val prefs: Prefs,
@@ -34,7 +24,7 @@ class AudioVisualizerEngine(
     private var visualizer: Visualizer? = null
     private var captureBuf = ByteArray(0)
     private var smoothed = FloatArray(0)
-    private var bandEdges = IntArray(0) // log-spaced FFT-bin edges, rebuilt when n changes
+    private var bandEdges = IntArray(0)
 
     @Volatile private var lastPollAt = 0L
     @Volatile private var lastFailAt = 0L
@@ -57,10 +47,10 @@ class AudioVisualizerEngine(
         if (app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             return null
         }
-        val v = visualizer ?: create() ?: return null
-        if (captureBuf.size != v.captureSize) captureBuf = ByteArray(v.captureSize)
+        val engine = visualizer ?: create() ?: return null
+        if (captureBuf.size != engine.captureSize) captureBuf = ByteArray(engine.captureSize)
         val status = try {
-            v.getFft(captureBuf)
+            engine.getFft(captureBuf)
         } catch (e: Exception) {
             Log.w(TAG, "getFft failed", e)
             releaseLocked()
@@ -85,7 +75,6 @@ class AudioVisualizerEngine(
                 Log.d(TAG, "Visualizer started")
             }
         } catch (e: Exception) {
-            // Expected when background mic capture is blocked by appops.
             Log.w(TAG, "Visualizer unavailable: ${e.message}")
             lastFailAt = now
             null
@@ -104,31 +93,17 @@ class AudioVisualizerEngine(
         visualizer = null
     }
 
-    /**
-     * FFT bytes -> n bands 0..1. Layout per Visualizer docs: [0]=DC, [1]=Nyquist,
-     * then (re, im) pairs.
-     *
-     * Band mapping is LOGARITHMIC (each bar ~ one musical octave), because a
-     * linear split parks nearly all musical energy in the leftmost bar and
-     * leaves the right half of the display permanently dark. Two further
-     * perceptual corrections: a high-frequency tilt (music rolls off with
-     * frequency, so the upper bars get extra gain) and square-root loudness
-     * compression (lifts quiet detail, tames booming lows).
-     *
-     * Rise/fall smoothing (visualizerTuning 1..6, default 1 = calmest; higher
-     * = snappier) keeps the 50 ms tick calm: bars glide up and sink over a few
-     * hundred milliseconds instead of snapping to each FFT frame.
-     */
+    // The FFT buffer holds DC, then Nyquist, then (re, im) pairs.
     private fun toBands(fft: ByteArray, n: Int): FloatArray {
-        val tuning = prefs.getInt(PrefKeys.VISUALIZER_TUNING, PrefKeys.VISUALIZER_TUNING_DEF).coerceIn(1, 6)
-        val gain = 0.75f + tuning * 0.125f
-        val attack = 0.25f + tuning * 0.05f
-        val decay = 0.84f + (6 - tuning) * 0.015f
+        val tuning = prefs.getInt(PrefKeys.VISUALIZER_TUNING, PrefKeys.VISUALIZER_TUNING_DEF)
+            .coerceIn(CALMEST_TUNING, LIVELIEST_TUNING)
+        val gain = GAIN_BASE + tuning * GAIN_PER_STEP
+        val attack = ATTACK_BASE + tuning * ATTACK_PER_STEP
+        val decay = DECAY_BASE + (LIVELIEST_TUNING - tuning) * DECAY_PER_STEP
 
         val pairs = (fft.size - 2) / 2
-        // ~2/3 of Nyquist (~16 kHz at 48 kHz output) — above that there is
-        // rarely anything to show.
-        val maxBin = (pairs * 2 / 3).coerceAtLeast(n + 1)
+        val twoThirdsOfNyquist = pairs * 2 / 3
+        val maxBin = twoThirdsOfNyquist.coerceAtLeast(n + 1)
         if (bandEdges.size != n + 1) bandEdges = buildLogEdges(n, maxBin)
         if (smoothed.size != n) smoothed = FloatArray(n)
 
@@ -141,31 +116,28 @@ class AudioVisualizerEngine(
                 if (bin >= pairs) break
                 val re = fft[2 + bin * 2].toFloat()
                 val im = fft[3 + bin * 2].toFloat()
-                sum += hypot(re, im) / 128f
+                sum += hypot(re, im) / BYTE_FULL_SCALE
                 count++
             }
             val tilt = 1f + HF_TILT * band / (n - 1).coerceAtLeast(1)
             val energy = if (count > 0) (sum / count) * gain * tilt else 0f
             val raw = min(1f, kotlin.math.sqrt(energy.coerceAtLeast(0f)))
             if (raw > rawMax) rawMax = raw
-            val prev = smoothed[band]
-            smoothed[band] = if (raw > prev) {
-                prev + (raw - prev) * attack // eased rise
+            val previous = smoothed[band]
+            smoothed[band] = if (raw > previous) {
+                previous + (raw - previous) * attack
             } else {
-                max(raw, prev * decay) // slow sink
+                max(raw, previous * decay)
             }
             out[band] = smoothed[band]
         }
         if (rawMax < TRUE_SILENCE) {
-            // True silence: collapse the decay tails immediately so the
-            // ambient audio layer reverts within one tick.
             smoothed.fill(0f)
             out.fill(0f)
         }
         return out
     }
 
-    /** Monotonic log-spaced bin edges from bin 1 to [maxBin], n bands. */
     private fun buildLogEdges(n: Int, maxBin: Int): IntArray {
         val edges = IntArray(n + 1)
         edges[0] = 1
@@ -184,8 +156,16 @@ class AudioVisualizerEngine(
         const val IDLE_STOP_MS = 5000L
         const val RETRY_COOLDOWN_MS = 30_000L
         const val TRUE_SILENCE = 0.02f
-
-        /** Extra gain on the highest band (linearly interpolated from 0). */
+        const val BYTE_FULL_SCALE = 128f
         const val HF_TILT = 1.6f
+
+        const val CALMEST_TUNING = 1
+        const val LIVELIEST_TUNING = 6
+        const val GAIN_BASE = 0.75f
+        const val GAIN_PER_STEP = 0.125f
+        const val ATTACK_BASE = 0.25f
+        const val ATTACK_PER_STEP = 0.05f
+        const val DECAY_BASE = 0.84f
+        const val DECAY_PER_STEP = 0.015f
     }
 }

@@ -8,22 +8,18 @@ import space.linuxct.glyphworks.matrix.Font3x5
 import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 
-/**
- * Dice: Glyph Touch (or shake) restarts an ~800 ms tumble animation, then a
- * uniformly random face is shown. D6 renders classic pip layouts; other dice
- * (D4/D8/D12/D20) render the rolled number inside a border.
- */
+/** Dice. A D6 shows pips; every other die shows the number in a border. */
 class DiceScreen : GlyphScreen {
     override val id = "dice"
     override val interactive = true
 
     private var ctx: ScreenContext? = null
-    private var face = 6
+    private var face = D6_SIDES
     private var rollStartedAt = 0L
 
     private fun sides(c: ScreenContext): Int =
         c.prefs.getString(PrefKeys.SELECTED_DICE, PrefKeys.SELECTED_DICE_DEF)
-            .removePrefix("D").toIntOrNull()?.coerceIn(2, 99) ?: 6
+            .removePrefix("D").toIntOrNull()?.coerceIn(MIN_SIDES, MAX_SIDES) ?: D6_SIDES
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
@@ -43,7 +39,7 @@ class DiceScreen : GlyphScreen {
     private fun startRoll() {
         val c = ctx ?: return
         rollStartedAt = c.ports.clock.nowMillis()
-        c.scheduler.setTicker(33) { tickRoll() }
+        c.scheduler.setTicker(TICK_MS) { tickRoll() }
     }
 
     private fun tickRoll() {
@@ -56,17 +52,14 @@ class DiceScreen : GlyphScreen {
             pushFace()
             return
         }
-        // Tumble: scattered pips flickering at random grid spots.
         val canvas = MatrixCanvas(c.size)
         val cells = pipCenters(c.size)
-        val count = 3 + c.ports.random.nextInt(4)
+        val count = TUMBLE_MIN_PIPS + c.ports.random.nextInt(TUMBLE_PIP_SPREAD)
         repeat(count) { i ->
             val p = cells[c.ports.random.nextInt(cells.size)]
             val v = TUMBLE_MIN + c.ports.random.nextInt(MAX_BRIGHTNESS - TUMBLE_MIN + 1)
-            // One pip per frame is always full brightness. Brightness is applied
-            // by multiplying the frame, so with every pip randomised the frame's
-            // peak — and with it the tumble's apparent brightness — flickered
-            // frame to frame instead of pip to pip.
+            // Panel brightness scales the whole frame, so without one pip pinned at the
+            // peak the tumble flickers frame to frame.
             drawPip(canvas, c.size, p, if (i == 0) MAX_BRIGHTNESS else v)
         }
         c.pushFrame(canvas.copyOut())
@@ -78,15 +71,24 @@ class DiceScreen : GlyphScreen {
     }
 
     companion object {
+        const val TICK_MS = 33L
         const val ROLL_MS = 800L
 
-        /** Dimmest a tumbling pip gets: 37 % of the full-brightness one. */
-        private const val TUMBLE_MIN = 1500
+        private const val D6_SIDES = 6
+        private const val MIN_SIDES = 2
+        private const val MAX_SIDES = 99
 
-        /** 3x3 grid of pip centers (13: 3/6/9, 25: 6/12/18). */
+        private const val TUMBLE_MIN = 1500
+        private const val TUMBLE_MIN_PIPS = 3
+        private const val TUMBLE_PIP_SPREAD = 4
+
+        private const val PIP_GRID = 3
+        private const val BORDER = 700
+
+        /** The 3x3 grid of pip centres: quarter, half and three-quarters of the panel. */
         private fun pipCenters(size: Int): List<Pair<Int, Int>> {
-            val u = size / 4 // 3 on 13, 6 on 25
-            val positions = listOf(u, 2 * u, 3 * u)
+            val spacing = size / (PIP_GRID + 1)
+            val positions = (1..PIP_GRID).map { it * spacing }
             return positions.flatMap { y -> positions.map { x -> x to y } }
         }
 
@@ -101,11 +103,11 @@ class DiceScreen : GlyphScreen {
 
         fun renderFace(size: Int, face: Int, sides: Int): IntArray {
             val canvas = MatrixCanvas(size)
-            if (sides == 6) {
-                val u = size / 4
-                val l = u
-                val m = 2 * u
-                val r = 3 * u
+            if (sides == D6_SIDES) {
+                val spacing = size / (PIP_GRID + 1)
+                val l = spacing
+                val m = 2 * spacing
+                val r = 3 * spacing
                 val pips: List<Pair<Int, Int>> = when (face) {
                     1 -> listOf(m to m)
                     2 -> listOf(l to l, r to r)
@@ -114,10 +116,11 @@ class DiceScreen : GlyphScreen {
                     5 -> listOf(l to l, r to l, m to m, l to r, r to r)
                     else -> listOf(l to l, r to l, l to m, r to m, l to r, r to r)
                 }
-                pips.forEach { drawPip(canvas, size, it, 4095) }
+                pips.forEach { drawPip(canvas, size, it, MAX_BRIGHTNESS) }
             } else {
-                canvas.rect(0, 0, size, size, 700)
-                Font3x5.drawStringCentered(canvas, face.toString(), size / 2 - 2, 4095)
+                canvas.rect(0, 0, size, size, BORDER)
+                val textTop = size / 2 - Font3x5.HEIGHT / 2
+                Font3x5.drawStringCentered(canvas, face.toString(), textTop, MAX_BRIGHTNESS)
             }
             return canvas.copyOut()
         }

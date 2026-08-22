@@ -22,23 +22,9 @@ import space.linuxct.glyphworks.core.design.DesignVariant
 import space.linuxct.glyphworks.core.design.KeyMode
 import space.linuxct.glyphworks.core.design.PokemonCodename
 
-/**
- * The tools are fed language-model output, which means they are fed malformed
- * input as a matter of routine. Two properties are asserted throughout:
- *
- * - **nothing throws.** Every bad document becomes a result the model can read
- *   and correct from. An exception would end the user's turn with "something
- *   went wrong" and tell the model nothing.
- * - **variant gating is by what the design carries**, never by what is on
- *   screen. A bellsprout-only design must refuse `arbok` in both directions, and
- *   the refusal must name what *is* allowed, or the model will simply try again
- *   the same way.
- */
 class GlyphAiToolsTest {
     private val bellsprout = PokemonCodename.BELLSPROUT
     private val arbok = PokemonCodename.ARBOK
-
-    // region get_current_design
 
     @Test
     fun `get_current_design emits only the variants the design carries`() {
@@ -49,8 +35,6 @@ class GlyphAiToolsTest {
 
         assertEquals(listOf("bellsprout"), body["allowed_variants"]!!.jsonArray.map { it.jsonPrimitive.content })
         assertEquals(setOf("bellsprout"), body["variants"]!!.jsonObject.keys)
-        // Not merely absent from the map: the word must not reach the model at
-        // all, or it will ask for a panel this design does not have.
         assertFalse(result.json.contains("arbok"))
     }
 
@@ -86,7 +70,6 @@ class GlyphAiToolsTest {
             GlyphAsciiPreview.renderCells(TestDesigns.lit(bellsprout), design.levels, bellsprout),
             frames[1].jsonObject["preview"]!!.jsonPrimitive.content,
         )
-        // The lit frame must show its 137 LEDs and nothing in the corners.
         val drawn = frames[1].jsonObject["preview"]!!.jsonPrimitive.content
         assertEquals(137, drawn.count { it != '\n' && it != GlyphAsciiPreview.OFF_PANEL })
     }
@@ -108,15 +91,10 @@ class GlyphAiToolsTest {
             variant["previewed_frames"]!!.jsonPrimitive.content.toInt(),
         )
         val frames = variant["frames"]!!.jsonArray
-        // Every frame is still listed with its cells; only the drawings stop.
         assertEquals(many.size, frames.size)
         assertNotNull(frames[GlyphAiTools.MAX_PREVIEW_FRAMES - 1].jsonObject["preview"])
         assertNull(frames[GlyphAiTools.MAX_PREVIEW_FRAMES].jsonObject["preview"])
     }
-
-    // endregion
-
-    // region the round trip
 
     @Test
     fun `a valid document applies and decodes back identical`() {
@@ -128,7 +106,6 @@ class GlyphAiToolsTest {
 
         assertFalse(result.isError)
         assertEquals(design, applied)
-        // And what the caller would store reads back as the same design.
         val reread = DesignCodec.decode(DesignCodec.encode(applied))
         assertTrue(reread is DesignCodec.Result.Ok)
         assertEquals(design, (reread as DesignCodec.Result.Ok).design)
@@ -220,8 +197,6 @@ class GlyphAiToolsTest {
 
     @Test
     fun `the document may arrive as a JSON object instead of JSON text`() {
-        // Models send it both ways whatever the schema says; refusing the object
-        // form would cost a round trip and teach nothing.
         val ctx = GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout)
         val raw = Json.parseToJsonElement(DesignCodec.encode(TestDesigns.bellsproutOnly()))
         val arguments = buildJsonObject { put("design", raw) }.toString()
@@ -231,18 +206,6 @@ class GlyphAiToolsTest {
         assertFalse(result.isError)
         assertEquals(TestDesigns.bellsproutOnly(), result.design)
     }
-
-    // endregion
-
-    // region partial documents
-    //
-    // A model asked to change only the art sends only "variants". The merge is by
-    // *presence*: a key the document leaves out keeps the canvas's value, for a
-    // top-level field exactly as for a whole panel. Getting this wrong is silent —
-    // the design still applies, it just comes back with a blank name, forced
-    // static, and every pixel re-lit because "levels" went back to its default and
-    // cells are palette indices. So each field is asserted on its own, both
-    // directions: omitted keeps, supplied changes.
 
     @Test
     fun `a document carrying only variants leaves every other field as it was`() {
@@ -258,7 +221,6 @@ class GlyphAiToolsTest {
         assertEquals("keyMode", KeyMode.PLAY_ONCE, applied.keyMode)
         assertTrue("loop", applied.loop)
         assertEquals("levels", listOf(0, 1024, 4095), applied.levels)
-        // The art it did send still landed: preserving is not ignoring.
         assertEquals(TestDesigns.lit(bellsprout), applied.variantFor(bellsprout)!!.frames.single().cells)
     }
 
@@ -277,28 +239,19 @@ class GlyphAiToolsTest {
 
         val applied = requireNotNull(call(GlyphAiTools.APPLY_DESIGN, args(document), ctx).design)
 
-        // Replaced, not merged frame by frame: the canvas's two frames are gone.
         assertEquals(1, applied.variantFor(bellsprout)!!.frames.size)
         assertEquals(500, applied.variantFor(bellsprout)!!.frames.single().durationMs)
-        // And the panel it never mentioned is untouched.
         assertEquals(design.variantFor(arbok), applied.variantFor(arbok))
     }
 
     @Test
     fun `a palette shorter than the kept frames index is still refused`() {
-        // The hazard keeping fields creates: levels comes from the model while the
-        // cells come from the canvas, so the two can disagree even though neither
-        // half is wrong on its own. The canvas's second frame is all index 2.
         val ctx = GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout)
 
         val result = call(GlyphAiTools.APPLY_DESIGN, args("""{"levels": [0, 4095]}"""), ctx)
 
         assertTrue(errorOf(result), errorOf(result).contains("palette index 2"))
     }
-
-    // endregion
-
-    // region variant gating
 
     @Test
     fun `a variant the design does not carry is refused, and the refusal names what is allowed`() {
@@ -322,8 +275,6 @@ class GlyphAiToolsTest {
 
     @Test
     fun `a variant the design does carry may be written while the other is on screen`() {
-        // The rule the user was most specific about: the permitted set is what
-        // the design carries, not what the editor is showing.
         val ctx = GlyphToolContext(TestDesigns.bothVariants(), openVariant = bellsprout)
         val document = document(
             variants = """{"arbok":{"frames":[{"durationMs":120,"cells":"${TestDesigns.lit(arbok)}"}]}}""",
@@ -343,10 +294,6 @@ class GlyphAiToolsTest {
         assertTrue(message, message.contains("cannot be edited"))
     }
 
-    // endregion
-
-    // region malformed frames
-
     @Test
     fun `a cells string of the wrong length is refused with the length expected`() {
         val short = TestDesigns.blank(bellsprout).dropLast(1)
@@ -358,7 +305,6 @@ class GlyphAiToolsTest {
 
     @Test
     fun `a palette index past the end of levels is refused with the legal range`() {
-        // '5' with a three-entry palette: legal base36, no such level.
         val cells = TestDesigns.blank(bellsprout).let { it.take(20) + "5" + it.drop(21) }
         val result = applying(cells = cells)
 
@@ -377,10 +323,6 @@ class GlyphAiToolsTest {
             assertTrue(expected(result).contains("${DesignCodec.MAX_DURATION_MS}"))
         }
     }
-
-    // endregion
-
-    // region malformed everything else
 
     @Test
     fun `no shape of nonsense throws`() {
@@ -411,8 +353,6 @@ class GlyphAiToolsTest {
         for (arguments in nonsense) {
             for (tool in listOf(GlyphAiTools.APPLY_DESIGN, GlyphAiTools.VALIDATE_DESIGN)) {
                 val result = call(tool, arguments, ctx)
-                // Whatever the verdict, it is JSON the model can read and it
-                // never carries a design to apply unless it succeeded.
                 val parsed = Json.parseToJsonElement(result.json).jsonObject
                 if (result.isError) {
                     assertTrue("$tool/$arguments has no error text", parsed.containsKey("error"))
@@ -433,10 +373,6 @@ class GlyphAiToolsTest {
         assertTrue(errorOf(result), errorOf(result).contains("characters"))
     }
 
-    // endregion
-
-    // region validate_design
-
     @Test
     fun `validate_design accepts what apply_design accepts and hands back nothing to apply`() {
         val design = TestDesigns.bellsproutOnly()
@@ -447,21 +383,10 @@ class GlyphAiToolsTest {
 
         assertTrue(body["valid"]!!.jsonPrimitive.boolean)
         assertFalse(body["applied"]!!.jsonPrimitive.boolean)
-        // The guarantee is structural: a dry run has no design for a caller to
-        // apply by mistake.
         assertNull(result.design)
-        // It is still reported, on the other channel: this is the draft the
-        // orchestrator falls back on if the turn runs out of rounds having
-        // applied nothing. A record of what passed, not an instruction.
         assertEquals(design.name, result.validated?.name)
     }
 
-    /**
-     * The two channels must not blur into one. `apply_design` is the tool that
-     * changes something and `validate_design` is the tool that cannot, and a
-     * caller reading the wrong field would either apply a dry run or fail to apply
-     * a real one.
-     */
     @Test
     fun `only the dry run reports a validated draft, and only a passing one`() {
         val design = TestDesigns.bellsproutOnly()
@@ -493,10 +418,6 @@ class GlyphAiToolsTest {
         assertEquals(dry["variants"], wet["variants"])
     }
 
-    // endregion
-
-    // region the tools themselves
-
     @Test
     fun `every spec is valid JSON that names its own tool`() {
         for (tool in GlyphAiTools.build()) {
@@ -507,25 +428,12 @@ class GlyphAiToolsTest {
             assertTrue(spec["description"]!!.jsonPrimitive.content.length > 40)
             val parameters = spec["parameters"]!!.jsonObject
             assertEquals("object", parameters["type"]!!.jsonPrimitive.content)
-            // Strict function calling requires every declared property to be
-            // required; a schema that drifts from that is silently downgraded.
             val properties = parameters["properties"]!!.jsonObject.keys
             val required = parameters["required"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
             assertEquals(properties, required)
         }
     }
 
-    /**
-     * Which tools write, and which only compute.
-     *
-     * The two that compute — `scroll_frames` and `image_to_grid` — hand back a
-     * document and nothing else, because the model still has to look at the
-     * pictures and ask for it. `set_frames` is the deliberate exception among the
-     * *newer* tools and it is not an inconsistency: a document expressing
-     * "frames 7 to 9 of 240 changed" would have to carry all 240, which is the
-     * whole cost it exists to avoid. So it is `apply_design` with a narrower
-     * argument, and it applies.
-     */
     @Test
     fun `only the writing tools carry a design for the caller to put on the canvas`() {
         val ctx = GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout)
@@ -571,14 +479,9 @@ class GlyphAiToolsTest {
         assertTrue(body(result)["available_tools"]!!.jsonArray.map { it.jsonPrimitive.content }.contains("apply_design"))
     }
 
-    // endregion
-
-    // region helpers
-
     private fun call(name: String, arguments: String, ctx: GlyphToolContext): GlyphToolResult =
         GlyphAiTools.run(name, arguments, ctx)
 
-    /** An apply of a single bellsprout frame, with one thing about it varied. */
     private fun applying(
         cells: String = TestDesigns.blank(bellsprout),
         durationMs: Int = 120,
@@ -588,18 +491,11 @@ class GlyphAiToolsTest {
         GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout),
     )
 
-    /**
-     * A canvas on which **every** field a document may carry differs from
-     * [Design]'s own default — `keyMode` and `levels` do not in the shared
-     * fixture, and a preservation test against a value that happens to equal the
-     * default would pass whether or not anything was preserved.
-     */
     private fun onCanvas(): Design = TestDesigns.bellsproutOnly().copy(
         keyMode = KeyMode.PLAY_ONCE,
         levels = listOf(0, 1024, 4095),
     )
 
-    /** Applies a document carrying [fields] and nothing else but a blank frame. */
     private fun applyingOnly(fields: String): Design {
         val ctx = GlyphToolContext(onCanvas(), openVariant = bellsprout)
         val document = """
@@ -652,6 +548,4 @@ class GlyphAiToolsTest {
 
     private fun expected(result: GlyphToolResult): String =
         body(result)["expected"]!!.jsonPrimitive.content
-
-    // endregion
 }

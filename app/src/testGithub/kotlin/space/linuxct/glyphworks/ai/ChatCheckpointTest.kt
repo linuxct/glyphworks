@@ -12,22 +12,6 @@ import space.linuxct.glyphworks.core.ai.ChatTranscript
 import space.linuxct.glyphworks.core.ai.ChatTranscriptCodec
 import java.io.File
 
-/**
- * Partial progress: the checkpoint a running turn leaves behind so that a
- * process death shows what arrived rather than an empty turn.
- *
- * Two properties, and the feature is worthless without either. The checkpoint has
- * to **round-trip through the store** — it is only ever read after the process
- * that wrote it is gone, so an encoder that dropped the flag would silently
- * redisplay a half sentence as a finished reply. And it has to be **replaced, not
- * accumulated**: a turn checkpoints every couple of seconds, and a transcript
- * that grew a message per checkpoint would turn a two-minute turn into forty
- * copies of the same paragraph.
- *
- * These are the pure halves of the same behaviour `GlyphAiSessionTest` exercises
- * through a running turn, written against the same file operations `ChatStore`
- * performs — `readTranscript` takes a `File`, so this can hand it a real one.
- */
 class ChatCheckpointTest {
     private val user = ChatMessage(role = ChatRole.USER, text = "draw a cat", atMs = 1)
 
@@ -38,8 +22,6 @@ class ChatCheckpointTest {
         tools = tools,
         partial = true,
     )
-
-    // region replaced, not accumulated
 
     @Test
     fun `the first checkpoint is appended`() {
@@ -68,10 +50,6 @@ class ChatCheckpointTest {
         assertEquals(before, before.withPartial(checkpoint("Draw")).withoutPartial())
     }
 
-    // endregion
-
-    // region through the store
-
     @Test
     fun `a checkpoint survives a write and a read`() {
         val transcript = ChatTranscript(designId = "abc")
@@ -95,6 +73,4 @@ class ChatCheckpointTest {
         assertEquals(1, read.messages[1].tools.size)
         assertFalse(read.messages[0].partial)
     }
-
-    // endregion
 }

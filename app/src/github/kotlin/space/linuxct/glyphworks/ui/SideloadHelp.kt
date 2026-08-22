@@ -27,28 +27,16 @@ import androidx.compose.ui.unit.dp
 import space.linuxct.glyphworks.R
 
 /**
- * The sideloading help, in both the places it appears.
- *
- * ## Why this is flavour-scoped
- *
- * Android blocks accessibility services for apps installed outside a store — the
- * "Restricted setting" dialog — and this app's whole point is an accessibility
- * service, so a sideloaded install hits that wall on first run. A Play install
- * never does. Left in the Play build, this copy would explain a problem the user
- * cannot have and point them at a menu that will not offer the item, which is
- * worse than saying nothing.
- *
- * The strings live in `src/github/res/values/strings_sideload.xml`, so `src/main`
- * cannot reference them even by accident.
+ * Android's "Restricted setting" dialog blocks accessibility services for apps installed
+ * outside a store, so a Play install never sees any of this. The strings live in
+ * `src/github/res/values/strings_sideload.xml`, out of `src/main`'s reach.
  */
 
-/** Opens this app's App info page, where "Allow restricted settings" lives. */
 private fun appInfoIntent(packageName: String) = Intent(
     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
     Uri.parse("package:$packageName"),
 )
 
-/** The card at the bottom of onboarding's key page. */
 @Composable
 internal fun ColumnScope.SideloadHelpCardImpl() {
     val context = LocalContext.current
@@ -81,14 +69,7 @@ internal fun ColumnScope.SideloadHelpCardImpl() {
     }
 }
 
-/**
- * The Tutorials tab's row, holding its own dialog state.
- *
- * The other three topics share `TutorialTab`'s `TutorialTopic` enum; this one
- * cannot, because the enum is in `src/main` and a member that exists in only one
- * flavour is exactly the coupling the seam removes. One boolean here costs less
- * than a flavour-scoped enum.
- */
+/** Holds its own dialog state: `TutorialTab`'s enum is in `src/main` and cannot name this. */
 @Composable
 internal fun RestrictedSettingsTutorialRow() {
     val context = LocalContext.current

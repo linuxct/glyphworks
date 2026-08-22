@@ -25,38 +25,10 @@ import space.linuxct.glyphworks.ui.MotionDialog
 import space.linuxct.glyphworks.ui.dialogCardWidth
 
 /**
- * The one-off disclosure, shown before **anything** leaves the device.
- *
- * ## What it has to say, and why each line is there
- *
- * `ui/DisclosureActivity` is the idiom this follows: a prominent, explicit,
- * accept-or-decline screen that names the thing that is about to happen, shown
- * *before* it happens rather than in a settings page nobody opens. The copy here
- * answers the three questions that disclosure has to answer — **what** goes (the
- * design's own JSON, what you type, any photo you attach), **where** it goes
- * (OpenAI, under the account you are about to sign in to), and **what stays**
- * (the conversation, on this phone, beside the design, deleted with it).
- *
- * The order in `aiGate` is what makes it a disclosure at all: it comes before the
- * sign-in, so nothing — not even the fact that this app exists — has reached
- * OpenAI when the user reads it.
- *
- * ## A dialog, where the disclosure for accessibility is an Activity
- *
- * `DisclosureActivity` is its own screen because the thing it precedes is a trip
- * to the system settings, which leaves the app anyway. This precedes an action
- * *inside* the editor, taken with a drawing on screen, and pushing an activity
- * would tear that screen down and rebuild it — flushing a save, dropping the live
- * matrix preview and returning to a canvas that had to reload — to ask one
- * question. So the pattern is followed and the container is not: same structure,
- * same explicit accept and decline, same "nothing happens until you say yes".
- *
- * ## Declining
- *
- * Declining is dismissal. Nothing is written, nothing is sent, the editor is
- * exactly as it was, and tapping sparkles again asks again — which is the right
- * answer for somebody who tapped it a second time. See `AiConsentStore` for why
- * there is no stored "no".
+ * The one-off disclosure, which `aiGate` puts before the sign-in so nothing has reached
+ * OpenAI yet. A dialog rather than an Activity, because pushing one would tear down the
+ * editor underneath to ask a single question. Declining is just dismissal; see
+ * `AiConsentStore` for why there is no stored "no".
  */
 @Composable
 internal fun GlyphAiConsentDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
@@ -96,10 +68,8 @@ internal fun GlyphAiConsentDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
                         Text(stringResource(R.string.ai_consent_decline))
                     }
                     Spacer(Modifier.width(4.dp))
-                    // Accepting does NOT dismiss: the gate moves on to the
-                    // sign-in by itself, in the same window, so the user goes
-                    // from "yes" to the sign-in button without a flicker of the
-                    // editor in between.
+                    // Accepting does not dismiss: the gate moves on to the sign-in in the
+                    // same window, with no flicker of the editor in between.
                     Button(onClick = onAccept) {
                         Text(stringResource(R.string.ai_consent_accept))
                     }

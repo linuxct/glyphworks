@@ -6,11 +6,6 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import space.linuxct.glyphworks.core.LocationPort
 
-/**
- * Passive last-known location (for the solar-path screen). Never requests an
- * active fix; returns null without a location permission. The lookup result
- * is cached for ~10 minutes to keep per-tick polling free.
- */
 class AndroidLocationPort(private val app: Context) : LocationPort {
 
     @Volatile private var cached: Pair<Double, Double>? = null
@@ -21,18 +16,17 @@ class AndroidLocationPort(private val app: Context) : LocationPort {
         if (now - cachedAt < CACHE_MS) return cached
         cachedAt = now
 
-        // Coarse only — the consumers want a latitude for solar maths, where a
-        // city-block fix and a metre-accurate one give the same sunrise.
-        val coarse = app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!coarse) {
+        val hasCoarseLocation =
+            app.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasCoarseLocation) {
             cached = null
             return null
         }
         cached = try {
-            val lm = app.getSystemService(LocationManager::class.java)
-            lm?.allProviders?.firstNotNullOfOrNull { provider ->
+            val locationManager = app.getSystemService(LocationManager::class.java)
+            locationManager?.allProviders?.firstNotNullOfOrNull { provider ->
                 try {
-                    lm.getLastKnownLocation(provider)
+                    locationManager.getLastKnownLocation(provider)
                 } catch (_: SecurityException) {
                     null
                 }

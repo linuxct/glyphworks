@@ -6,27 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * The scroll itself: where the letters sit, what the disc takes off them, and
- * that the whole thing survives the real [DesignCodec].
- *
- * The measurements these tests are built on came from `PanelMask`, not from
- * taste. At 13x13 the live row-span per column is 5, 9, 11, 11, 13, 13, 13, 13,
- * 13, 11, 11, 9, 5 — so a nine-row band on rows 2-10 is whole in eleven of the
- * thirteen columns and cut only in the two outermost ones. That is the trade the
- * whole feature rests on: letters that fill the panel, clipped where nobody
- * reads them.
- */
 class MarqueeTextTest {
     private val bellsprout = PokemonCodename.BELLSPROUT
     private val arbok = PokemonCodename.ARBOK
 
-    // region geometry
-
-    /**
-     * The scale, the band and the rows it lands on, checked against the mask
-     * rather than against each other.
-     */
     @Test
     fun `the band is centred and the mask agrees with where it lands`() {
         assertEquals(1, MarqueeText.scaleFor(13))
@@ -35,7 +18,6 @@ class MarqueeTextTest {
         assertEquals(2, MarqueeText.topRow(13, 1))
         assertEquals(3, MarqueeText.topRow(25, 2))
 
-        // Rows 2-10 at 13x13 are entirely live in every column but 0 and 12.
         for (x in 1..11) {
             for (y in 2..10) {
                 assertTrue("($x, $y) should be on the panel", PanelMask.contains(x, y, 13))
@@ -45,14 +27,6 @@ class MarqueeTextTest {
         assertEquals(false, PanelMask.contains(12, 9, 13))
     }
 
-    // endregion
-
-    // region the traverse
-
-    /**
-     * Panel width + message width - 1, which is what the assistant's animation
-     * guidance states in those words.
-     */
     @Test
     fun `the traverse is the panel plus the message`() {
         assertEquals(9, MarqueeFont.stripWidth("HI"))
@@ -60,13 +34,6 @@ class MarqueeTextTest {
         assertEquals(13 + 9 - 1, MarqueeText.frameCount("HI", 25, 2, 2))
     }
 
-    /**
-     * The bound is not the count, and this is the case that shows why: the last
-     * column of "HI" is the `I`'s bottom serif, whose only lit rows are the
-     * band's top and bottom — both outside the five live rows of the panel's
-     * outermost column. That frame arrives blank, and a design that ends on a
-     * dark panel is the defect the prompt calls out by name.
-     */
     @Test
     fun `a frame that would arrive blank is dropped rather than shipped`() {
         val frames = frames("HI", bellsprout)
@@ -77,14 +44,6 @@ class MarqueeTextTest {
         assertTrue(frames.last().cells.any { it != '0' })
     }
 
-    /**
-     * The exact first and last frames of a known phrase.
-     *
-     * "HI" at 13x13 opens with the `H`'s left upright at the panel's right-hand
-     * edge — nine rows of it, of which the disc keeps the middle five — and
-     * closes with the `I`'s stem at the left edge plus the two serif cells of its
-     * last column, which column 1 is tall enough to hold.
-     */
     @Test
     fun `the first and last frames of HI are exactly these cells`() {
         val frames = frames("HI", bellsprout)
@@ -95,10 +54,6 @@ class MarqueeTextTest {
             litCells(frames.last().cells, 13),
         )
     }
-
-    // endregion
-
-    // region what may never be in a frame
 
     @Test
     fun `no lit cell is ever outside the panel mask`() {
@@ -116,14 +71,6 @@ class MarqueeTextTest {
         }
     }
 
-    /**
-     * The anti-shear assertion, and mechanical rather than eyeballed.
-     *
-     * Frame n+1 must be frame n moved left by exactly `step`, with the disc
-     * applied afresh. Stated as a two-way implication so that neither a cell
-     * that failed to move nor a cell that appeared from nowhere can pass: a
-     * single row a column out of step fails it.
-     */
     @Test
     fun `every frame is the frame before it moved left by one step`() {
         for (codename in listOf(bellsprout, arbok)) {
@@ -144,10 +91,6 @@ class MarqueeTextTest {
             }
         }
     }
-
-    // endregion
-
-    // region the budget
 
     @Test
     fun `maxPrefixLength names a prefix that fits and a longer one that does not`() {
@@ -172,21 +115,10 @@ class MarqueeTextTest {
         assertEquals(emptyList<DesignFrame>(), MarqueeText.frames(phrase, 13))
         assertEquals(emptyList<DesignFrame>(), MarqueeText.frames("", 13))
         assertEquals(emptyList<DesignFrame>(), MarqueeText.frames("A♥B", 13))
-        // Index 0 is the off level, so every frame would be blank.
         assertEquals(emptyList<DesignFrame>(), MarqueeText.frames("HI", 13, paletteIndex = 0))
-        // Nine rows at scale 2 do not fit on a thirteen-row panel.
         assertEquals(emptyList<DesignFrame>(), MarqueeText.frames("HI", 13, scale = 2))
     }
 
-    // endregion
-
-    // region the codec
-
-    /**
-     * The property that makes the whole thing worth having: what comes out is a
-     * design this app will store, checked by the real validator rather than by
-     * inspection.
-     */
     @Test
     fun `a generated marquee validates through the real codec`() {
         for (codename in listOf(bellsprout, arbok)) {
@@ -204,8 +136,6 @@ class MarqueeTextTest {
             val result = DesignCodec.validate(design)
             assertTrue("${codename.codename}: $result", result is DesignCodec.Result.Ok)
 
-            // ...and it survives a round trip through the file format, which is
-            // the same bytes the store writes.
             val decoded = DesignCodec.decode(DesignCodec.encode(design))
             assertTrue(decoded is DesignCodec.Result.Ok)
             assertEquals(
@@ -229,10 +159,6 @@ class MarqueeTextTest {
         }
     }
 
-    // endregion
-
-    // region helpers
-
     private fun frames(text: String, codename: PokemonCodename): List<DesignFrame> =
         MarqueeText.frames(text, codename.size, paletteIndex = DEFAULT_LEVELS.size - 1)
 
@@ -241,6 +167,4 @@ class MarqueeTextTest {
         for (i in cells.indices) if (cells[i] != '0') out.add((i % size) to (i / size))
         return out
     }
-
-    // endregion
 }

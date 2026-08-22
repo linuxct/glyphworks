@@ -13,72 +13,15 @@ import space.linuxct.glyphworks.core.ai.ImageScale
 import space.linuxct.glyphworks.core.ai.SourceImage
 import java.io.ByteArrayOutputStream
 
-/**
- * One photo the user picked, ready to send and ready to show.
- *
- * [dataUrl] is built once, at attach time rather than at send time, for two
- * reasons: the work is a decode and a JPEG encode and doing it while the user is
- * still typing costs them nothing, and an image this app cannot read is then
- * reported the moment they pick it instead of failing the turn they were waiting
- * on. [thumbnail] is the same decode, kept small, so the chip in the input row
- * shows the picture rather than the word "photo".
- */
+/** One photo the user picked, built at attach time so a bad image is reported at once. */
 class AttachedImage(
-    /** Unique within one composer; only ever used to remove the right chip. */
     val id: Long,
-    /** `data:image/jpeg;base64,…`, as [ChatWire.imageDataUrl] builds it. */
     val dataUrl: String,
     val thumbnail: Bitmap?,
-    /**
-     * The same picture as brightness, for `image_to_grid`.
-     *
-     * **This is the seam.** Everything about turning a photo into art — the
-     * framing, the contrast, the threshold, the disc mask, the palette — is
-     * [space.linuxct.glyphworks.core.ai.ImageQuantiser], which is pure
-     * Kotlin and unit-tested. The only part that needs Android is getting at the
-     * pixels, and that happens here, once, on the bitmap this function has
-     * already decoded and oriented for the wire. What crosses into `core/` is
-     * two integers and an `IntArray`.
-     *
-     * Null if the pixels could not be read. The attachment still sends: the
-     * model can look at the photo either way, it simply cannot ask the app to
-     * convert it.
-     */
     val source: SourceImage?,
 )
 
-/**
- * Turns a picked image into something that can be put in a request body.
- *
- * ## Downscale, then re-encode, always
- *
- * The picker hands back a `content://` URI to whatever the camera wrote — 12
- * megapixels of HEIC or JPEG, often several megabytes. Base64 inflates by a
- * third on top of that, and the whole thing goes into one request the user is
- * watching a spinner for. [ImageScale] caps the long edge at 1024 px and the
- * result is re-encoded as JPEG, which also normalises HEIC, PNG and WebP into
- * the one format the wire format's data URL claims.
- *
- * The decode is subsampled ([ImageScale.sampleSize]) so the full-size bitmap is
- * never allocated: on a 4000x3000 photo that is the difference between 48 MB and
- * 3 MB of heap for an image that is about to be thrown away anyway.
- *
- * ## Orientation
- *
- * A phone camera stores portrait photos as landscape pixels plus an EXIF tag,
- * and `BitmapFactory` does not apply it. Sending the raw pixels would hand the
- * model a picture lying on its side — which, for the one job an attached photo
- * has here (being turned into art), is the difference between a face and a
- * puzzle. The tag is read and applied; a file with no readable EXIF is left
- * alone, which is the correct answer for a PNG or a screenshot.
- *
- * ## Nothing here throws
- *
- * A URI can be revoked between the picker returning and this running, a file can
- * be a zero-byte placeholder from a cloud provider, a decoder can simply refuse.
- * All of them are null, and the caller says "that image could not be attached" —
- * losing a photo must not lose the conversation.
- */
+/** A picked image as a JPEG data URL, or null if it cannot be read. Never throws. */
 internal fun readAttachment(context: Context, uri: Uri, id: Long): AttachedImage? = try {
     val bounds = decodeBounds(context, uri)
     val bitmap = decodeScaled(context, uri, bounds)
@@ -105,20 +48,16 @@ internal fun readAttachment(context: Context, uri: Uri, id: Long): AttachedImage
     DebugLog.w(TAG, "could not attach an image: ${e.javaClass.simpleName}: ${e.message}")
     null
 } catch (e: OutOfMemoryError) {
-    // Not an Exception, and the one error a decoder realistically raises. A photo
-    // is never worth taking the editor down for.
     DebugLog.w(TAG, "out of memory decoding an attachment")
     null
 }
 
-/** The image's dimensions, without allocating its pixels. */
 private fun decodeBounds(context: Context, uri: Uri): BitmapFactory.Options {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
     return options
 }
 
-/** The pixels, subsampled during the decode so the full size is never held. */
 private fun decodeScaled(context: Context, uri: Uri, bounds: BitmapFactory.Options): Bitmap? {
     val options = BitmapFactory.Options().apply {
         inSampleSize = ImageScale.sampleSize(bounds.outWidth, bounds.outHeight)
@@ -129,16 +68,8 @@ private fun decodeScaled(context: Context, uri: Uri, bounds: BitmapFactory.Optio
     }
 }
 
-/**
- * [bitmap] turned the way the camera was held, or unchanged if that is unknown.
- *
- * Lint asks for `androidx.exifinterface` here, and the answer is no: it is a
- * whole dependency, this feature's standing constraint is **zero new
- * dependencies**, and what androidx buys — parsers for formats and for platform
- * bugs from before API 24 — is irrelevant at `minSdk` 33 for the one tag this
- * reads. Written fully qualified so the suppression covers the reference rather
- * than an import line, which an annotation cannot reach.
- */
+// BitmapFactory drops the EXIF orientation tag, so a portrait photo arrives on its side.
+// The platform ExifInterface is fully qualified so the suppression covers the reference.
 @Suppress("ExifInterface")
 private fun applyExifRotation(context: Context, uri: Uri, bitmap: Bitmap): Bitmap {
     val orientation = try {
@@ -169,38 +100,12 @@ private fun applyExifRotation(context: Context, uri: Uri, bitmap: Bitmap): Bitma
     }
 }
 
-/** The last step down to [ImageScale.MAX_EDGE]; subsampling only got within 2x. */
 private fun scaleToCap(bitmap: Bitmap): Bitmap {
     if (!ImageScale.needsScaling(bitmap.width, bitmap.height)) return bitmap
     val (w, h) = ImageScale.targetSize(bitmap.width, bitmap.height)
     return Bitmap.createScaledBitmap(bitmap, w, h, true)
 }
 
-/**
- * [bitmap] as brightness, small enough to keep for the length of a turn, or null
- * if its pixels cannot be read.
- *
- * ## Why it is reduced first, and why that costs nothing
- *
- * The picture is on its way to being 137 dots. One cell of a 13x13 panel is
- * already averaging about fourteen pixels square at [ImageQuantiser.SOURCE_EDGE],
- * which is far past the point where more resolution changes the answer — while
- * keeping the full 1024 px version as an `IntArray` would be 4 MB per photo, and
- * four may be attached at once. The bilinear step down is safe here for the same
- * reason: whatever it loses, the box average in [ImageQuantiser.sample] would
- * have averaged away.
- *
- * ## Rec. 601, not the green channel
- *
- * The eye is far more sensitive to green than to blue, so a straight mean of the
- * three channels makes a blue sky read as bright as a green field and a red logo
- * disappear. These are the standard luma weights, in integers, because this runs
- * over ~37 000 pixels while the user is still typing.
- *
- * Nothing here throws, for the same reason as the rest of this file: losing the
- * conversion must not lose the photo, and losing the photo must not lose the
- * conversation.
- */
 private fun luminanceOf(bitmap: Bitmap): SourceImage? = try {
     val (w, h) = ImageScale.targetSize(bitmap.width, bitmap.height, ImageQuantiser.SOURCE_EDGE)
     val small = if (w == bitmap.width && h == bitmap.height) {
@@ -213,10 +118,11 @@ private fun luminanceOf(bitmap: Bitmap): SourceImage? = try {
     val luminance = IntArray(pixels.size)
     for (i in pixels.indices) {
         val p = pixels[i]
-        val r = (p shr 16) and 0xFF
-        val g = (p shr 8) and 0xFF
-        val b = p and 0xFF
-        luminance[i] = (77 * r + 151 * g + 28 * b) shr 8
+        val red = (p shr 16) and 0xFF
+        val green = (p shr 8) and 0xFF
+        val blue = p and 0xFF
+        luminance[i] =
+            (REC601_RED * red + REC601_GREEN * green + REC601_BLUE * blue) shr REC601_SHIFT
     }
     SourceImage(width = w, height = h, luminance = luminance)
 } catch (e: Exception) {
@@ -226,9 +132,8 @@ private fun luminanceOf(bitmap: Bitmap): SourceImage? = try {
     null
 }
 
-/** A chip-sized copy, or null if it cannot be made — the chip degrades, not the send. */
 private fun thumbnailOf(bitmap: Bitmap): Bitmap? = try {
-    val (w, h) = ImageScale.targetSize(bitmap.width, bitmap.height, THUMBNAIL_EDGE)
+    val (w, h) = ImageScale.targetSize(bitmap.width, bitmap.height, THUMBNAIL_EDGE_PX)
     Bitmap.createScaledBitmap(bitmap, w, h, true)
 } catch (e: Exception) {
     null
@@ -236,7 +141,13 @@ private fun thumbnailOf(bitmap: Bitmap): Bitmap? = try {
     null
 }
 
-/** Long edge of the preview shown in the composer, in pixels. */
-private const val THUMBNAIL_EDGE = 192
+private const val THUMBNAIL_EDGE_PX = 192
+
+// Rec. 601 luma weights, as 8-bit fixed point. A plain channel mean makes a blue sky read
+// as bright as a green field.
+private const val REC601_RED = 77
+private const val REC601_GREEN = 151
+private const val REC601_BLUE = 28
+private const val REC601_SHIFT = 8
 
 private const val TAG = "GlyphAiImages"

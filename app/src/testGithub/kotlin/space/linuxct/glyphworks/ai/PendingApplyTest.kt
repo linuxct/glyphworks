@@ -19,20 +19,6 @@ import space.linuxct.glyphworks.core.design.DesignVariant
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import java.io.File
 
-/**
- * A design the assistant finished with nobody watching: the rule that decides
- * whether it may still be applied, and the file it waits in.
- *
- * The rule is the part worth proving. It is the one decision in this feature that
- * can destroy something either way round — the model's drawing if it is too
- * strict, the *user's own* if it is too loose — and it is invisible when it goes
- * wrong, because both outcomes look like "the design is what it is".
- *
- * The path derivation is here for `ChatStoreTest`'s reason, unchanged: the id
- * arrives from a design document, a design document can be a file a stranger
- * wrote, and `../../shared_prefs/openai_auth` must not be able to name one of
- * these.
- */
 class PendingApplyTest {
     private fun record(
         baseModifiedAt: String = MODIFIED_AT,
@@ -56,8 +42,6 @@ class PendingApplyTest {
         ),
     )
 
-    // region the conflict rule
-
     @Test
     fun `an untouched design takes the change`() {
         assertEquals(
@@ -66,12 +50,6 @@ class PendingApplyTest {
         )
     }
 
-    /**
-     * The case the rule exists for. The user closed the editor mid-turn, went
-     * back in and drew something themselves, and closed it again. Their strokes
-     * are newer than the model's draft, and a whole-document replace would erase
-     * every one of them with nothing on screen to say so.
-     */
     @Test
     fun `a design edited since the change was recorded is left alone`() {
         assertEquals(
@@ -94,10 +72,6 @@ class PendingApplyTest {
 
         assertEquals(PendingApplyVerdict.EXPIRED, pendingApplyVerdict(old, MODIFIED_AT, NOW))
     }
-
-    // endregion
-
-    // region the record on disk
 
     @Test
     fun `a record round-trips with its design intact`() {
@@ -139,11 +113,6 @@ class PendingApplyTest {
         assertNotNull(readPendingApply(file))
     }
 
-    /**
-     * The backup goes with the record, for `deleteTranscript`'s reason: a record
-     * surviving under its backup name would be picked up by the recovery path and
-     * land a second time, on a design the user has since moved on from.
-     */
     @Test
     fun `deleting takes the backup and the temp with it`() {
         val dir = createTempDirectory()
@@ -159,8 +128,6 @@ class PendingApplyTest {
         assertFalse(File(dir, "abc123.json.tmp").exists())
         assertTrue("nothing else in the directory is touched", File(dir, "other.json").exists())
     }
-
-    // endregion
 
     private fun createTempDirectory(): File {
         val dir = File.createTempFile("pending-dir", "")

@@ -17,32 +17,11 @@ import space.linuxct.glyphworks.core.design.KeyMode
 import space.linuxct.glyphworks.core.design.MarqueeFont
 import space.linuxct.glyphworks.core.design.PokemonCodename
 
-/**
- * `marquee_text`'s contract.
- *
- * `scroll_frames` took the windowing away from the model and left it the
- * drawing, which for words meant re-deriving a nine-row alphabet on every
- * request. The failure that produces is not a torn letter — that one is already
- * impossible — but a merely *bad* one, and nothing catches a bad letter, because
- * one frame at a time it does not look wrong. So the letterforms moved into the
- * app too, and what these tests hold is the seam that decision created:
- *
- * - what it hands back is a document `apply_design` accepts **unchanged**;
- * - it applies nothing itself, and carries no design for a caller to apply;
- * - it owns `kind` and `loop` and nothing else, so a design's palette, key mode
- *   and other panel survive a marquee;
- * - a refusal is **measured**: a phrase past the frame limit comes back with the
- *   longest prefix of *that phrase* that fits and the step that would fit the
- *   whole of it, and both of those answers are re-run here and must work.
- */
 class MarqueeTextToolTest {
     private val bellsprout = PokemonCodename.BELLSPROUT
     private val arbok = PokemonCodename.ARBOK
 
-    /** Long enough that no step and no prefix could carry it whole. */
     private val tooLong = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG"
-
-    // region what it hands back
 
     @Test
     fun `apply_this is a document apply_design accepts as it stands`() {
@@ -60,7 +39,6 @@ class MarqueeTextToolTest {
         val design = applied.design!!
         assertEquals(framesOf(body).size, design.variantFor(bellsprout)!!.frames.size)
         assertEquals(framesOf(body), design.variantFor(bellsprout)!!.frames.map { it.cells })
-        // ...and the design the app would store reads back the same.
         assertTrue(DesignCodec.decode(DesignCodec.encode(design)) is DesignCodec.Result.Ok)
     }
 
@@ -74,11 +52,6 @@ class MarqueeTextToolTest {
         assertFalse(body(result)["applied"]!!.jsonPrimitive.content.toBoolean())
     }
 
-    /**
-     * What the document owns, stated as what it *contains*: a key that is absent
-     * means "do not change this" to `apply_design`, so the palette, the key mode
-     * and the name survive by not being mentioned.
-     */
     @Test
     fun `the document sets kind and loop and mentions nothing else`() {
         val document = Json.parseToJsonElement(
@@ -125,11 +98,6 @@ class MarqueeTextToolTest {
         assertFalse(ok(marquee("HI")).toString().contains("arbok"))
     }
 
-    /**
-     * The one thing in the result the model is told to read first: the phrase as
-     * a single picture, which is where a misspelling is visible and a stack of
-     * panel-width frames is not.
-     */
     @Test
     fun `the strip is the whole phrase in one picture`() {
         val body = ok(marquee("GLYPH"))
@@ -137,10 +105,6 @@ class MarqueeTextToolTest {
         assertEquals(MarqueeFont.picture("GLYPH").joinToString("\n"), body["strip"]!!.jsonPrimitive.content)
         assertEquals(MarqueeFont.stripWidth("GLYPH"), body["strip_width"]!!.jsonPrimitive.content.toInt())
     }
-
-    // endregion
-
-    // region refusing usefully
 
     @Test
     fun `characters it cannot draw are all named at once`() {
@@ -155,11 +119,6 @@ class MarqueeTextToolTest {
         assertTrue(expected(result).contains("cafe"))
     }
 
-    /**
-     * The refusal that had to be actionable. A bare "too long" sends the model
-     * into shortening the phrase a word at a time; this one carries two answers,
-     * and the next two tests re-run both of them.
-     */
     @Test
     fun `a phrase past the frame limit is refused with numbers, not a shrug`() {
         val result = marquee(tooLong)
@@ -185,10 +144,6 @@ class MarqueeTextToolTest {
         )
     }
 
-    // endregion
-
-    // region the previews
-
     @Test
     fun `every frame is listed and the previews are capped`() {
         val body = ok(marquee("HELLO WORLD"))
@@ -201,14 +156,8 @@ class MarqueeTextToolTest {
             frames.count { it.jsonObject.containsKey("preview") },
         )
         assertTrue(body["previews_truncated"]!!.jsonPrimitive.content.toBoolean())
-        // The cells live in apply_this, once. Reading them back out and
-        // retyping them is the thing this whole family of tools prevents.
         assertTrue(frames.none { it.jsonObject.containsKey("cells") })
     }
-
-    // endregion
-
-    // region helpers
 
     private fun ctx(): GlyphToolContext =
         GlyphToolContext(TestDesigns.bellsproutOnly(), openVariant = bellsprout)
@@ -256,6 +205,4 @@ class MarqueeTextToolTest {
 
     private fun expected(result: GlyphToolResult): String =
         body(result)["expected"]!!.jsonPrimitive.content
-
-    // endregion
 }

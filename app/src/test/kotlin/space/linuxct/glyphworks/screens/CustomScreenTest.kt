@@ -14,17 +14,7 @@ import space.linuxct.glyphworks.core.design.DesignVariant
 import space.linuxct.glyphworks.core.design.KeyMode
 import space.linuxct.glyphworks.core.design.PokemonCodename
 
-/**
- * The Custom screen, driven entirely through the fake scheduler.
- *
- * Timing is asserted against each frame's own `durationMs`, never against a tick
- * count: the whole reason this screen chains one-shots instead of setting a
- * ticker is that a design's frames may each be held for a different length of
- * time, and a test that advanced by a fixed interval would pass just as happily
- * against a ticker that ignored the authored durations.
- */
 class CustomScreenTest {
-    // ---------- static ----------
 
     @Test
     fun `a static design pushes its one frame and nothing else`() {
@@ -36,12 +26,9 @@ class CustomScreenTest {
 
         assertEquals(1, h.frames.size)
         assertArrayEquals(decoded(13, lit = 40), h.frames[0])
-        // No chain was armed: a still image must cost nothing while it is up.
         h.scheduler.advanceTime(60_000)
         assertEquals(1, h.frames.size)
     }
-
-    // ---------- dynamic timing ----------
 
     @Test
     fun `each frame is held for exactly its own authored duration`() {
@@ -70,13 +57,10 @@ class CustomScreenTest {
         h.scheduler.advanceTime(1)
         assertArrayEquals(decoded(13, lit = 2), h.frames.last())
 
-        // Last frame of a non-looping playPause design: held, not cleared.
         h.scheduler.advanceTime(10_000)
         assertEquals(3, h.frames.size)
         assertArrayEquals(decoded(13, lit = 2), h.frames.last())
     }
-
-    // ---------- key modes ----------
 
     @Test
     fun `playOnce rests on frame 0, plays through on a press, and returns`() {
@@ -90,7 +74,6 @@ class CustomScreenTest {
 
         screen.onActivate(h.context)
         assertArrayEquals(decoded(13, lit = 0), h.frames.last())
-        // Resting means resting: no chain until asked.
         h.scheduler.advanceTime(5_000)
         assertEquals(1, h.frames.size)
 
@@ -100,9 +83,6 @@ class CustomScreenTest {
         h.scheduler.advanceTime(100)
         assertArrayEquals(decoded(13, lit = 2), h.frames.last())
 
-        // Past the last frame it returns to 0 and stops there — and the return is
-        // pushed, so the matrix shows the rest position rather than the end of
-        // the animation.
         h.scheduler.advanceTime(100)
         assertArrayEquals(decoded(13, lit = 0), h.frames.last())
         val settled = h.frames.size
@@ -121,18 +101,17 @@ class CustomScreenTest {
         )
         val screen = CustomScreen()
 
-        // A dynamic playPause design animates as soon as it is on screen.
         screen.onActivate(h.context)
         h.scheduler.advanceTime(100)
         assertArrayEquals(decoded(13, lit = 1), h.frames.last())
 
-        screen.onEvent(Events.CHANGE) // pause
+        screen.onEvent(Events.CHANGE)
         val paused = h.frames.size
         h.scheduler.advanceTime(5_000)
         assertEquals("a paused design must not advance", paused, h.frames.size)
         assertArrayEquals(decoded(13, lit = 1), h.frames.last())
 
-        screen.onEvent(Events.CHANGE) // resume, from where it stopped
+        screen.onEvent(Events.CHANGE)
         h.scheduler.advanceTime(100)
         assertArrayEquals(decoded(13, lit = 2), h.frames.last())
     }
@@ -149,20 +128,13 @@ class CustomScreenTest {
         val screen = CustomScreen()
 
         screen.onActivate(h.context)
-        // One advance per frame, never one big jump: FakeScheduler re-anchors a
-        // one-shot armed from inside a callback to the clock as it stands at that
-        // moment, so a single 300 ms jump would fire one link of the chain, not
-        // three. The real Handler behaves the same way — it just runs on a clock
-        // that does not move in 300 ms steps.
-        h.scheduler.advanceTime(100) // -> frame 1
-        h.scheduler.advanceTime(100) // -> frame 2
-        h.scheduler.advanceTime(100) // past the end: loop, back to frame 0
+        h.scheduler.advanceTime(100)
+        h.scheduler.advanceTime(100)
+        h.scheduler.advanceTime(100)
         assertArrayEquals(decoded(13, lit = 0), h.frames.last())
         h.scheduler.advanceTime(100)
         assertArrayEquals(decoded(13, lit = 1), h.frames.last())
     }
-
-    // ---------- the placeholder ----------
 
     @Test
     fun `no design selected renders the placeholder`() {
@@ -176,8 +148,6 @@ class CustomScreenTest {
         assertArrayEquals(CustomScreen.renderPlaceholder(13), h.frames[0])
     }
 
-    // ---------- deactivation ----------
-
     @Test
     fun `onDeactivate cancels the chain so no frame arrives afterwards`() {
         val h = TestHarness(13)
@@ -190,15 +160,12 @@ class CustomScreenTest {
         val screen = CustomScreen()
 
         screen.onActivate(h.context)
-        h.scheduler.advanceTime(50) // mid-frame: a one-shot is armed and due soon
+        h.scheduler.advanceTime(50)
         val atDeactivation = h.frames.size
 
         screen.onDeactivate()
         h.scheduler.advanceTime(60_000)
 
-        // The ScreenContext is a single instance ScreenManager hands to whichever
-        // screen is active, so a surviving one-shot would not merely be wasted
-        // work — it would paint this design over the next toy.
         assertEquals(
             "a pending frame after deactivate would land on the NEXT screen",
             atDeactivation,
@@ -207,23 +174,15 @@ class CustomScreenTest {
     }
 
     private companion object {
-        /** A frame with exactly one cell at palette index 2 (4095), the rest dark. */
         fun frame(size: Int, lit: Int, durationMs: Int = 120): DesignFrame {
             val cells = StringBuilder("0".repeat(size * size))
             cells.setCharAt(lit, '2')
             return DesignFrame(durationMs, cells.toString())
         }
 
-        /** What [frame] decodes to, so assertions name the art rather than an index. */
         fun decoded(size: Int, lit: Int): IntArray =
             DesignFrames.decode(frame(size, lit).cells, DEFAULT_LEVELS, size)!!
 
-        /**
-         * A design carrying [frames] for one device. Built directly rather than
-         * through [space.linuxct.glyphworks.core.design.DesignCodec]:
-         * the screen is being tested, not the validator, and the port hands it
-         * whatever the store held.
-         */
         fun design(
             kind: DesignKind,
             keyMode: KeyMode = KeyMode.PLAY_PAUSE,

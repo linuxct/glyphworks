@@ -18,8 +18,8 @@ A Jetpack Compose app styled to feel native to Nothing OS, with four tabs behind
   import action sits at the top. The first visit offers the guided demo one time.
 - **Settings** — the **Initial setup** checklist, then the **App settings**: the key capture switch,
   Menu mode, the 12-hour clock, the Glyph brightness, your creator name and the update check. The
-  checklist verifies the always-on toy through the real toy binding of the system. It collapses when
-  every row is a check mark, and it opens again while a row is open.
+  checklist checks the always-on toy through the system's real toy binding. It collapses once every
+  row is a check mark, and opens again while a row is open.
 - **Tutorials** — short guides for the hard parts.
 
 ### Tutorials
@@ -28,10 +28,10 @@ A Jetpack Compose app styled to feel native to Nothing OS, with four tabs behind
   down and shows its camera island, its Glyph Matrix and its Essential Key. Short timelines repeat
   what one, two and three presses do, in both modes, at the real blink rate.
 - **Create your own design** — a guided demo, not a page of text. It opens the real Create tab and
-  the real editor on a temporary design, and it performs each gesture for you: the **+** button, the
+  the real editor on a temporary design, then performs each gesture for you: the **+** button, the
   questions for a new design, a stroke, an undo, a duplicate, a new frame, a drag, a frame duration,
-  then **Design settings** for the key mode and for repeat. A spotlight and one line of text follow
-  the action. Nothing is saved, and it never touches the matrix.
+  then **Design settings** for key mode and repeat. A spotlight and one line of text follow along.
+  Nothing is saved, and it never touches the matrix.
 - **Hand over the Essential Key** — the steps in the system settings.
 - **Restricted settings** — the steps to unlock a sideloaded app, with a button to App info.
 
@@ -40,15 +40,14 @@ A Jetpack Compose app styled to feel native to Nothing OS, with four tabs behind
 The theme is monochrome — black, white and greys. Contrast does the work that colour usually does:
 state, selection, errors, emphasis. Three exceptions, and no more:
 
-1. The **+** button on the Create tab, in the Nothing red `#D71921` and blue `#110E56`. An AGSL
-   shader warps a field of sines into red and blue lobes. It draws only while the button is on
-   screen and the app is resumed. The red is darker in linear light, so the button keeps the
-   lightness of the grey button that it replaced.
+1. The **+** button on the Create tab, in Nothing red `#D71921` and blue `#110E56`. An AGSL shader
+   warps a field of sines into red and blue lobes. It draws only while the button is on screen and
+   the app is resumed.
 2. The small red dot on the phone illustration. It is a picture of a square on the back of the real
    phone, not an accent.
 3. The setup badge: a 16 dp `#D71921` disc with a white **!**. It appears on the Settings chip while
-   the checklist has an open row. This is the only place where a hue means something, and it is
-   never the only signal — the chip also reads out as "Settings, setup incomplete".
+   the checklist has an open row. It's the only place a hue means something, and it's never the only
+   signal. The chip also reads out as "Settings, setup incomplete".
 
 The greys come from Nothing OS Settings in both modes: a `#F2F2FA` page with white cards in light
 mode, and a black page with `#191C20` cards in dark mode. The **NType82-Regular** headline font is
@@ -62,9 +61,9 @@ lock screen.
 
 ## The first run
 
-The very first launch opens the onboarding flow instead of the main screen. An animated copy
-of the Glyph Matrix heads each page: a disc of 489 LEDs — a 25×25 grid under a circular mask — that
-lights up in a pseudo-random order and draws the art for that page.
+The very first launch opens onboarding instead of the main screen. An animated copy of the Glyph
+Matrix heads each page: a disc of 489 LEDs, a 25×25 grid under a circular mask. It lights up in a
+pseudo-random order and draws the art for that page.
 
 The pages, in order. **Next** skips any step, and the main screen holds all of them again:
 
@@ -81,9 +80,9 @@ The pages, in order. **Next** skips any step, and the main screen holds all of t
    ends the flow on that tab.
 6. **Welcome** — a recap of your setup, then the app.
 
-The flow reads the state of the system again after each return from Settings, so the status lines
-and the conditional page stay correct. The end of the flow sets a preference. Until then,
-MainActivity sends you back to the onboarding.
+The flow re-reads system state each time you come back from Settings, so the status lines and the
+conditional page stay correct. Finishing the flow sets a preference. Until then, MainActivity sends
+you back to onboarding.
 
 ## The two flavours
 
@@ -101,13 +100,11 @@ unzip -p app-play-release.apk classes.dex | strings | grep -ciE 'openai|codex'  
 
 Each excluded entry point is a seam. One function has two declarations with the same signature: a
 real one in `src/github/…/ui/OptionalFeatures.kt`, and an empty one in
-`src/play/…/ui/OptionalFeatures.kt`. `src/main` calls them every time, and it never names an AI type
-or an updater type. Only a build of the other flavour proves that the two files agree, so CI builds
-both.
+`src/play/…/ui/OptionalFeatures.kt`. `src/main` always calls those, and never names an AI type or an
+updater type. Only a build of the other flavour proves the two files agree, so CI builds both.
 
-`testPlayDebugUnitTest` runs fewer tests than `testGithubDebugUnitTest`. That's on purpose, not a gap:
-the AI tests and the updater tests live in `src/testGithub/`, and they test code that the Play build
-does not hold.
+`testPlayDebugUnitTest` runs fewer tests than `testGithubDebugUnitTest`. That's on purpose, not a
+gap. The AI and updater tests live in `src/testGithub/` and test code the Play build doesn't hold.
 
 ## R8
 
@@ -121,8 +118,8 @@ The official Glyph Matrix SDK sits at `app/libs/glyph-matrix-sdk-2.0.aar`.
 ## Tests and ASCII goldens
 
 Data ports hide the platform, so every toy draws in pure Kotlin. The JVM tests draw each toy at
-13×13 and at 25×25 and compare the result to an **ASCII golden file** in
-`app/src/test/resources/goldens/`. You can open one and see the frame with your own eyes.
+13×13 and 25×25, then compare the result to an **ASCII golden file** in
+`app/src/test/resources/goldens/`. Open one and you can see the frame with your own eyes.
 
 After an intended visual change, write the goldens again:
 
@@ -149,14 +146,14 @@ Two workflows live in `.github/workflows/`:
 
 The signature belongs to the `release` build type, so both variants take the same certificate. The
 workflow verifies the signature before it creates the tag. Without a `keystore.properties`, Gradle
-writes an unsigned release instead of a failure, and the Play Console rejects that hours later. A
-`keystore.properties` in the root of the repository drives the same setup on your machine.
+writes an unsigned release instead of failing, and the Play Console rejects that hours later. Put a
+`keystore.properties` in the repository root for the same setup on your machine.
 
 ## Essential Key coexistence
 
-The accessibility service watches the window events of the Essential Space and Essential Recorder
-packages. On some firmware, the system acts on the key before the key filter can consume it. In that
-case GlyphWorks closes the pop-up: BACK when the phone is unlocked, HOME when it is locked.
+The accessibility service watches window events from the Essential Space and Essential Recorder
+packages. On some firmware the system acts on the key before the key filter can consume it. GlyphWorks
+then closes the pop-up: BACK when the phone is unlocked, HOME when it's locked.
 
 The clean answer is still the hand-off in the system settings. Keep both apps on.
 
@@ -185,14 +182,14 @@ app/src/main/kotlin/space/linuxct/glyphworks/
 
 ## Key behaviour, in detail
 
-- Presses within **400 ms** of each other count as one gesture. That's why a single press acts about
-  400 ms after you let go — the app has to wait and see whether a second press arrives. Each press
+- Presses within **400 ms** of each other count as one gesture. So a single press acts about 400 ms
+  after you let go, because the app has to wait and see whether a second press arrives. Each press
   it recognises gives a short vibration.
 - A single press only fires on interactive toys (the ✅ rows in [TOYS.md](TOYS.md)). Double and
   triple press work on every toy.
 - Key capture is a master switch, with a Quick Settings tile beside it. While capture is on, every
-  press is consumed and Essential Space never sees the key. Turn it off and the key is untouched —
-  there is no interception at all.
+  press is consumed and Essential Space never sees the key. Turn it off and the key is untouched.
+  There is no interception at all.
 
 In **Menu mode**, the picker adds a few rules:
 

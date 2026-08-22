@@ -27,7 +27,7 @@ class AmbientScreenTest {
         val h = TestHarness(size)
         h.clock.hour = 12
         h.clock.min = 34
-        h.spectrum.values = null // no mic by default -> audio layer inactive
+        h.spectrum.values = null
         return AmbientScreen() to h
     }
 
@@ -91,7 +91,7 @@ class AmbientScreenTest {
         h.prefs.putInt(PrefKeys.AMBIENT_CHARGING_STYLE, 3)
         GoldenAscii.check("ambient_13_charging_s3", screen.composite(h.context), 13)
 
-        h.battery.level = 100 // full: charging layer off, background shows
+        h.battery.level = 100
         h.prefs.putInt(PrefKeys.AMBIENT_CHARGING_STYLE, 0)
         val atFull = screen.composite(h.context)
         assertFalse(atFull.contentEquals(ChargingRenderer.render(13, 0, 100, h.clock.now)))
@@ -108,7 +108,7 @@ class AmbientScreenTest {
         val expectedBands = h.spectrum.bands(13)!!
         assertTrue(frame.contentEquals(VisualizerScreen.renderFrame(13, expectedBands, 0)))
 
-        h.spectrum.values = FloatArray(32) { 0.01f } // silence -> next tick reverts
+        h.spectrum.values = FloatArray(32) { 0.01f }
         val next = screen.composite(h.context)
         assertTrue(next.contentEquals(ChargingRenderer.render(13, 0, 65, h.clock.now)))
     }

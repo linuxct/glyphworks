@@ -9,11 +9,6 @@ import android.os.Handler
 import android.os.Looper
 import space.linuxct.glyphworks.core.TiltPort
 
-/**
- * Linear-acceleration tilt source for the ambient tilt-ball background.
- * Self-managing: starts listening on first poll and unregisters after 5 s
- * without polls, so it costs nothing unless the tilt background is selected.
- */
 class TiltSensor(app: Context) : TiltPort, SensorEventListener {
 
     private val sensorManager = app.getSystemService(SensorManager::class.java)

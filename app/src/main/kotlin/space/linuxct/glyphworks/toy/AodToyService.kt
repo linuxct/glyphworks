@@ -12,17 +12,7 @@ import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
 
-/**
- * The system-facing Glyph Toy (registered with aod_support=1 + longpress=1).
- * When the user selects it as the Always-on Glyph Toy, Nothing's system binds
- * it for AOD and our whole carousel renders through the toy binding:
- * rendering runs bind-to-unbind, the system gates physical output, and the
- * per-minute EVENT_AOD needs no handling because the compositor self-drives.
- *
- * On a Phone (3), the real Glyph Button long-press arrives here as
- * EVENT_CHANGE and feeds the same action pipeline as an Essential Key single
- * press. Component name is persisted by the system — never rename.
- */
+/** The system stores this component name, and AndroidManifest.xml names it. Never rename it. */
 class AodToyService : Service() {
 
     private val handler = object : Handler(Looper.getMainLooper()) {
@@ -32,14 +22,11 @@ class AodToyService : Service() {
                 super.handleMessage(msg)
                 return
             }
-            // Any toy message is as much proof of selection as a bind.
             Core.prefs.putLong(PrefKeys.TOY_LAST_BOUND, System.currentTimeMillis())
             val event = msg.data?.getString(GlyphToy.MSG_GLYPH_TOY_DATA)
             DebugLog.i(C, "system toy message: '$event'")
             when (event) {
                 GlyphToy.EVENT_CHANGE -> Core.router.glyphButtonChange()
-                // The compositor self-drives, but screens that record the AOD
-                // hint (Music Visualizer) still get to see the event.
                 GlyphToy.EVENT_AOD -> Core.scheduler.run {
                     Core.screenManager.dispatchGlyphEvent(space.linuxct.glyphworks.core.Events.AOD)
                 }
@@ -56,8 +43,6 @@ class AodToyService : Service() {
 
     override fun onBind(intent: Intent?): IBinder {
         DebugLog.i(C, "onBind (system selected us as the active toy)")
-        // Proof of selection for the setup checklist: the system only binds
-        // the toy it has selected.
         Core.prefs.putLong(PrefKeys.TOY_LAST_BOUND, System.currentTimeMillis())
         Core.arbiter.setToyBound(true)
         return messenger.binder

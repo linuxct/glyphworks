@@ -5,30 +5,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The one predicate two pieces of UI are drawn from.
- *
- * `SetupStatus.needsAttention` decides both of the things this feature adds:
- * whether the navigation bar shows the attention badge on the Settings chip, and
- * whether the Initial setup section is open the first time the page is composed
- * (`MainActivity`'s `SettingsTab` passes exactly this expression to
- * `rememberSaveable { mutableStateOf(...) }`, and nothing else ever recomputes
- * it — the user's own toggle wins after that).
- *
- * Those two consequences are asserted here by name, because the failure mode
- * being ruled out is not "the boolean is wrong" but "the badge and the checklist
- * stopped agreeing" — a badge over a page of six check marks, or a page of
- * question marks with no badge pointing at it. Both are the same bit, and this is
- * the test that says so.
- *
- * Every item gets its own case rather than a loop: when one of them stops
- * counting, the failing test should name it.
- */
 class SetupStatusTest {
-    /** What the nav bar does with the predicate. */
     private fun badgeShown(status: SetupStatus) = status.needsAttention
 
-    /** What the Settings page does with it, on first composition only. */
     private fun sectionStartsExpanded(status: SetupStatus) = status.needsAttention
 
     private fun assertNeedsAttention(status: SetupStatus) {
@@ -69,10 +48,6 @@ class SetupStatusTest {
         )
     }
 
-    /**
-     * The one item that is allowed to stay quiet while unsatisfied, and only
-     * while the app cannot yet tell. See `PrefKeys.TOY_PROBE_ARMED`.
-     */
     @Test
     fun `an unset toy stays silent until the probe can be believed`() {
         val cannotTellYet = SetupStatus.COMPLETE.copy(alwaysOnToy = false, toyProbeArmed = false)
@@ -85,9 +60,6 @@ class SetupStatusTest {
 
     @Test
     fun `only the complete status clears the badge`() {
-        // Every single-item failure, in one sweep, so that a predicate rewritten
-        // as `accessibility && alwaysOnToy` with an item quietly dropped fails
-        // here as well as in the case above that names it.
         val oneMissing = listOf(
             SetupStatus.COMPLETE.copy(accessibility = false),
             SetupStatus.COMPLETE.copy(alwaysOnToy = false),

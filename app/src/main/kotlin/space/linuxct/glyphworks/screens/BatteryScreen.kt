@@ -4,19 +4,14 @@ import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
 import space.linuxct.glyphworks.matrix.Font3x5
+import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * Battery gauge: the matrix fills bottom-up to the battery level, with a
- * brighter edge row marking the level. While charging, a rising wave sweeps
- * through the fill and a pulsing bolt overlays the centre — level and
- * charging status at a glance.
- *
- * With [PrefKeys.BATTERY_SHOW_WATTS] on, a charging device shows its charge
- * power instead ("45W"). Anything else — pref off, not charging, or an
- * untrustworthy power reading — falls back to the gauge above, unchanged.
+ * Battery gauge. With [PrefKeys.BATTERY_SHOW_WATTS] on and a good power reading, a
+ * charging device shows the watts instead; anything else falls back to the gauge.
  */
 class BatteryScreen : GlyphScreen {
     override val id = "battery"
@@ -26,7 +21,7 @@ class BatteryScreen : GlyphScreen {
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
-        ctx.scheduler.setTicker(1000) { tick() }
+        ctx.scheduler.setTicker(TICK_MS) { tick() }
     }
 
     override fun onDeactivate() {
@@ -49,30 +44,28 @@ class BatteryScreen : GlyphScreen {
     }
 
     companion object {
-        /** Brightness of the "W" unit glyph: 63 % of the digits' 4095. */
+        const val TICK_MS = 1000L
+
+        private const val PERCENT_FULL = 100
+        private const val MIN_WATTS = 1
+        private const val MAX_WATTS = 999
+
+        private const val LINE_GAP = 1
+        private const val TWO_LINE_HEIGHT = 2 * Font3x5.HEIGHT + LINE_GAP
+
+        private const val WAVE_MS_PER_ROW = 150
+        private const val PULSE_MID = 2400
+        private const val PULSE_SWING = 1600
+        private const val PULSE_MIN = 800
+        private const val PULSE_MS_PER_RADIAN = 200.0
+
+        /** The "W" glyph, dimmer than the digits so the number reads first. */
         private const val UNIT = 2600
 
-        /**
-         * Gauge levels, all expressed against the edge marker, which owns 4095.
-         *
-         *   [EDGE] 4095 = 100 %  the row marking the level — the thing you read
-         *   [WAVE] 3300 =  81 %  the charge sweep rising through the fill
-         *   [FILL] 2000 =  49 %  the body of the gauge
-         *   bolt   800..4000 = 20..98 %  the pulse, see [renderFrame]
-         *
-         * The marker owning the peak is what fixes the pulsating fill: brightness
-         * is applied by multiplying the frame, so while the frame's brightest cell
-         * was the *bolt* (2900 edge / 3600 wave / a pulse swinging to 4000, back
-         * when the frame was max-normalised instead) the gauge's apparent
-         * brightness breathed in time with the bolt. With the marker pinned at
-         * full scale the peak never moves and only the bolt pulses.
-         *
-         * [FILL] keeps the ratio it always had against the marker (49 %, was
-         * 1400/2900). [WAVE] cannot: it used to be 1.24x the marker, which a
-         * marker at full scale forbids, so it now sits just below it — still the
-         * brightest thing moving inside the fill, which is its whole job.
-         */
-        private const val EDGE = 4095
+        // Panel brightness multiplies the whole frame, so the brightest cell sets how
+        // bright it looks. Pinning the edge marker at the peak keeps that still and lets
+        // only the bolt pulse.
+        private const val EDGE = MAX_BRIGHTNESS
         private const val WAVE = 3300
         private const val FILL = 2000
 
@@ -84,45 +77,30 @@ class BatteryScreen : GlyphScreen {
             "#..",
         )
 
-        /** "45W". Rounded to whole watts and clamped to what the font can place. */
-        fun formatWatts(watts: Float): String = "${watts.roundToInt().coerceIn(1, 999)}W"
+        /** Clamped so the font can always place it: "45W" fits, "1200W" would not. */
+        fun formatWatts(watts: Float): String =
+            "${watts.roundToInt().coerceIn(MIN_WATTS, MAX_WATTS)}W"
 
-        /**
-         * Charge power: **just the figure**, vertically centred. "5W"/"45W" fit
-         * one line even on 13 columns; "120W" is 15 cells wide, so on 13 the
-         * digits stack above the unit. The unit glyph is dimmer than the digits
-         * either way, so the number reads first.
-         *
-         * There is deliberately NO bolt marker here. It used to sit above the
-         * figure (the Download Speed toy's marker-over-value layout), but on 13
-         * columns the digits, the "W" and the bolt together left the text
-         * squeezed off-centre and unreadable — and the wattage readout only ever
-         * appears while charging, so a bolt says nothing the context does not.
-         */
+        /** "120W" is 15 cells wide, so on 13 columns the digits stack above the "W". */
         fun renderWattage(size: Int, watts: Float): IntArray {
             val canvas = MatrixCanvas(size)
             val text = formatWatts(watts)
             val digits = text.dropLast(1)
             if (Font3x5.stringWidth(text) <= size) {
-                // One line of 5-row glyphs, centred in the matrix.
-                val y = (size - 5) / 2
+                val y = (size - Font3x5.HEIGHT) / 2
                 var x = (size - Font3x5.stringWidth(text)) / 2
-                digits.forEach { x += Font3x5.draw(canvas, it, x, y, 4095) }
+                digits.forEach { x += Font3x5.draw(canvas, it, x, y, MAX_BRIGHTNESS) }
                 Font3x5.draw(canvas, 'W', x, y, UNIT)
             } else {
-                // Two lines: 5 + 1 blank + 5 = 11 rows, which `size / 2 - 5`
-                // already centres at both 13 (rows 1..11) and 25 (rows 7..17).
-                Font3x5.drawStringCentered(canvas, digits, size / 2 - 5, 4095)
-                Font3x5.drawStringCentered(canvas, "W", size / 2 + 1, UNIT)
+                val digitsTop = size / 2 - TWO_LINE_HEIGHT / 2
+                val unitTop = digitsTop + Font3x5.HEIGHT + LINE_GAP
+                Font3x5.drawStringCentered(canvas, digits, digitsTop, MAX_BRIGHTNESS)
+                Font3x5.drawStringCentered(canvas, "W", unitTop, UNIT)
             }
             return canvas.copyOut()
         }
 
-        /**
-         * [chargeWatts] non-null (and [charging]) switches to the wattage
-         * readout; it defaults to null so ambient background 7 keeps calling
-         * the four-argument gauge and renders byte-identically.
-         */
+        /** [chargeWatts] defaults to null so the ambient background gets the gauge. */
         fun renderFrame(
             size: Int,
             levelPercent: Int,
@@ -132,12 +110,13 @@ class BatteryScreen : GlyphScreen {
         ): IntArray {
             if (charging && chargeWatts != null) return renderWattage(size, chargeWatts)
             val canvas = MatrixCanvas(size)
-            val level = levelPercent.coerceIn(0, 100)
-            val fillRows = (size * level / 100).coerceIn(0, size)
+            val level = levelPercent.coerceIn(0, PERCENT_FULL)
+            val fillRows = (size * level / PERCENT_FULL).coerceIn(0, size)
 
             for (y in size - fillRows until size) {
                 val rowFromBottom = size - 1 - y
-                val wave = charging && rowFromBottom == (nowMs / 150 % size).toInt()
+                val waveRow = (nowMs / WAVE_MS_PER_ROW % size).toInt()
+                val wave = charging && rowFromBottom == waveRow
                 val v = if (wave) WAVE else FILL
                 for (x in 0 until size) canvas.light(x, y, v)
             }
@@ -146,13 +125,16 @@ class BatteryScreen : GlyphScreen {
                 for (x in 0 until size) canvas.light(x, y, EDGE)
             }
             if (charging) {
-                val pulse = (2400 + 1600 * sin(nowMs / 200.0)).roundToInt().coerceIn(800, 4095)
+                val pulse = (PULSE_MID + PULSE_SWING * sin(nowMs / PULSE_MS_PER_RADIAN))
+                    .roundToInt()
+                    .coerceIn(PULSE_MIN, MAX_BRIGHTNESS)
                 val boltY = if (size >= 25) size / 2 - 3 else size / 2 - 2
-                // Overwrite (not max-blend) so the bolt stays visible inside the
-                // fill: brighter than it at pulse-high, carved dark at pulse-low.
+                val boltX = size / 2 - BOLT[0].length / 2
+                // Overwrite instead of max-blending, so the bolt still shows inside the
+                // fill when the pulse is low.
                 BOLT.forEachIndexed { by, row ->
                     row.forEachIndexed { bx, ch ->
-                        if (ch == '#') canvas.set(size / 2 - 1 + bx, boltY + by, pulse)
+                        if (ch == '#') canvas.set(boltX + bx, boltY + by, pulse)
                     }
                 }
             }

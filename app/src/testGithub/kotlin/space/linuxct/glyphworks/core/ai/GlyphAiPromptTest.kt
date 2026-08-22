@@ -18,11 +18,6 @@ import space.linuxct.glyphworks.core.design.MarqueeText
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * The prompt is the only place the model learns that the panel is round, and
- * every hand-authoring failure in this project's history came from not knowing
- * it. These assertions exist so that fact cannot quietly fall out of the string.
- */
 class GlyphAiPromptTest {
     @Test
     fun `a bellsprout only design is never told about arbok`() {
@@ -32,7 +27,6 @@ class GlyphAiPromptTest {
         assertFalse(prompt.contains("489"))
         assertTrue(prompt.contains("bellsprout"))
         assertTrue(prompt.contains("137"))
-        // The closed-set sentence is the instruction the tool then enforces.
         assertTrue(prompt.contains("THAT LIST IS CLOSED"))
     }
 
@@ -70,33 +64,12 @@ class GlyphAiPromptTest {
         assertEquals(emptyList<PokemonCodename>(), GlyphAiPrompt.variantsPresent(TestDesigns.noVariants()))
     }
 
-    // region the worked example
-
-    /**
-     * The reason the example is a constant at all.
-     *
-     * An example in a system prompt carries the prompt's authority: a model will
-     * reproduce its shape faithfully, so an example that has quietly become
-     * illegal teaches the model a document this app refuses — and it would do so
-     * silently, in production, with the only symptom being an assistant that
-     * cannot apply anything. This runs it through the same [DesignCodec] the
-     * store and the tools run everything through.
-     *
-     * The app-managed fields are supplied here rather than in the example,
-     * because that is exactly what the app does: `GlyphAiTools.prepare` merges
-     * the model's document onto the design on screen and never takes an id or a
-     * timestamp from it. See the next test for that path end to end.
-     */
     @Test
     fun `every panel's worked example is a design the codec accepts`() {
         for (codename in PokemonCodename.entries) {
             assertTrue("every known panel gets an example", GlyphAiPrompt.workedExample(codename) != null)
 
             val parsed = exampleDesign(codename)
-            // Supplied here rather than in the example because that is exactly
-            // what the app does: `GlyphAiTools.prepare` merges the model's
-            // document onto the design on screen and never takes an id or a
-            // timestamp from it. The next test covers that path end to end.
             val withAppFields = parsed.copy(
                 id = "abc123",
                 createdAt = "2026-07-30T12:00:00Z",
@@ -117,7 +90,6 @@ class GlyphAiPromptTest {
             val frames = design.variantFor(codename)!!.frames
             assertEquals("two frames, as the prompt says", 2, frames.size)
             frames.forEach { assertEquals(codename.cellCount, it.cells.length) }
-            // Round-trips: what the codec writes back is something it will read.
             assertTrue(DesignCodec.decode(DesignCodec.encode(design)) is DesignCodec.Result.Ok)
         }
     }
@@ -142,18 +114,9 @@ class GlyphAiPromptTest {
         assertEquals(2, frames.size)
         assertEquals(GlyphAiPrompt.EXAMPLE_CELLS_EYES_OPEN, frames[0].cells)
         assertEquals(GlyphAiPrompt.EXAMPLE_CELLS_EYES_SHUT, frames[1].cells)
-        // The id is the editor's, never the model's.
         assertEquals(TestDesigns.bellsproutOnly().id, applied.id)
     }
 
-    /**
-     * The example has to *demonstrate* the rule the prompt shouts about, not
-     * merely be legal under it. A worked example whose art ran into the corners
-     * would teach the exact mistake the loudest section exists to prevent.
-     *
-     * Checked on every geometry, since larger panels get the same art translated
-     * to their centre and a translation that overshot would be silent.
-     */
     @Test
     fun `nothing in any worked example is drawn off the disc`() {
         for (codename in PokemonCodename.entries) {
@@ -173,38 +136,11 @@ class GlyphAiPromptTest {
         }
     }
 
-    /** As forgiving as `DesignCodec`'s own reader, so the example is judged by the codec's rules. */
     private val lenient = Json { ignoreUnknownKeys = true }
 
     private fun exampleDesign(codename: PokemonCodename): Design =
         lenient.decodeFromString(Design.serializer(), GlyphAiPrompt.workedExample(codename)!!)
 
-    // endregion
-
-    // region not guessing
-
-    // endregion
-
-    // region asking before guessing
-
-    // endregion
-
-    // region delivering something
-
-    // endregion
-
-    // region the rim, and the greys
-
-    // endregion
-
-    // region the marquee, and the alphabet that stopped being the model's job
-
-    /**
-     * The numbers the prompt quotes are the ones the tool will produce, and the
-     * frames behind them are ones this app would actually store — checked
-     * through the real [DesignCodec] rather than by eye, for the reason every
-     * other example in this file is.
-     */
     @Test
     fun `the frame counts quoted are the ones the generator produces, and they validate`() {
         val prompt = GlyphAiPrompt.build(TestDesigns.bothVariants())
@@ -232,15 +168,6 @@ class GlyphAiPromptTest {
         }
     }
 
-    // endregion
-
-    // region animation, and the decoded "HI" that produced all of it
-
-    /**
-     * The band of rows a scrolling glyph can live in, which the animation section
-     * points at and the panel section names. Computed from the mask rather than
-     * typed, so it cannot disagree with the panel map printed beside it.
-     */
     @Test
     fun `the full-width row band is computed from the mask, for every panel`() {
         assertEquals(4..8, GlyphAiPrompt.fullWidthRows(PokemonCodename.BELLSPROUT.size))
@@ -248,23 +175,18 @@ class GlyphAiPromptTest {
 
         for (codename in PokemonCodename.entries) {
             val band = GlyphAiPrompt.fullWidthRows(codename.size)!!
-            // Every cell of every row in the band has an LED behind it...
             for (y in band) {
                 for (x in 0 until codename.size) {
                     assertTrue("($x, $y) on ${codename.codename}", PanelMask.contains(x, y, codename.size))
                 }
             }
-            // ...and the rows either side of it do not, or the band is understated.
             for (y in listOf(band.first - 1, band.last + 1)) {
                 assertFalse(PanelMask.contains(0, y, codename.size))
             }
-            // And the prompt says so, for a design that carries the panel.
             assertTrue(
                 GlyphAiPrompt.build(TestDesigns.bothVariants())
                     .contains("rows ${band.first} to ${band.last} are the only"),
             )
         }
     }
-
-    // endregion
 }

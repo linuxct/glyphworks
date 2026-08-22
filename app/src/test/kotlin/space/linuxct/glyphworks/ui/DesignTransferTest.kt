@@ -15,25 +15,7 @@ import space.linuxct.glyphworks.core.design.PokemonCodename
 import java.io.File
 import java.io.InputStream
 
-/**
- * The plumbing around the codec, which is where the codec's guarantees can still
- * be thrown away.
- *
- * `DesignCodec` is already covered by `DesignCodecTest`; nothing here re-tests
- * validation. What is tested here is everything the import/export/share path adds
- * on top of it, and every one of these is a way a correct codec could still lose:
- *
- * - a design name reaching a filesystem as a *path* rather than as a name,
- * - a hostile file being read whole before the size cap is applied,
- * - an import quietly overwriting a design already on the phone, or re-stamping
- *   somebody else's artwork with the importing user's name,
- * - the share cache growing without bound.
- *
- * All of it is plain JVM: the functions under test take a `File`, a `String` or a
- * `Design` and touch no `android.*`.
- */
 class DesignTransferTest {
-    // region filename sanitising
 
     @Test
     fun `an ordinary name becomes an ordinary filename`() {
@@ -60,7 +42,6 @@ class DesignTransferTest {
     fun `an absurd name is capped`() {
         val out = sanitiseFileBaseName("x".repeat(10_000))
         assertEquals(48, out.length)
-        // And the cap is applied to the base, so the extension is never lost.
         assertTrue(designFileName(design(name = "x".repeat(10_000))).endsWith(".json"))
     }
 
@@ -85,22 +66,13 @@ class DesignTransferTest {
             assertFalse(out, out.startsWith("."))
             assertFalse(out, out.startsWith("-"))
             assertTrue(out, out.endsWith(".json"))
-            // A filename, not a path: what is left addresses one file in the
-            // directory the user picked.
             assertEquals(out, File(out).name)
             assertTrue(out, out.length > ".json".length)
         }
     }
 
-    // endregion
-
-    // region the bounded read
-
     @Test
     fun `an endless stream is rejected without being consumed`() {
-        // The defence the whole import path rests on. A JSON bomb is not large on
-        // disk; it is large once read. If the cap were applied AFTER reading, this
-        // stream would never return.
         val stream = CountingEndlessStream()
 
         val result = DesignCodec.decode(stream)
@@ -122,19 +94,12 @@ class DesignTransferTest {
         assertTrue(result is DesignCodec.Result.Ok)
     }
 
-    // endregion
-
-    // region import rules
-
     @Test
     fun `an import always gets a fresh id`() {
         val incoming = design(id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
         val stored = importedDesign(incoming, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", NOW)
 
-        // Unconditionally, not only on collision: DesignStore.save overwrites by
-        // contract, so keeping the incoming id would let a file somebody sent
-        // replace a design already on this phone.
         assertEquals("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", stored.id)
         assertNotEquals(incoming.id, stored.id)
         assertTrue(DesignCodec.isSafeId(stored.id))
@@ -159,14 +124,8 @@ class DesignTransferTest {
         assertEquals(incoming.name, stored.name)
         assertEquals(incoming.kind, stored.kind)
         assertEquals(incoming.variants, stored.variants)
-        // And what comes out is something the store will accept — the import path
-        // must never produce a design its own validator would refuse.
         assertTrue(DesignCodec.validate(stored) is DesignCodec.Result.Ok)
     }
-
-    // endregion
-
-    // region share cache hygiene
 
     @Test
     fun `stale shared copies are deleted and fresh ones are kept`() {
@@ -180,10 +139,6 @@ class DesignTransferTest {
         assertTrue(fresh.exists())
         assertFalse(stale.exists())
     }
-
-    // endregion
-
-    // region helpers
 
     private fun design(
         id: String = "0123456789abcdef0123456789abcdef",
@@ -223,11 +178,6 @@ class DesignTransferTest {
             deleteOnExit()
         }
 
-    /**
-     * A stream that never ends, counting what it has handed out. Anything that
-     * reads it to exhaustion hangs, which is the point: the assertion is that the
-     * codec stops.
-     */
     private class CountingEndlessStream : InputStream() {
         var produced = 0L
             private set
@@ -249,11 +199,6 @@ class DesignTransferTest {
         const val NOW_MS = 1_785_000_000_000L
         const val DAY_MS = 24L * 60 * 60 * 1000
 
-        /**
-         * The bounded read gives up one byte past the cap, but it reads in 8 KB
-         * blocks, so the last block may carry it slightly over. Anything within
-         * one block is bounded; a stream read to exhaustion would not be.
-         */
         const val READ_BUFFER_SLACK = 8 * 1024
     }
 }

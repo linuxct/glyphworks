@@ -4,11 +4,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Queries the GitHub Releases API for the newest published release and
- * compares it against the installed versionName. Pure HttpURLConnection +
- * org.json — no networking dependency for a once-a-day GET.
- */
+/** Plain HttpURLConnection and org.json: no networking dependency for one GET a day. */
 object UpdateChecker {
 
     const val RELEASES_PAGE = "https://github.com/linuxct/glyphworks/releases/latest"
@@ -58,11 +54,7 @@ object UpdateChecker {
         }
     }
 
-    /**
-     * Numeric dotted-version comparison; a leading "v" and any non-numeric
-     * suffix are ignored, so "v0.2.0-beta" compares as 0.2.0 and missing
-     * components count as 0 ("1.2" == "1.2.0").
-     */
+    /** A leading "v" and any non-numeric suffix are ignored, and a missing component is 0. */
     fun isNewer(remote: String, installed: String): Boolean {
         val r = parse(remote)
         val l = parse(installed)

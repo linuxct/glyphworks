@@ -22,9 +22,6 @@ class ClockScreenTest {
         GoldenAscii.check("clock_13_1234_t1_bar", ClockScreen.renderFrame(h13.context), 13)
         h13.prefs.putInt(PrefKeys.CLOCK_THEME, 2)
         GoldenAscii.check("clock_13_1234_t2_ring", ClockScreen.renderFrame(h13.context), 13)
-        // Theme 3 goes through renderFrame like the rest, which is the point of
-        // asserting it here: the dial is reached by the screen's normal path, not
-        // only by calling renderAnalog directly.
         h13.prefs.putInt(PrefKeys.CLOCK_THEME, ClockScreen.THEME_ANALOG)
         GoldenAscii.check("clock_13_1234_t3_analog", ClockScreen.renderFrame(h13.context), 13)
 
@@ -45,7 +42,7 @@ class ClockScreenTest {
         val screen = ClockScreen()
         screen.onActivate(h.context)
         assertEquals(50L, h.scheduler.tickerInterval)
-        assertEquals(1, h.frames.size) // immediate first tick
+        assertEquals(1, h.frames.size)
     }
 }
 
@@ -58,7 +55,6 @@ class EyesScreenTest {
         screen.onActivate(h.context)
         GoldenAscii.check("eyes_13_initial", h.lastFrame(), 13)
 
-        // Blink starts at +2500 ms (tick 50 at 50 ms); closed is 2 ticks later.
         h.scheduler.tick(50)
         GoldenAscii.check("eyes_13_squint", h.lastFrame(), 13)
         h.scheduler.tick(2)
@@ -101,10 +97,7 @@ class CompassScreenTest {
 }
 
 class LevelScreenTest {
-    /** Brightness-weighted centroid of the ball: the frame minus ring/ticks. */
     private fun ballCentroid(frame: IntArray, size: Int): Pair<Float, Float> {
-        // The ball is the only element drawn away from the centre ring, so take
-        // the centroid of everything at full brightness.
         var wx = 0f
         var wy = 0f
         var w = 0f
@@ -134,13 +127,9 @@ class LevelScreenTest {
             val (bx, by) = ballCentroid(LevelScreen.renderFrame(size, 0f, 0f), size)
             assertEquals(c, bx, 0.01f)
             assertEquals(c, by, 0.01f)
-            // A cell on the target ring straight above centre (radius 3 on 13,
-            // 5 on 25), well clear of the ball at either inclination: full
-            // brightness only while the reading is inside the tolerance.
             val probe = (size / 2 - (if (size >= 25) 5 else 3)) * size + size / 2
             assertEquals(4095, LevelScreen.renderFrame(size, 0f, 0f)[probe])
             assertEquals(4095, LevelScreen.renderFrame(size, 2f, 2f)[probe])
-            // Rolled, not pitched: keeps the ball off the vertical probe.
             assertTrue(LevelScreen.renderFrame(size, 0f, 20f)[probe] < 4095)
             assertTrue(LevelScreen.renderFrame(size, 0f, 20f)[probe] > 0)
         }
@@ -151,10 +140,6 @@ class LevelScreenTest {
         for (size in intArrayOf(13, 25)) {
             val none = LevelScreen.renderFrame(size, null, null)
             GoldenAscii.assertFrameValid(none, size)
-            // The "?" is the only thing at full brightness: no ball anywhere, and
-            // the target ring stays at its idle level. (The mark itself IS full
-            // brightness — it is the whole content of this state, and brightness
-            // now scales the frame rather than stretching it to its own peak.)
             val mark = MatrixCanvas(size)
             Font3x5.drawStringCentered(mark, "?", size / 2 - 2, MAX_BRIGHTNESS)
             for (i in none.indices) {
@@ -165,7 +150,6 @@ class LevelScreenTest {
                 )
             }
             assertTrue(none.any { it > 0 })
-            // A half-delivered reading is treated the same way.
             assertTrue(none.contentEquals(LevelScreen.renderFrame(size, 0f, null)))
             assertTrue(none.contentEquals(LevelScreen.renderFrame(size, null, 0f)))
         }

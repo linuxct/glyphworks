@@ -8,15 +8,7 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.time.Instant
 
-/**
- * The codec is the app's trust boundary for files other people wrote, so most of
- * this class is hostile input. Every rejection asserts the *exact* reason, not
- * merely that something failed: "it was rejected" would still pass if the codec
- * started rejecting everything, and a user needs to be told which of these
- * things went wrong.
- */
 class DesignCodecTest {
-    // region round trip
 
     @Test
     fun `a design round-trips through encode and decode`() {
@@ -32,14 +24,11 @@ class DesignCodecTest {
     fun `the encoded envelope is self-describing and readable`() {
         val encoded = DesignCodec.encode(sampleDesign())
 
-        // encodeDefaults must be on, or a design whose fields equal their
-        // defaults would be written without the fields that identify the format.
         assertTrue(encoded.contains("\"format\": \"glyph.design\""))
         assertTrue(encoded.contains("\"formatVersion\": 1"))
         assertTrue(encoded.contains("\"kind\": \"dynamic\""))
         assertTrue(encoded.contains("\"keyMode\": \"playPause\""))
         assertTrue(encoded.contains("\"bellsprout\""))
-        // prettyPrint: a design in a pull request must show which frame changed.
         assertTrue(encoded.contains("\n"))
     }
 
@@ -52,10 +41,6 @@ class DesignCodecTest {
         assertEquals(sampleDesign(), (fromStream as DesignCodec.Result.Ok).design)
     }
 
-    // endregion
-
-    // region size
-
     @Test
     fun `a five megabyte payload is rejected before parsing`() {
         val bomb = "{\"format\":\"glyph.design\"," + "\"pad\":\"" + "x".repeat(5 * 1024 * 1024) + "\"}"
@@ -65,8 +50,6 @@ class DesignCodecTest {
 
     @Test
     fun `ten thousand frames are still rejected when they do fit`() {
-        // Same document, small enough to reach validation: the per-variant frame
-        // cap catches it there.
         val many = List(10_000) { DesignFrame(durationMs = 40, cells = blankBellsprout()) }
         val design = sampleDesign().copy(
             variants = mapOf("bellsprout" to DesignVariant(many)),
@@ -90,10 +73,6 @@ class DesignCodecTest {
         )
     }
 
-    // endregion
-
-    // region envelope
-
     @Test
     fun `truncated JSON is rejected`() {
         val truncated = DesignCodec.encode(sampleDesign()).let { it.substring(0, it.length / 2) }
@@ -115,12 +94,8 @@ class DesignCodecTest {
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason(json(format = "\"glyph.toy\"")))
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason(json(format = "\"\"")))
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason(json(format = "42")))
-        // No `format` key at all. Every field of Design has a default, so this
-        // must be caught on the JSON tree rather than after deserialisation, or
-        // the missing magic string would be filled in with our own.
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason("""{"hello":"world"}"""))
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason("{}"))
-        // Valid JSON, but not even an object.
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason("[]"))
         assertEquals(DesignCodec.REASON_NOT_A_DESIGN, reason("\"glyph.design\""))
     }
@@ -146,10 +121,6 @@ class DesignCodecTest {
         assertEquals(KeyMode.PLAY_PAUSE, design.keyMode)
     }
 
-    // endregion
-
-    // region id, the value that becomes a filename
-
     @Test
     fun `an id containing NUL or whitespace or Unicode is rejected`() {
         assertEquals(DesignCodec.REASON_BAD_ID, reason(json(id = "\"a\\u0000b\"")))
@@ -168,10 +139,6 @@ class DesignCodecTest {
         assertFalse(DesignCodec.isSafeId("../x"))
         assertTrue(DesignCodec.isSafeId("a-b_C9"))
     }
-
-    // endregion
-
-    // region text and timestamps
 
     @Test
     fun `over-long free text is rejected`() {
@@ -205,11 +172,8 @@ class DesignCodecTest {
             ),
         )
 
-        // Same spelling as everything else in storage...
         assertEquals("2026-07-30T10:00:00Z", decoded.createdAt)
         assertEquals("2026-07-30T14:30:00Z", decoded.modifiedAt)
-        // ...and the same *instant* the file named, which is what makes the
-        // rewrite lossless in meaning rather than merely tidy.
         assertEquals(Instant.parse("2026-07-30T12:00:00+02:00"), Instant.parse(decoded.createdAt))
         assertEquals(Instant.parse("2026-07-30T09:30:00-05:00"), Instant.parse(decoded.modifiedAt))
     }
@@ -219,14 +183,8 @@ class DesignCodecTest {
         val decoded = ok(json(modifiedAt = "\"2026-07-30T12:00:00.500Z\""))
 
         assertEquals("2026-07-30T12:00:00Z", decoded.modifiedAt)
-        // The bug this prevents: '.' is below 'Z' in ASCII, so the untruncated
-        // string would sort BEFORE the whole second it is later than.
         assertTrue("2026-07-30T12:00:00.500Z" < "2026-07-30T12:00:00Z")
     }
-
-    // endregion
-
-    // region palette
 
     @Test
     fun `an empty palette is rejected`() {
@@ -242,23 +200,15 @@ class DesignCodecTest {
 
     @Test
     fun `palette entries outside the panel range are coerced, not rejected`() {
-        // The one lenient rule: an out-of-range brightness has exactly one
-        // sensible reading and no structural consequence.
         val design = ok(json(levels = "[-500, 2048, 99999]"))
 
         assertEquals(listOf(0, 2048, 4095), design.levels)
     }
 
-    // endregion
-
-    // region frames
-
     @Test
     fun `cells of the wrong length are rejected, never padded or cropped`() {
         val short = json(variants = """{"bellsprout":{"frames":[${frame(cells = "0".repeat(168))}]}}""")
         val long = json(variants = """{"bellsprout":{"frames":[${frame(cells = "0".repeat(170))}]}}""")
-        // An arbok-sized frame filed under bellsprout is the interesting case:
-        // both sizes are legal, only the pairing is wrong.
         val wrongPanel =
             json(variants = """{"bellsprout":{"frames":[${frame(cells = "0".repeat(625))}]}}""")
 
@@ -312,14 +262,9 @@ class DesignCodecTest {
         assertEquals(60_000, slowest.variantFor(PokemonCodename.BELLSPROUT)!!.frames[0].durationMs)
     }
 
-    // endregion
-
-    // region variants
-
     @Test
     fun `a file with no variants at all is rejected`() {
         assertEquals(DesignCodec.REASON_NO_VARIANTS, reason(json(variants = "{}")))
-        // `variants` omitted entirely, rather than present and empty.
         assertEquals(
             DesignCodec.REASON_NO_VARIANTS,
             reason(
@@ -383,10 +328,6 @@ class DesignCodecTest {
         assertNull(design.variantForSize(169))
     }
 
-    // endregion
-
-    // region helpers
-
     private fun ok(text: String): Design {
         val result = DesignCodec.decode(text)
         assertTrue("expected acceptance, got $result", result is DesignCodec.Result.Ok)
@@ -408,10 +349,6 @@ class DesignCodecTest {
     private fun oneBellsproutFrame(durationMs: Int) =
         """{"bellsprout":{"frames":[${frame(durationMs, blankBellsprout())}]}}"""
 
-    /**
-     * Builds a design document from raw JSON fragments (so a test can supply a
-     * wrong *type*, not just a wrong value) with every field otherwise valid.
-     */
     private fun json(
         format: String = "\"glyph.design\"",
         formatVersion: String = "1",
@@ -473,6 +410,4 @@ class DesignCodecTest {
             ),
         )
     }
-
-    // endregion
 }

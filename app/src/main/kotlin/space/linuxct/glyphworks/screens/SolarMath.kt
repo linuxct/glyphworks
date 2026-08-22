@@ -6,9 +6,8 @@ import kotlin.math.sin
 import kotlin.math.tan
 
 /**
- * Sunrise/sunset via the NOAA solar-position approximation (accurate to a
- * few minutes for civil use). Pure math, JVM-testable. Longitude is positive
- * EAST; results are LOCAL minutes-of-day (0..1440) via the UTC offset.
+ * Sunrise and sunset from the NOAA solar-position approximation, good to a few minutes.
+ * Longitude is positive EAST. Results are local minutes of day, 0..1440.
  */
 object SolarMath {
 

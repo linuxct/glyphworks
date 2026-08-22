@@ -32,17 +32,6 @@ private class ProbeScreen(
     val events = mutableListOf<String>()
     private var ctx: ScreenContext? = null
 
-    /**
-     * The context this screen was last given, deliberately NOT cleared on
-     * deactivate — the misbehaving (or merely late) screen.
-     *
-     * The ScreenContext is a shared singleton and a screen can hold it for as
-     * long as it likes, so "deactivated" does not mean "unable to push": a
-     * postDelayed one-shot already in flight will fire afterwards and paint,
-     * which is exactly the hazard CustomScreen's KDoc calls out. That is the
-     * frame the live-preview gate has to stop, so the tests need a way to make
-     * one.
-     */
     private var retained: ScreenContext? = null
 
     override fun onActivate(ctx: ScreenContext) {
@@ -63,10 +52,8 @@ private class ProbeScreen(
 
     fun push() = pushVia(ctx)
 
-    /** Pushes through the context this screen kept after being deactivated. */
     fun pushAfterDeactivate() = pushVia(retained)
 
-    /** The shared context, for handing to another probe screen directly. */
     fun contextForTest(): ScreenContext = checkNotNull(retained)
 
     private fun pushVia(c: ScreenContext?) {
@@ -92,10 +79,6 @@ class ScreenManagerTest {
     private val b = ProbeScreen("clock", 2000)
     private val c = ProbeScreen("dice", 3000)
 
-    /**
-     * Stands in for `CustomScreen` under its real id, so the design-selection
-     * tests below name the same screen `Core`'s listener names.
-     */
     private val custom = ProbeScreen(CustomScreen.ID, 4000)
 
     private fun manager(vararg screens: GlyphScreen) = ScreenManager(
@@ -116,7 +99,7 @@ class ScreenManagerTest {
         assertEquals("clock", prefs.getString(PrefKeys.CURRENT_SCREEN, ""))
 
         m.next()
-        m.next() // wraps back to ambient
+        m.next()
         assertEquals(2, a.activations)
         assertEquals("ambient", prefs.getString(PrefKeys.CURRENT_SCREEN, ""))
     }
@@ -130,7 +113,7 @@ class ScreenManagerTest {
         m.home()
         assertEquals("ambient", prefs.getString(PrefKeys.CURRENT_SCREEN, ""))
         assertEquals(2, a.activations)
-        m.home() // already home: no re-activation
+        m.home()
         assertEquals(2, a.activations)
     }
 
@@ -147,7 +130,7 @@ class ScreenManagerTest {
     @Test
     fun `events reach only the active screen of a live session`() {
         val m = manager(a, b, c)
-        m.dispatchGlyphEvent(Events.CHANGE) // no session yet
+        m.dispatchGlyphEvent(Events.CHANGE)
         assertTrue(a.events.isEmpty())
         m.startSession()
         m.dispatchGlyphEvent(Events.CHANGE)
@@ -162,7 +145,7 @@ class ScreenManagerTest {
         m.stopSession()
         assertEquals(1, a.deactivations)
         assertFalse(m.sessionLive)
-        m.next() // dead session: cycling is a no-op
+        m.next()
         assertEquals(0, b.activations)
         assertEquals(0, c.activations)
     }
@@ -173,9 +156,8 @@ class ScreenManagerTest {
         val m = manager(a, b, c)
         m.startSession()
         assertEquals(1, output.size)
-        // Multiplicative, NOT normalized to the setting: dim art stays dim.
         assertEquals(500, output[0][0])
-        a.push() // identical frame: deduped
+        a.push()
         assertEquals(1, output.size)
     }
 
@@ -186,20 +168,14 @@ class ScreenManagerTest {
         m.startSession()
         assertEquals(1000, output[0][0])
 
-        // Auto-brightness changes the pref in the background; the screen has not
-        // drawn again (a static toy might not for a minute).
         prefs.putFloat(PrefKeys.BRIGHTNESS, 0.5f)
         m.reapplyBrightness()
         assertEquals(2, output.size)
         assertEquals(500, output[1][0])
 
-        // Re-applying the SAME level repeatedly must not drift: the raw frame,
-        // not the already-scaled one, is the source (scaling rounds, so scaling a
-        // scaled frame would dim the display a little each pass).
         repeat(20) { m.reapplyBrightness() }
         assertEquals(500, output.last()[0])
 
-        // Back up to full: no residual loss from the trip through 0.5.
         prefs.putFloat(PrefKeys.BRIGHTNESS, 1.0f)
         m.reapplyBrightness()
         assertEquals(1000, output.last()[0])
@@ -219,19 +195,16 @@ class ScreenManagerTest {
     @Test
     fun `selectScreen persists and switches immediately`() {
         val m = manager(a, b, c)
-        m.startSession() // activates ambient (a) once
+        m.startSession()
         m.selectScreen("dice")
         assertEquals(1, c.activations)
         assertEquals("dice", prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF))
-        // The selection sticks: a fresh session restarts on dice, not ambient.
         m.stopSession()
         m.startSession()
         assertEquals(2, c.activations)
-        assertEquals(1, a.activations) // only the initial start, never re-activated
+        assertEquals(1, a.activations)
         assertEquals(0, b.activations)
     }
-
-    // ---------- live preview (the design editor) ----------
 
     @Test
     fun `live preview drops a screen's frame and passes only its own`() {
@@ -241,20 +214,16 @@ class ScreenManagerTest {
 
         m.beginLivePreview()
         assertTrue(m.livePreviewActive)
-        assertEquals(1, a.deactivations) // the ticker is stopped...
+        assertEquals(1, a.deactivations)
 
-        // ...and that alone is not the guarantee: this screen kept the shared
-        // context and pushes anyway, which is what a pending one-shot does.
         a.pushAfterDeactivate()
         assertEquals("a deactivated screen must not reach the panel", before, output.size)
 
-        // The one path past the gate.
         val drawing = IntArray(13 * 13).also { it[7] = 4095 }
         m.pushLivePreview(drawing)
         assertEquals(before + 1, output.size)
         assertEquals(4095, output.last()[7])
 
-        // Still gated after a preview frame has landed.
         a.pushAfterDeactivate()
         assertEquals(before + 1, output.size)
         assertEquals(4095, output.last()[7])
@@ -271,9 +240,8 @@ class ScreenManagerTest {
         assertFalse(m.livePreviewActive)
         assertEquals("the current screen is re-rendered, not just re-enabled", 2, a.activations)
         assertEquals(1000, output.last()[0])
-        assertEquals(0, output.last()[7]) // the preview frame is gone
+        assertEquals(0, output.last()[7])
 
-        // Ordinary frames flow again.
         val n = output.size
         b.onActivate(a.contextForTest())
         assertEquals(n + 1, output.size)
@@ -287,18 +255,13 @@ class ScreenManagerTest {
         m.startSession()
         m.beginLivePreview()
 
-        // A mid-grey cell must arrive mid-grey-times-brightness, exactly as a
-        // toy's would: the preview exists to show what the SETTING will give.
         m.pushLivePreview(IntArray(13 * 13).also { it[3] = 2048 })
         assertEquals(1024, output.last()[3])
 
-        // Byte-identical repeats are dropped, as everywhere else.
         val n = output.size
         m.pushLivePreview(IntArray(13 * 13).also { it[3] = 2048 })
         assertEquals(n, output.size)
 
-        // And a background brightness change re-levels the PREVIEW, not the toy
-        // underneath it.
         prefs.putFloat(PrefKeys.BRIGHTNESS, 1.0f)
         m.reapplyBrightness()
         assertEquals(2048, output.last()[3])
@@ -306,10 +269,6 @@ class ScreenManagerTest {
 
     @Test
     fun `selecting a toy during the preview persists it without activating it`() {
-        // The editor's "show this design on the Glyph Matrix" runs while the
-        // editor still owns the matrix. The choice must land; the screen must
-        // NOT start running behind the gate, where every frame it produced would
-        // be dropped and its ticker would burn battery for nothing.
         val m = manager(a, b, c)
         m.startSession()
         m.beginLivePreview()
@@ -320,8 +279,6 @@ class ScreenManagerTest {
         assertEquals("clock", prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF))
         assertEquals("nothing may activate behind the preview gate", activations, b.activations)
 
-        // Leaving the editor is what puts it on screen — which is exactly the
-        // path the editor takes on ON_PAUSE.
         m.endLivePreview()
         assertEquals(activations + 1, b.activations)
         assertEquals(2000, output.last()[0])
@@ -334,20 +291,11 @@ class ScreenManagerTest {
         m.enterMenu()
         m.beginLivePreview()
         assertFalse(m.inMenu)
-        // The blink pushes straight to the output and would walk past the sink
-        // gate, so it has to have been cancelled rather than merely suppressed.
         val n = output.size
         scheduler.advanceTime(5000)
         assertEquals(n, output.size)
     }
 
-    // ---------- refreshing after a design was rewritten ----------
-
-    /**
-     * The editor's fix for a stale matrix: after a design file is rewritten, the
-     * screen rendering FROM that file has to be told to read it again, and
-     * `onActivate` is where every screen does its reading.
-     */
     @Test
     fun `refreshing re-runs onActivate on the current screen`() {
         val m = manager(a, b, c)
@@ -357,22 +305,15 @@ class ScreenManagerTest {
         m.refreshCurrentScreen()
         assertEquals("the screen must be re-activated, not merely left alone", 2, a.activations)
         assertEquals("and torn down first, so its ticker and one-shots go", 1, a.deactivations)
-        // Only the current one: a refresh is not a broadcast.
         assertEquals(0, b.activations)
         assertEquals(0, c.activations)
 
-        // It follows the selection rather than remembering who was active.
         m.selectScreen("dice")
         m.refreshCurrentScreen()
         assertEquals(2, c.activations)
         assertEquals(2, a.activations)
     }
 
-    /**
-     * While the editor owns the matrix the gate would drop these frames anyway,
-     * so the refresh is skipped rather than spent — and nothing is lost, because
-     * `endLivePreview` re-activates on its way out.
-     */
     @Test
     fun `refreshing is skipped while the live preview owns the matrix`() {
         val m = manager(a, b, c)
@@ -382,21 +323,10 @@ class ScreenManagerTest {
         assertEquals("a refresh must not re-arm a screen behind the gate", 1, a.activations)
         m.endLivePreview()
         assertEquals(2, a.activations)
-        // ...and once the matrix is back, a refresh works again — the ON_STOP
-        // flush arrives after ON_PAUSE and this is the call that saves it.
         m.refreshCurrentScreen()
         assertEquals(3, a.activations)
     }
 
-    // ---------- choosing a different design while it is on the matrix ----------
-
-    /**
-     * The reported bug, as a test: with the design toy live, picking a different
-     * design from its settings changed the pref and nothing else, and the matrix
-     * went on playing the previous design until the user cycled away and back.
-     * `CustomScreen` reads its design in `onActivate`, so the fix is to make it
-     * activate again — see `ScreenManager.onSelectedDesignChanged`.
-     */
     @Test
     fun `choosing a different design re-activates the design toy`() {
         val m = manager(custom, b, c)
@@ -410,11 +340,6 @@ class ScreenManagerTest {
         assertEquals("and be torn down first, so its frame chain is cancelled", 1, custom.deactivations)
     }
 
-    /**
-     * The editor owns the matrix, so this must be as quiet as every other refresh
-     * while the gate is closed — `endLivePreview` re-activates on its way out and
-     * `CustomScreen` reads the design there.
-     */
     @Test
     fun `choosing a different design is skipped while the live preview owns the matrix`() {
         val m = manager(custom, b, c)
@@ -430,50 +355,34 @@ class ScreenManagerTest {
         assertEquals(2, custom.activations)
     }
 
-    /**
-     * Re-selecting the design that is already playing is not a change, and must
-     * not jump a running animation back to frame 0.
-     *
-     * `AndroidPrefs` is a pass-through to `SharedPreferences`, which does not
-     * notify for a value equal to the one already stored — but `FakePrefs`
-     * notifies unconditionally, which is exactly why the guard is in the manager
-     * and this test writes through the fake.
-     */
     @Test
     fun `re-selecting the design already playing does not restart it`() {
-        // Selected before the manager exists, as it is at process start.
         prefs.putString(PrefKeys.CUSTOM_DESIGN_ID, "design-a")
         val m = manager(custom, b, c)
         prefs.putString(PrefKeys.CURRENT_SCREEN, CustomScreen.ID)
         m.startSession()
         assertEquals(1, custom.activations)
 
-        // The same id again: the listener fires, the manager declines.
         prefs.putString(PrefKeys.CUSTOM_DESIGN_ID, "design-a")
         m.onSelectedDesignChanged(CustomScreen.ID)
         assertEquals(1, custom.activations)
 
-        // A genuinely different one still gets through.
         prefs.putString(PrefKeys.CUSTOM_DESIGN_ID, "design-b")
         m.onSelectedDesignChanged(CustomScreen.ID)
         assertEquals(2, custom.activations)
     }
 
-    // ---------- menu mode ----------
-
     @Test
     fun `enterMenu blinks the previewed toy between content and blank`() {
         val m = manager(a, b, c)
         m.startSession()
-        assertEquals(1, output.size) // steady content frame
+        assertEquals(1, output.size)
         m.enterMenu()
         assertTrue(m.inMenu)
 
-        // After BLINK_ON_MS the toy is blinked off: an all-zero frame.
         scheduler.advanceTime(450)
         assertTrue("blink-off frame should be blank", output.last().all { it == 0 })
 
-        // After BLINK_OFF_MS the content returns.
         scheduler.advanceTime(300)
         assertTrue("blink-on frame should have content", output.last().any { it != 0 })
     }
@@ -482,14 +391,14 @@ class ScreenManagerTest {
     fun `menuNext previews the next toy without persisting current screen`() {
         val m = manager(a, b, c)
         m.startSession()
-        m.enterMenu() // previews ambient
-        m.menuNext() // -> clock
+        m.enterMenu()
+        m.menuNext()
         assertEquals(1, b.activations)
         assertEquals("ambient", persistedScreen())
-        m.menuNext() // -> dice
+        m.menuNext()
         assertEquals(1, c.activations)
         assertEquals("ambient", persistedScreen())
-        m.menuNext() // wraps back to ambient
+        m.menuNext()
         assertEquals(2, a.activations)
         assertEquals("ambient", persistedScreen())
     }
@@ -499,14 +408,13 @@ class ScreenManagerTest {
         val m = manager(a, b, c)
         m.startSession()
         m.enterMenu()
-        m.menuNext() // preview clock
+        m.menuNext()
         assertEquals("ambient", persistedScreen())
 
-        scheduler.advanceTime(5000) // no press within the window
+        scheduler.advanceTime(5000)
         assertFalse(m.inMenu)
         assertEquals("clock", persistedScreen())
 
-        // Blinking has stopped: no further frames are produced by advancing time.
         val n = output.size
         scheduler.advanceTime(5000)
         assertEquals(n, output.size)
@@ -516,14 +424,14 @@ class ScreenManagerTest {
     fun `a press before the timeout re-arms auto-commit`() {
         val m = manager(a, b, c)
         m.startSession()
-        m.enterMenu() // preview ambient; commit timer armed at t+5000
+        m.enterMenu()
         scheduler.advanceTime(4000)
-        m.menuNext() // preview clock; timer re-armed to t+9000
+        m.menuNext()
         assertTrue(m.inMenu)
-        scheduler.advanceTime(4000) // t=8000: original 5s would have fired; re-armed one has not
+        scheduler.advanceTime(4000)
         assertTrue(m.inMenu)
         assertEquals("ambient", persistedScreen())
-        scheduler.advanceTime(1000) // t=9000: re-armed timer fires -> commits clock
+        scheduler.advanceTime(1000)
         assertFalse(m.inMenu)
         assertEquals("clock", persistedScreen())
     }
@@ -533,7 +441,7 @@ class ScreenManagerTest {
         val m = manager(a, b, c)
         m.startSession()
         m.enterMenu()
-        m.menuNext() // preview clock
+        m.menuNext()
         m.commitMenu()
         assertFalse(m.inMenu)
         assertEquals("clock", persistedScreen())
@@ -541,23 +449,23 @@ class ScreenManagerTest {
 
         val n = output.size
         scheduler.advanceTime(5000)
-        assertEquals(n, output.size) // no lingering blink
+        assertEquals(n, output.size)
     }
 
     @Test
     fun `home from within the menu exits and jumps to ambient`() {
         val m = manager(a, b, c)
         m.startSession()
-        m.next() // on clock
+        m.next()
         m.enterMenu()
-        m.menuNext() // preview dice
+        m.menuNext()
         m.home()
         assertFalse(m.inMenu)
         assertEquals("ambient", persistedScreen())
 
         val n = output.size
         scheduler.advanceTime(5000)
-        assertEquals(n, output.size) // menu blink cancelled on exit
+        assertEquals(n, output.size)
     }
 
     @Test
@@ -569,7 +477,7 @@ class ScreenManagerTest {
         m.stopSession()
         assertFalse(m.inMenu)
         val n = output.size
-        scheduler.advanceTime(5000) // no blink, no auto-commit after stop
+        scheduler.advanceTime(5000)
         assertEquals(n, output.size)
     }
 

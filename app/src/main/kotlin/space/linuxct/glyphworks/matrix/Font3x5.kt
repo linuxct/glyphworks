@@ -1,11 +1,5 @@
 package space.linuxct.glyphworks.matrix
 
-/**
- * Original 3x5 dot font (1-cell narrow variants for ':' and '.').
- * Designed for the 13x13 matrix: three digits fit side by side with 2-cell
- * gaps (columns 0-2 / 5-7 / 10-12), and a stacked HH/MM clock fits in
- * 5+1+5 rows.
- */
 object Font3x5 {
     const val HEIGHT = 5
     private const val SPACING = 1
@@ -52,7 +46,7 @@ object Font3x5 {
         return w - SPACING
     }
 
-    /** Draws one glyph; returns the x advance (glyph width + spacing). */
+    /** Returns the x advance to the next glyph. */
     fun draw(canvas: MatrixCanvas, c: Char, x: Int, y: Int, v: Int): Int {
         val rows = glyphs[c.uppercaseChar()] ?: glyphs.getValue('?')
         canvas.blit(rows, x, y, v)
@@ -64,7 +58,6 @@ object Font3x5 {
         s.forEach { cx += draw(canvas, it, cx, y, v) }
     }
 
-    /** Draws [s] horizontally centered on the canvas at row [y]. */
     fun drawStringCentered(canvas: MatrixCanvas, s: String, y: Int, v: Int) {
         drawString(canvas, s, (canvas.size - stringWidth(s)) / 2, y, v)
     }

@@ -18,9 +18,6 @@ class VisualizerScreenTest {
 
     @Test
     fun `active audio shows the noise floor on every column`() {
-        // One band above the silence threshold, everything else at zero:
-        // every column must still show at least the faint 1-cell floor —
-        // bars never start from nothing while audio is playing.
         val quiet = FloatArray(13) { if (it == 6) 0.3f else 0f }
         val frame = VisualizerScreen.renderFrame(13, quiet, 0)
         for (x in 0 until 13) {

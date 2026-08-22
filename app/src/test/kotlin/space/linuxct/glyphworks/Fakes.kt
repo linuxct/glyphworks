@@ -79,7 +79,6 @@ class FakeClock(
     }
 }
 
-/** Deterministic LCG so goldens are stable. */
 class FakeRandom(seed: Long = 42L) : RandomPort {
     private var state = seed
 
@@ -95,7 +94,6 @@ class FakeRandom(seed: Long = 42L) : RandomPort {
 class FakeBattery(
     var level: Int = 80,
     var charging: Boolean = false,
-    /** null models "platform will not tell us" — the common case. */
     var watts: Float? = null,
 ) : BatteryPort {
     override fun levelPercent() = level
@@ -127,17 +125,11 @@ class FakeTilt(var x: Float = 0f, var y: Float = 0f) : TiltPort {
     override fun tiltY() = y
 }
 
-/**
- * Both nullable on purpose: null models "no gravity sensor / no reading yet".
- * Defaults to dead flat. Signs follow [space.linuxct.glyphworks.core.InclinePort]:
- * positive = that edge of the device is the low one.
- */
 class FakeIncline(var pitch: Float? = 0f, var roll: Float? = 0f) : InclinePort {
     override fun pitchDegrees() = pitch
     override fun rollDegrees() = roll
 }
 
-/** [lux] is nullable on purpose: null models "no sensor / no reading yet". */
 class FakeLight(var lux: Float? = null) : LightPort {
     var polls = 0
 
@@ -155,11 +147,6 @@ class FakeLocation(var value: Pair<Double, Double>? = 0.0 to 0.0) : LocationPort
     override fun latLon() = value
 }
 
-/**
- * The design the Custom screen will find. Settable so a test can move between
- * "nothing selected" (the placeholder) and any design it builds, without a
- * filesystem — [DesignStore] is Android and CustomScreen never sees it anyway.
- */
 class FakeDesignPort(var design: Design? = null) : DesignPort {
     override fun selected(): Design? = design
 }
@@ -183,11 +170,6 @@ class FakeTimer : TimerSignalPort {
     }
 }
 
-/**
- * Manually advanced scheduler for JVM tests. run() executes inline; tick()
- * advances the fake clock by the ticker interval and fires one tick; due
- * one-shots fire whenever time advances.
- */
 class FakeScheduler(val clock: FakeClock) : RenderScheduler {
     var tickerInterval: Long? = null
         private set
@@ -217,7 +199,6 @@ class FakeScheduler(val clock: FakeClock) : RenderScheduler {
 
     override fun run(action: () -> Unit) = action()
 
-    /** Advances by the ticker interval and fires one tick (plus any due one-shots). */
     fun tick(times: Int = 1) {
         repeat(times) {
             clock.advance(tickerInterval ?: 0L)
@@ -243,7 +224,6 @@ class FakeScheduler(val clock: FakeClock) : RenderScheduler {
     }
 }
 
-/** Bundles the standard fakes and builds a ScreenContext capturing pushed frames. */
 class TestHarness(
     val size: Int = 13,
     val clock: FakeClock = FakeClock(),
@@ -275,19 +255,8 @@ class TestHarness(
 
     fun lastFrame(): IntArray = frames.last()
 
-    /** Frames that came out of [manager], i.e. the production output path. */
     val output = mutableListOf<IntArray>()
 
-    /**
-     * A real [ScreenManager] over [screens] pushing into [output].
-     *
-     * Use this — not [context] — for anything about what the DEVICE receives.
-     * [context] is the screen's own sink and deliberately captures the art
-     * exactly as drawn, which is what makes the ASCII goldens readable; every
-     * step between a screen and the hardware (brightness scaling, the identical-
-     * frame dedup, the menu blink) lives in the manager's sink instead, and is
-     * invisible to a golden.
-     */
     fun manager(screens: List<GlyphScreen>) =
         ScreenManager(screens, prefs, ports, scheduler, size) { output += it.copyOf() }
 }

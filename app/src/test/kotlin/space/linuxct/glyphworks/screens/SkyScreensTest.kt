@@ -50,7 +50,6 @@ class BatteryScreenTest {
         h.scheduler.tick()
         assertTrue(h.lastFrame().contentEquals(BatteryScreen.renderWattage(13, 45f)))
 
-        // Unplugged: back to the gauge even with the pref on.
         h.battery.charging = false
         h.scheduler.tick()
         assertTrue(h.lastFrame().contentEquals(BatteryScreen.renderFrame(13, 60, false, h.clock.now)))
@@ -85,8 +84,6 @@ class SkyAmbientBackgroundsTest {
         h.spectrum.values = null
         h.battery.level = 60
         h.battery.charging = true
-        // Disable the compositor's own charging LAYER so the background is
-        // what reaches the output (the gauge shows charging state itself).
         h.prefs.putBoolean(PrefKeys.AMBIENT_USE_CHARGING, false)
         val screen = AmbientScreen()
 
@@ -95,8 +92,6 @@ class SkyAmbientBackgroundsTest {
             screen.composite(h.context)
                 .contentEquals(BatteryScreen.renderFrame(13, 60, true, h.clock.now)),
         )
-        // Background 7 is the gauge, full stop: the Battery toy's wattage pref
-        // and an available reading must not leak into the ambient background.
         h.battery.watts = 45f
         h.prefs.putBoolean(PrefKeys.BATTERY_SHOW_WATTS, true)
         assertTrue(
@@ -116,8 +111,6 @@ class SkyAmbientBackgroundsTest {
         h.prefs.putInt(PrefKeys.AMBIENT_BACKGROUND, 8)
         h.clock.hour = 12
         h.clock.min = 0
-        // Equator/lon 0/offset 0, doy 80: close to a 6/18 day; just assert it
-        // matches the screen renderer with the same computed times.
         val times = SolarMath.sunTimes(h.clock.doy, 0.0, 0.0, 0)
         assertTrue(
             screen.composite(h.context)

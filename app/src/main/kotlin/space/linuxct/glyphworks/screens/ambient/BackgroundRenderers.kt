@@ -4,6 +4,7 @@ import space.linuxct.glyphworks.core.ConnectionState
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
 import space.linuxct.glyphworks.matrix.Font3x5
+import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 import space.linuxct.glyphworks.screens.BatteryScreen
 import space.linuxct.glyphworks.screens.ClockScreen
@@ -13,65 +14,85 @@ import space.linuxct.glyphworks.screens.SolarMath
 import space.linuxct.glyphworks.screens.SolarScreen
 import space.linuxct.glyphworks.screens.SpeedScreen
 
-/**
- * The ambient background options (ambientBackground 0-9):
- * 0 digital text clock, 1 analog clock, 2 connection status, 3 battery %,
- * 4 download speed, 5 tilt ball, 6 clock (honours clockTheme, so it can draw the
- * same dial as 1 when that theme is analog),
- * 7 battery gauge, 8 solar path, 9 moon phase.
- */
 interface AmbientBackground {
     fun render(c: ScreenContext, nowMs: Long): IntArray
 }
 
 object BackgroundRenderers {
+    const val TEXT_CLOCK = 0
+    const val ANALOG_CLOCK = 1
+    const val CONNECTION = 2
+    const val BATTERY_TEXT = 3
+    const val SPEED = 4
+    const val TILT_BALL = 5
+    const val PIXEL_CLOCK = 6
+    const val BATTERY_GAUGE = 7
+    const val SOLAR_PATH = 8
+    const val MOON_PHASE = 9
+
     const val COUNT = 10
 
     fun create(index: Int): AmbientBackground = when (index) {
-        1 -> AnalogClockBackground()
-        2 -> ConnectionBackground()
-        3 -> BatteryTextBackground()
-        4 -> SpeedBackground()
-        5 -> TiltBallBackground()
-        6 -> PixelClockBackground()
-        7 -> BatteryGaugeBackground()
-        8 -> SolarPathBackground()
-        9 -> MoonPhaseBackground()
+        ANALOG_CLOCK -> AnalogClockBackground()
+        CONNECTION -> ConnectionBackground()
+        BATTERY_TEXT -> BatteryTextBackground()
+        SPEED -> SpeedBackground()
+        TILT_BALL -> TiltBallBackground()
+        PIXEL_CLOCK -> PixelClockBackground()
+        BATTERY_GAUGE -> BatteryGaugeBackground()
+        SOLAR_PATH -> SolarPathBackground()
+        MOON_PHASE -> MoonPhaseBackground()
         else -> TextClockBackground()
     }
 }
 
-/** 0: plain digital clock — stacked HH/MM on 13x13, single line on 25x25; PM corner dot in 12 h. */
+private const val PERCENT_FULL = 100
+private const val HOURS_ON_DIAL = 12
+private const val MINUTES_PER_HOUR = 60
+private const val MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR
+private const val MILLIS_PER_SECOND = 1000L
+
+private const val PM_DOT = 1100
+
+// The emitter's centre falls between cells at both sizes. This is the smallest radius
+// that lights the two nearest cells fully, which the frame needs so the whole glyph is
+// not held below full brightness.
+private const val WIFI_EMITTER_RADIUS = 1.1f
+
+private const val TILT_ACCEL = 0.06f
+private const val TILT_DRAG = 0.92f
+private const val TILT_BOUNCE = 0.6f
+private const val TILT_WALL = 300
+
+private const val SUN_TIMES_CACHE_MS = 60_000
+
 private class TextClockBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray {
         val canvas = MatrixCanvas(c.size)
         val use12h = c.prefs.getBoolean(PrefKeys.USE_12H, false)
         val hour24 = c.ports.clock.hourOfDay()
-        val hour = if (use12h) (hour24 % 12).let { if (it == 0) 12 else it } else hour24
+        val hour = if (use12h) {
+            (hour24 % HOURS_ON_DIAL).let { if (it == 0) HOURS_ON_DIAL else it }
+        } else {
+            hour24
+        }
         val hh = hour.toString().padStart(2, '0')
         val mm = c.ports.clock.minute().toString().padStart(2, '0')
         if (c.size >= 25) {
-            Font3x5.drawStringCentered(canvas, "$hh:$mm", 10, 4095)
+            Font3x5.drawStringCentered(canvas, "$hh:$mm", 10, MAX_BRIGHTNESS)
         } else {
-            Font3x5.drawString(canvas, hh, 3, 1, 4095)
-            Font3x5.drawString(canvas, mm, 3, 7, 4095)
+            Font3x5.drawString(canvas, hh, 3, 1, MAX_BRIGHTNESS)
+            Font3x5.drawString(canvas, mm, 3, 7, MAX_BRIGHTNESS)
         }
-        if (use12h && hour24 >= 12) canvas.set(c.size - 1, 0, 1100)
+        if (use12h && hour24 >= HOURS_ON_DIAL) canvas.set(c.size - 1, 0, PM_DOT)
         return canvas.copyOut()
     }
 }
 
-/**
- * 1: analog clock — the same dial the Clock screen draws on its analog theme,
- * border included. `ClockScreen.renderAnalog` owns it; this used to be a second
- * copy of the same arithmetic, which is exactly the arrangement that lets one of
- * two identical clocks quietly gain a feature the other does not.
- */
 private class AnalogClockBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray = ClockScreen.renderAnalog(c)
 }
 
-/** 2: connection status icon (Wi-Fi / cellular / airplane / none). */
 private class ConnectionBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray {
         val canvas = MatrixCanvas(c.size)
@@ -80,17 +101,7 @@ private class ConnectionBackground : AmbientBackground {
             ConnectionState.WIFI -> {
                 val cx = s / 2f
                 val cy = s * 3f / 4f
-                // The emitter's centre falls between cells at both sizes, and at
-                // the old 0.8 radius discSoft's anti-aliasing never fully covered
-                // one: its brightest cell came out at 74 %, which capped the whole
-                // glyph (brightness multiplies the finished frame). 1.1 is the
-                // smallest radius that saturates the two nearest cells.
-                //
-                // This DOES grow the dot — a couple of cells pick up a dim edge
-                // that were dark before, which the goldens show. That is the cost
-                // of the fix: the alternative is a permanently 26 %-dim glyph, or
-                // a hard-set cell that loses the soft edge entirely.
-                canvas.discSoft(cx, cy, 1.1f, 4095)
+                canvas.discSoft(cx, cy, WIFI_EMITTER_RADIUS, MAX_BRIGHTNESS)
                 canvas.arcRing(cx, cy, 2.4f, 3.2f, 315f, 90f, 2600)
                 canvas.arcRing(cx, cy, 4.4f, 5.2f, 315f, 90f, 1500)
                 if (s >= 25) canvas.arcRing(cx, cy, 6.4f, 7.2f, 315f, 90f, 900)
@@ -105,7 +116,7 @@ private class ConnectionBackground : AmbientBackground {
             }
             ConnectionState.AIRPLANE -> {
                 val cx = s / 2
-                canvas.line(cx, 2, cx, s - 3, 4095) // fuselage
+                canvas.line(cx, 2, cx, s - 3, MAX_BRIGHTNESS) // fuselage
                 canvas.line(2, s / 2 - 1, s - 3, s / 2 - 1, 2600) // wings
                 canvas.line(cx - 2, s - 4, cx + 2, s - 4, 1800) // tail
             }
@@ -120,28 +131,28 @@ private class ConnectionBackground : AmbientBackground {
     }
 }
 
-/** 3: battery percentage as text ("NN%", "100" when full). */
 private class BatteryTextBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray {
         val canvas = MatrixCanvas(c.size)
-        val level = c.ports.battery.levelPercent().coerceIn(0, 100)
-        val text = if (level >= 100) "100" else "$level%"
-        Font3x5.drawStringCentered(canvas, text, c.size / 2 - 2, 4095)
+        val level = c.ports.battery.levelPercent().coerceIn(0, PERCENT_FULL)
+        val text = if (level >= PERCENT_FULL) "$PERCENT_FULL" else "$level%"
+        val textTop = c.size / 2 - Font3x5.HEIGHT / 2
+        Font3x5.drawStringCentered(canvas, text, textTop, MAX_BRIGHTNESS)
         return canvas.copyOut()
     }
 }
 
-/** 4: download speed (same renderer as the standalone screen, own delta state). */
 private class SpeedBackground : AmbientBackground {
     private var lastTotal = -1L
     private var lastSampleAt = 0L
     private var bytesPerSec = 0L
 
     override fun render(c: ScreenContext, nowMs: Long): IntArray {
-        if (nowMs - lastSampleAt >= 1000) {
+        if (nowMs - lastSampleAt >= MILLIS_PER_SECOND) {
             val total = c.ports.speed.totalRxBytes()
             if (lastTotal >= 0 && nowMs > lastSampleAt) {
-                bytesPerSec = ((total - lastTotal) * 1000 / (nowMs - lastSampleAt)).coerceAtLeast(0)
+                val elapsed = nowMs - lastSampleAt
+                bytesPerSec = ((total - lastTotal) * MILLIS_PER_SECOND / elapsed).coerceAtLeast(0)
             }
             lastTotal = total
             lastSampleAt = nowMs
@@ -150,7 +161,6 @@ private class SpeedBackground : AmbientBackground {
     }
 }
 
-/** 5: tilt-ball physics driven by the linear-acceleration sensor. */
 private class TiltBallBackground : AmbientBackground {
     private var px = -1f
     private var py = -1f
@@ -163,33 +173,31 @@ private class TiltBallBackground : AmbientBackground {
             px = (s - 1) / 2f
             py = (s - 1) / 2f
         }
-        // Screen x grows right; sensor +x is device-left-tilted, so invert.
-        vx += -c.ports.tilt.tiltX() * 0.06f
-        vy += c.ports.tilt.tiltY() * 0.06f
-        vx *= 0.92f
-        vy *= 0.92f
+        // Screen x grows right, but sensor +x means tilted left, so invert it.
+        vx += -c.ports.tilt.tiltX() * TILT_ACCEL
+        vy += c.ports.tilt.tiltY() * TILT_ACCEL
+        vx *= TILT_DRAG
+        vy *= TILT_DRAG
         px += vx
         py += vy
         val min = 1f
         val max = s - 2f
-        if (px < min) { px = min; vx = -vx * 0.6f }
-        if (px > max) { px = max; vx = -vx * 0.6f }
-        if (py < min) { py = min; vy = -vy * 0.6f }
-        if (py > max) { py = max; vy = -vy * 0.6f }
+        if (px < min) { px = min; vx = -vx * TILT_BOUNCE }
+        if (px > max) { px = max; vx = -vx * TILT_BOUNCE }
+        if (py < min) { py = min; vy = -vy * TILT_BOUNCE }
+        if (py > max) { py = max; vy = -vy * TILT_BOUNCE }
 
         val canvas = MatrixCanvas(s)
-        canvas.rect(0, 0, s, s, 300)
-        canvas.discSoft(px, py, if (s >= 25) 2.2f else 1.3f, 4095)
+        canvas.rect(0, 0, s, s, TILT_WALL)
+        canvas.discSoft(px, py, if (s >= 25) 2.2f else 1.3f, MAX_BRIGHTNESS)
         return canvas.copyOut()
     }
 }
 
-/** 6: the Clock toy, honouring clockTheme (same renderer as the clock screen). */
 private class PixelClockBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray = ClockScreen.renderFrame(c)
 }
 
-/** 7: battery fill gauge with charging wave/bolt (same renderer as the battery screen). */
 private class BatteryGaugeBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray = BatteryScreen.renderFrame(
         c.size,
@@ -199,14 +207,13 @@ private class BatteryGaugeBackground : AmbientBackground {
     )
 }
 
-/** 8: solar path (same renderer as the solar screen; sun times cached ~1 min). */
 private class SolarPathBackground : AmbientBackground {
     private var cachedTimes: SolarMath.SunTimes? = null
     private var cachedAt = 0L
 
     override fun render(c: ScreenContext, nowMs: Long): IntArray {
         var times = cachedTimes
-        if (times == null || nowMs - cachedAt >= 60_000) {
+        if (times == null || nowMs - cachedAt >= SUN_TIMES_CACHE_MS) {
             cachedAt = nowMs
             val loc = c.ports.location.latLon()
             times = if (loc == null) {
@@ -221,9 +228,9 @@ private class SolarPathBackground : AmbientBackground {
             }
             cachedTimes = times
         }
-        val minutes = c.ports.clock.hourOfDay() * 60 + c.ports.clock.minute()
+        val minutes = c.ports.clock.hourOfDay() * MINUTES_PER_HOUR + c.ports.clock.minute()
         val (rise, set) = when (times.kind) {
-            SolarMath.Kind.POLAR_DAY -> 0 to 1440
+            SolarMath.Kind.POLAR_DAY -> 0 to MINUTES_PER_DAY
             SolarMath.Kind.POLAR_NIGHT -> Int.MAX_VALUE to Int.MAX_VALUE
             SolarMath.Kind.NORMAL -> times.riseMin to times.setMin
         }
@@ -231,7 +238,6 @@ private class SolarPathBackground : AmbientBackground {
     }
 }
 
-/** 9: moon phase (same renderer as the moon screen). */
 private class MoonPhaseBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray =
         MoonScreen.renderFrame(c.size, MoonMath.phaseFraction(nowMs))

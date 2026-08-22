@@ -8,15 +8,7 @@ import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import space.linuxct.glyphworks.core.DebugLog
 
-/**
- * Screen on/off awareness for auto-brightness. ACTION_SCREEN_ON/OFF are only
- * delivered to DYNAMICALLY registered receivers (a manifest entry never fires),
- * so this is registered for as long as a render session runs and torn down with
- * it — nothing polls the light sensor while no session exists.
- *
- * [start] also seeds the current state from PowerManager.isInteractive, since
- * the broadcasts only report transitions.
- */
+/** ACTION_SCREEN_ON and OFF only reach receivers registered in code, never a manifest entry. */
 class ScreenStateWatcher(
     private val app: Context,
     private val onScreenStateChanged: (screenOn: Boolean) -> Unit,
@@ -39,8 +31,6 @@ class ScreenStateWatcher(
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
             }
-            // Protected system broadcasts, so NOT_EXPORTED loses nothing and
-            // satisfies the U+ registration rules.
             ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             registered = true
         }
@@ -58,7 +48,6 @@ class ScreenStateWatcher(
         }
     }
 
-    /** True when the display is on (assumed on if PowerManager is unavailable). */
     fun isInteractive(): Boolean =
         app.getSystemService(PowerManager::class.java)?.isInteractive ?: true
 

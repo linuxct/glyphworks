@@ -1,23 +1,13 @@
 package space.linuxct.glyphworks.screens.ambient
 
-import space.linuxct.glyphworks.core.Events
 import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
 import space.linuxct.glyphworks.screens.VisualizerScreen
 
 /**
- * Ambient — the "background" home screen: a 50 ms compositor that keeps a
- * low-key display running whenever a session is live (lock screen, AOD, or
- * unlocked). Layers are evaluated low to high and each active layer REPLACES
- * the whole buffer (last-writer-wins):
- *
- *   Background (7 options; night + shake gating, prefs re-read every tick)
- *   -> Charging (while status==CHARGING and level != 100)
- *   -> Audio (FFT non-silent; reverts within one tick of silence)
- *
- * An empty buffer means the matrix is dark. Glyph events are ignored — this
- * screen is passive by design.
+ * The ambient home screen. Layers run background, then charging, then audio, and each
+ * active one replaces the whole buffer, so the last one wins.
  */
 class AmbientScreen : GlyphScreen {
     override val id = "ambient"
@@ -28,7 +18,7 @@ class AmbientScreen : GlyphScreen {
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
-        ctx.scheduler.setTicker(50) { tick() }
+        ctx.scheduler.setTicker(TICK_MS) { tick() }
     }
 
     override fun onDeactivate() {
@@ -36,17 +26,13 @@ class AmbientScreen : GlyphScreen {
         backgrounds.clear()
     }
 
-    override fun onEvent(event: String) {
-        // Passive: CHANGE/AOD have no effect here.
-        if (event == Events.CHANGE || event == Events.AOD) return
-    }
+    override fun onEvent(event: String) = Unit
 
     private fun tick() {
         val c = ctx ?: return
         c.pushFrame(composite(c))
     }
 
-    /** One compositor pass; also used directly by tests. */
     fun composite(c: ScreenContext): IntArray {
         val nowMs = c.ports.clock.nowMillis()
         var frame: IntArray? = null
@@ -62,7 +48,7 @@ class AmbientScreen : GlyphScreen {
 
         if (c.prefs.getBoolean(PrefKeys.AMBIENT_USE_CHARGING, PrefKeys.AMBIENT_USE_CHARGING_DEF) &&
             c.ports.battery.isCharging() &&
-            c.ports.battery.levelPercent() != 100
+            c.ports.battery.levelPercent() != PERCENT_FULL
         ) {
             val style = c.prefs.getInt(
                 PrefKeys.AMBIENT_CHARGING_STYLE,
@@ -73,12 +59,8 @@ class AmbientScreen : GlyphScreen {
                 style,
                 c.ports.battery.levelPercent(),
                 nowMs,
-                // Read the charge power ONLY for the style that draws it. The
-                // port hits the platform battery service, and this composite runs
-                // every tick — the other four styles would pay for a figure they
-                // discard. The Battery toy's own "show watts" preference is
-                // deliberately NOT consulted: charge power is a choice in this
-                // selector now, so the two settings stay independent.
+                // Only for the style that draws it: the port hits the battery service
+                // and this runs every tick.
                 if (style == ChargingRenderer.STYLE_WATTS) c.ports.battery.chargeWatts() else null,
             )
         }
@@ -110,6 +92,9 @@ class AmbientScreen : GlyphScreen {
     }
 
     companion object {
+        const val TICK_MS = 50L
         const val SHAKE_WINDOW_MS = 30_000L
+
+        private const val PERCENT_FULL = 100
     }
 }

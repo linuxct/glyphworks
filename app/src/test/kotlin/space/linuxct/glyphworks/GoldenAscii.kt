@@ -6,13 +6,13 @@ import org.junit.Assert.fail
 import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import java.io.File
 
-/**
- * ASCII golden-file harness for matrix frames.
- *
- * Charset by brightness: ' ' = 0, '.' = 1..1365, '+' = 1366..2730, '#' = 2731..4095.
- * Goldens live in app/src/test/resources/goldens/<name>.txt.
- * Regenerate with: ./gradlew :app:testDebugUnitTest -DupdateGoldens=true
- */
+private const val OFF_CHAR = ' '
+private const val DIM_CHAR = '.'
+private const val MID_CHAR = '+'
+private const val FULL_CHAR = '#'
+private const val DIM_MAX_BRIGHTNESS = 1365
+private const val MID_MAX_BRIGHTNESS = 2730
+
 object GoldenAscii {
 
     private val goldenDir: File by lazy {
@@ -31,10 +31,10 @@ object GoldenAscii {
                 val v = frame[y * size + x]
                 sb.append(
                     when {
-                        v <= 0 -> ' '
-                        v <= 1365 -> '.'
-                        v <= 2730 -> '+'
-                        else -> '#'
+                        v <= 0 -> OFF_CHAR
+                        v <= DIM_MAX_BRIGHTNESS -> DIM_CHAR
+                        v <= MID_MAX_BRIGHTNESS -> MID_CHAR
+                        else -> FULL_CHAR
                     }
                 )
             }
@@ -50,7 +50,6 @@ object GoldenAscii {
         }
     }
 
-    /** Validates the frame and compares (or updates) its ASCII golden. */
     fun check(name: String, frame: IntArray, size: Int) {
         assertFrameValid(frame, size)
         val actual = render(frame, size)
@@ -62,7 +61,7 @@ object GoldenAscii {
         }
         if (!file.isFile) {
             fail(
-                "Missing golden '$name'. Run ./gradlew :app:testDebugUnitTest -DupdateGoldens=true " +
+                "Missing golden '$name'. Run ./gradlew :app:testGithubDebugUnitTest -DupdateGoldens=true " +
                     "to generate, then review the ASCII output.\nActual frame:\n$actual"
             )
         }

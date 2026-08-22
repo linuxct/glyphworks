@@ -28,166 +28,29 @@ import space.linuxct.glyphworks.core.design.MarqueeText
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * The editor state one tool call is answered from.
- *
- * A **snapshot supplied by the caller**, not a handle on the editor: nothing in
- * `core/` may reach into `ui/`, and making the tools pure functions of
- * `(arguments, context)` is what lets every rule in this file be tested without
- * an Android runtime. The orchestrator builds a fresh context per round, which
- * is also how "the design *as shown*, unsaved edits included" is honoured — the
- * caller passes `EditorState.composed()`, so what the model reads is the canvas,
- * not the last thing written to disk.
- */
 data class GlyphToolContext(
-    /** The design as currently shown, including edits the user has not saved. */
     val design: Design,
-    /** The geometry on screen, or null if the editor has none open. */
     val openVariant: PokemonCodename? = null,
-    /** Which frame of [openVariant] the timeline has selected. */
     val selectedFrameIndex: Int = 0,
-    /**
-     * The photos riding on **this turn's** message, in the order the user
-     * attached them, as brightness grids.
-     *
-     * The pixels themselves are Android's — `BitmapFactory`, an EXIF tag, a
-     * `content://` URI — and none of that may appear in `core/`. So the decode
-     * stays in `ai/ImageAttachments`, which already does it to build the data
-     * URL, and hands the result across this seam as a [SourceImage]: two
-     * integers and an `IntArray`. Everything downstream of here — the framing,
-     * the contrast, the threshold, the mask — is [ImageQuantiser], which is pure
-     * and tested under plain JUnit.
-     *
-     * Deliberately per-turn rather than per-conversation. An attachment is sent
-     * with one message and is not stored (see `ChatMessage.imageCount`), so a
-     * photo from three turns ago is genuinely not available and pretending
-     * otherwise would have `image_to_grid` convert the wrong picture.
-     */
     val images: List<SourceImage> = emptyList(),
 ) {
-    /**
-     * The geometries this conversation may read and write: exactly the ones the
-     * design **carries**.
-     *
-     * The same expression as `DesignEditorActivity.EditorState.variantsPresent`,
-     * and deliberately *not* "the variant currently open". With both panels
-     * present the model may rewrite `arbok` while the user is looking at
-     * `bellsprout`; with only `bellsprout` present it may not so much as read
-     * `arbok`. Adding a geometry to a design is a decision the user takes in the
-     * editor — a model that could add one could quietly double the size of
-     * somebody's file.
-     */
     val allowedVariants: List<PokemonCodename>
         get() = PokemonCodename.entries.filter { design.variantFor(it) != null }
 }
 
-/**
- * What one tool call produced: the JSON the model is shown, and — for
- * `apply_design` alone — the validated design the caller should put on the
- * canvas.
- *
- * [design] is the entire mechanism by which a tool changes anything. Nothing in
- * `core/ai/` mutates state: `apply_design` hands back a [Design] that
- * [DesignCodec] has already accepted, and the caller owns the decision to apply
- * it. `validate_design` therefore returns null here **by construction** rather
- * than by promise — there is no value for a caller to accidentally apply.
- *
- * The caller must apply [design] *before* returning [json] to the model, since
- * [json] says the change was made. If applying fails, replace the result with an
- * error rather than reporting a success that did not happen.
- */
 data class GlyphToolResult(
     val json: String,
     val isError: Boolean = false,
     val design: Design? = null,
-    /**
-     * A document that passed every check but that **nothing is being asked to
-     * apply** — `validate_design`'s output, and only ever that.
-     *
-     * A second field rather than a flag on [design] precisely so the paragraph
-     * above stays true: a caller that applies [design] cannot accidentally apply a
-     * dry run, because a dry run still puts nothing there.
-     *
-     * It exists because a turn can otherwise end with nothing to show for itself.
-     * A model that validates a good draft, decides it can do better and redraws
-     * until the round budget is gone leaves the user with an error message,
-     * despite legal artwork having existed several rounds earlier. This is that
-     * artwork, kept so [GlyphAiOrchestrator] can fall back on it rather than fail
-     * empty-handed.
-     */
     val validated: Design? = null,
 )
 
-/**
- * One callable tool: its name, the schema advertised to the model, and the
- * function that answers a call.
- *
- * Mirrors `pulseloop/coach/tools/CoachTool.kt`, minus `suspend`: every tool here
- * is pure computation over a snapshot, so making callers hop a coroutine
- * boundary would buy nothing. A tool that needed I/O would be a tool that did
- * not belong in `core/`.
- */
 data class GlyphTool(
     val name: String,
     val specJson: String,
     val run: (arguments: String, ctx: GlyphToolContext) -> GlyphToolResult,
 )
 
-/**
- * The design assistant's tools: read the canvas, check a document, write it back
- * — and, for the one job a model cannot do by hand, do the arithmetic for it.
- *
- * ## Some tools take a decision; some take a calculation
- *
- * `get_current_design`, `validate_design` and `apply_design` are all the same
- * shape: the model decides what the art should be and this object says whether
- * the app will have it. [scrollFrames] and [imageToGrid] are the exceptions and
- * are here for the opposite reason. Nothing was wrong with the model's
- * *judgement* about a marquee; what it could not do was hold 5 rows x 19 frames
- * x 169 characters mutually consistent with no error signal. Nothing is wrong
- * with its judgement about a photograph either; what it cannot do is tell you
- * what a JPEG averages to at cell (7, 4). Both of those moved into Kotlin, where
- * they are loops. See [scrollFrames] for the decoded failure that put the first
- * one there.
- *
- * [marqueeText] is the same argument taken one step further, and is the answer
- * to the half of a marquee [scrollFrames] left behind. Windowing is arithmetic
- * and moved; drawing a nine-row alphabet is not arithmetic, but it is *settled*
- * — an `S` has one right shape and re-deriving it per request can only lose. So
- * the letterforms moved too, and what stays with the model is the phrase.
- *
- * [setFrames] is a third shape again: a decision the model still takes, made
- * *cheap*. `apply_design` replaces the whole document, so changing frame 7 of a
- * 240-frame arbok animation meant re-sending ~150 kB of base36 — slow, expensive
- * and, worse, a fresh chance to corrupt a frame that was already right.
- *
- * ## Nothing here throws
- *
- * Every input to this object is language-model output, which means every input
- * is malformed sooner or later: arguments that are not JSON, a `cells` string
- * one character short, `'!'` where a base36 digit belongs, a palette index past
- * the end of `levels`, 300 frames, a `durationMs` of 5, a variant this design
- * does not carry. **All of those are results, not exceptions.** An exception
- * would surface to the user as "something went wrong" and end the turn; a result
- * goes back to the model, which reads what was wrong and what was expected and
- * fixes it on the next round. That is the whole difference between an assistant
- * that recovers and one that gives up, so error messages here are written for a
- * reader who must act on them: what was wrong, where, and what was expected
- * instead.
- *
- * ## Every result carries a picture
- *
- * A model writing base36 cannot see its own output. [GlyphAsciiPreview] renders
- * each frame back with the disc mask applied, and that rendering rides along
- * with every success — it is the feedback loop that made this project's
- * hand-authored designs work, and without it the model is drawing blindfolded.
- *
- * ## Variant gating
- *
- * [GlyphToolContext.allowedVariants] is the closed set. A rejection always names
- * it, because a model that is merely refused will try again the same way, while
- * a model told "you may only write bellsprout" will write bellsprout.
- */
 object GlyphAiTools {
 
     const val GET_CURRENT_DESIGN = "get_current_design"
@@ -198,15 +61,10 @@ object GlyphAiTools {
     const val IMAGE_TO_GRID = "image_to_grid"
     const val SET_FRAMES = "set_frames"
 
-    /** The argument every writing tool takes: a whole `glyph.design` document. */
     const val ARG_DESIGN = "design"
 
-    /** Which panel to work on. Shared by every tool that touches one variant. */
     const val ARG_VARIANT = "variant"
 
-    // [SCROLL_FRAMES]'s arguments. Only [ARG_SOURCE_ROWS] carries a decision the
-    // model has to make; every other one may be null and takes a default that is
-    // chosen to make one of this tool's guarantees true.
     const val ARG_SOURCE_ROWS = "source_rows"
     const val ARG_TOP_ROW = "top_row"
     const val ARG_START_COLUMN = "start_column"
@@ -214,109 +72,33 @@ object GlyphAiTools {
     const val ARG_FRAMES = "frames"
     const val ARG_DURATION_MS = "duration_ms"
 
-    /**
-     * [MARQUEE_TEXT]'s phrase — the only argument it has that carries a
-     * decision. It shares [ARG_VARIANT], [ARG_STEP] and [ARG_DURATION_MS] with
-     * [SCROLL_FRAMES] on purpose: they mean exactly the same things, and a
-     * second spelling of "columns per frame" would be a second thing to learn.
-     */
     const val ARG_TEXT = "text"
 
-    /** How many panel cells one glyph cell becomes. See [MarqueeText.scaleFor]. */
     const val ARG_SCALE = "scale"
 
-    /**
-     * Which palette entry the letters are lit at.
-     *
-     * [SCROLL_FRAMES] has no equivalent because there the model draws the source
-     * bitmap and picks the index cell by cell. Here the app draws the letters,
-     * so the choice has to be an argument or it would be the app's taste.
-     */
     const val ARG_PALETTE_INDEX = "palette_index"
 
-    // [IMAGE_TO_GRID]'s arguments. The three knobs are the whole of what the
-    // model may steer, and each of them is here because the conversion has one
-    // honest answer the app cannot know: which picture, where the light/dark cut
-    // goes, how hard to push, and whether the subject is the dark half.
     const val ARG_IMAGE_INDEX = "image_index"
     const val ARG_THRESHOLD = "threshold"
     const val ARG_CONTRAST = "contrast"
     const val ARG_INVERT = "invert"
 
-    // [SET_FRAMES]'s arguments.
     const val ARG_MODE = "mode"
     const val ARG_AT = "at"
     const val ARG_COUNT = "count"
 
-    /**
-     * [SET_FRAMES]' array of new frames.
-     *
-     * Spelled `frames` like [ARG_FRAMES], and meaning something else — a list
-     * there, a count here. They live in different schemas, so nothing can
-     * confuse them mechanically, and calling this anything but `frames` would be
-     * the more confusing choice: it is a list of frames.
-     */
     const val ARG_FRAME_LIST = "frames"
 
-    /** The three things [SET_FRAMES] can do to a range. */
     const val MODE_REPLACE = "replace"
     const val MODE_INSERT = "insert"
     const val MODE_DELETE = "delete"
 
-    /** The key [SCROLL_FRAMES] and [IMAGE_TO_GRID] return a ready-to-apply document under. */
     const val KEY_APPLY_THIS = "apply_this"
 
-    /**
-     * How many frames of a variant get an ASCII rendering in one tool result.
-     *
-     * Previews exist to be *read*, and a 240-frame `arbok` design would render
-     * as 6 000 lines — a payload that pushes the conversation out of context and
-     * that no model will study frame by frame anyway. Every design a person
-     * draws by hand is well under this, so in practice the cap never fires; when
-     * it does, the result says so explicitly (`previews_truncated`) rather than
-     * letting the model believe it has seen everything.
-     *
-     * ## Why it survived [SET_FRAMES], which was expected to remove it
-     *
-     * The reason it looked removable was that a model editing frame 40 of a
-     * 60-frame design could never *see* frame 40 — previews stopped at 16 — and
-     * that is a real gap. But the cap is not what causes it: the cap is a budget,
-     * and a 240-frame `arbok` design is still 150 000 characters of pictures
-     * whether or not there is a tool that writes ranges. Raising it would spend
-     * the conversation's context on the frames nobody asked about, in the one
-     * situation where there are hundreds of them.
-     *
-     * What [setFrames] changes is that the frames past the cap became
-     * *addressable*: it renders the range it wrote and the frames either side of
-     * the join, so frame 200 is now visible — by being written, which is the only
-     * time anybody was looking at it. The cap stays; the blind spot does not.
-     */
     const val MAX_PREVIEW_FRAMES = 16
 
-    /**
-     * How many frames of a *scroll* get a rendering. Higher than
-     * [MAX_PREVIEW_FRAMES] on purpose.
-     *
-     * A marquee's frame count is arithmetic rather than taste — a 7-column
-     * message across a 13-wide panel is 19 frames, and that is the shortest
-     * honest version of it — so the general cap would truncate the previews of
-     * the very case this tool exists for, at exactly the moment the prompt is
-     * telling the model to read the frames *against each other*. It is still a
-     * cap, because a 240-frame scroll of arbok would be 150 000 characters of
-     * pictures, and the result says so when it fires.
-     */
     const val MAX_SCROLL_PREVIEW_FRAMES = 24
 
-    /**
-     * Every tool, in the order the model should meet them: read the canvas,
-     * build the three things that cannot be built by hand, change a range of
-     * frames, check a whole document, write one.
-     *
-     * [MARQUEE_TEXT] is listed before [SCROLL_FRAMES] deliberately. They overlap
-     * — a marquee is a scroll — and the overlap has one right answer: if the
-     * thing scrolling is *words*, the app's own letterforms beat any the model
-     * draws, so the specialised tool should be the one met first.
-     */
     fun build(): List<GlyphTool> = listOf(
         GlyphTool(GET_CURRENT_DESIGN, SPEC_GET_CURRENT_DESIGN) { _, ctx -> getCurrentDesign(ctx) },
         GlyphTool(IMAGE_TO_GRID, SPEC_IMAGE_TO_GRID) { args, ctx -> imageToGrid(args, ctx) },
@@ -327,10 +109,6 @@ object GlyphAiTools {
         GlyphTool(APPLY_DESIGN, SPEC_APPLY_DESIGN) { args, ctx -> applyDesign(args, ctx) },
     )
 
-    /**
-     * Dispatches a call by name. An unknown name is an error result too: models
-     * hallucinate tool names, and the fix is to tell them which ones exist.
-     */
     fun run(name: String, arguments: String, ctx: GlyphToolContext): GlyphToolResult {
         val tool = build().firstOrNull { it.name == name }
             ?: return failure(
@@ -341,13 +119,6 @@ object GlyphAiTools {
         return tool.run(arguments, ctx)
     }
 
-    // region tools
-
-    /**
-     * The canvas as shown: the document's own fields, every carried variant with
-     * its cells *and* a rendering of each frame, and the editor context the model
-     * needs to make sense of "change this frame".
-     */
     private fun getCurrentDesign(ctx: GlyphToolContext): GlyphToolResult {
         val design = ctx.design
         val allowed = ctx.allowedVariants
@@ -359,9 +130,6 @@ object GlyphAiTools {
                 put("loop", design.loop)
                 putJsonArray("levels") { design.levels.forEach { add(it) } }
                 putJsonObject("editor") {
-                    // Null rather than a default: "no variant is open" is a real
-                    // state, and inventing one would have the model edit a panel
-                    // the user is not looking at while believing otherwise.
                     if (ctx.openVariant != null && allowed.contains(ctx.openVariant)) {
                         put("open_variant", ctx.openVariant.codename)
                     } else {
@@ -376,7 +144,6 @@ object GlyphAiTools {
         )
     }
 
-    /** Every check [applyDesign] makes, guaranteed to change nothing. */
     private fun validateDesign(arguments: String, ctx: GlyphToolContext): GlyphToolResult =
         when (val prepared = prepare(arguments, ctx)) {
             is Prepared.Bad -> prepared.result
@@ -391,20 +158,10 @@ object GlyphAiTools {
                     )
                     putSummary(prepared.design, ctx)
                 },
-                // Deliberately no design: a dry run must have nothing a caller
-                // could apply by mistake. It is reported as *validated* instead —
-                // see [GlyphToolResult.validated] — which is a record of what
-                // passed, not an instruction to put it anywhere.
                 validated = prepared.design,
             )
         }
 
-    /**
-     * Validates a whole document and hands the accepted [Design] to the caller.
-     *
-     * The result claims the change is on the canvas, so the caller applies
-     * [GlyphToolResult.design] before showing [GlyphToolResult.json] to the model.
-     */
     private fun applyDesign(arguments: String, ctx: GlyphToolContext): GlyphToolResult =
         when (val prepared = prepare(arguments, ctx)) {
             is Prepared.Bad -> prepared.result
@@ -423,119 +180,6 @@ object GlyphAiTools {
             )
         }
 
-    // endregion
-
-    // region scroll_frames
-
-    /**
-     * Windows one wide bitmap into a scrolled animation.
-     *
-     * ## The failure this exists to make impossible
-     *
-     * Asked for "HI" scrolling right to left, the model produced nine frames in
-     * which frame 0 was blank, the brightness fell from full to half partway
-     * through, and the H sheared apart — its uprights at columns 1 and 3 on rows
-     * 4-5 and at columns 2 and 4 on rows 6-8. Three of those four are decisions,
-     * and [GlyphAiPrompt] can and does argue with them. The shear is not: keeping
-     * 5 rows x 19 frames x 169 characters mutually consistent is sixteen thousand
-     * characters of bookkeeping with no error signal, and a model executing that
-     * by hand will be wrong some of the time however it is instructed.
-     *
-     * So the arithmetic moves here. The model draws **one still picture** — the
-     * whole message, once, as a rectangle — and this cuts the frames out of it:
-     *
-     * - **Shear is unrepresentable.** There is a single `offset` per frame and
-     *   every row is read at that same offset. There is no expression in this
-     *   function that could move one row and not another.
-     * - **A blank frame 0 cannot be the default.** [ARG_START_COLUMN] defaults to
-     *   `firstLit - (width - 1)`, which puts the message's first *lit* column on
-     *   the panel's right-hand edge in frame 0. An explicit start that does blank
-     *   frames is honoured and *reported*, never emitted silently.
-     * - **Brightness cannot drift.** Cells are copied out of [ARG_SOURCE_ROWS] as
-     *   characters. Nothing in here writes a palette index that was not already
-     *   in the source, and the model is handed a finished document to pass on
-     *   rather than a picture to transcribe.
-     * - **The frame count is not the model's to get wrong.** It is computed, and
-     *   the default is the full traverse.
-     *
-     * ## Why it does not apply
-     *
-     * It returns [KEY_APPLY_THIS] — a complete document ready for
-     * [APPLY_DESIGN] — and hands back no [GlyphToolResult.design]. Two reasons.
-     * The pictures are the whole point of this project's feedback loop, and a
-     * tool that applied would put nineteen frames on somebody's canvas before
-     * anyone had looked at one of them; and the model still has to *decide* about
-     * the things this cannot know — whether the message is the right message,
-     * whether it should loop, whether the art wanted to be two cells taller. The
-     * arithmetic is what was being got wrong, so the arithmetic is what moved.
-     * The judgement stays where it was.
-     *
-     * ## The disc
-     *
-     * The panel is round, so a glyph is only safe at *every* horizontal offset if
-     * it sits in the band of rows that is live across all columns
-     * ([GlyphAiPrompt.fullWidthRows]; rows 4-8 at 13x13). [ARG_TOP_ROW] defaults
-     * into that band. A caller that puts art outside it still gets its frames —
-     * clipping by the rim is a legitimate design choice — but gets a warning
-     * with them, because that is the one defect the ASCII of a *single* frame
-     * cannot show: the cells are lost as the art moves, not where it starts.
-     */
-    /**
-     * A phrase, in full-height letterforms, scrolling right to left.
-     *
-     * ## Why this exists when [scrollFrames] already does
-     *
-     * [scrollFrames] moved the *windowing* into Kotlin and left the drawing with
-     * the model, which was the right split for a moving picture and only half of
-     * one for text. A nine-row alphabet is thirty-odd characters of judgement per
-     * letter, re-derived from nothing on every request, and the failure it
-     * produces is not a torn letter — it is a letter that is merely *bad*: an `S`
-     * that reads as a `5`, a `G` with no crossbar, a `W` two columns too narrow
-     * to be a `W`. Nothing catches that. The previews show it faithfully and it
-     * still ships, because it is not wrong enough to look wrong one frame at a
-     * time.
-     *
-     * So the letterforms moved into the app as well ([MarqueeFont]), and what is
-     * left for the model is the phrase. That is the whole argument list worth
-     * having: [ARG_TEXT] carries a decision, and every other argument may be
-     * null.
-     *
-     * ## Why it does not apply
-     *
-     * Same shape as [scrollFrames] — it returns [KEY_APPLY_THIS] and no
-     * [GlyphToolResult.design] — and for the same two reasons, which are stronger
-     * here rather than weaker. The point of the tool is the *letterforms*, so a
-     * version that applied would put a hundred frames on somebody's canvas before
-     * anyone had read a word of it; and the phrase itself is exactly the thing
-     * the app cannot check. A typo, a phrase that wanted to be shorter, a
-     * marquee that should have been a static word — all of those are judgements,
-     * all are visible in `strip`, and none of them is arithmetic.
-     *
-     * [setFrames] applies because its whole purpose is to *avoid* re-sending a
-     * document; that reasoning does not reach here, because a marquee **is** the
-     * document. What comes back is one variant's frames entire, which is
-     * precisely the shape [APPLY_DESIGN] takes.
-     *
-     * ## What it owns and what it leaves alone
-     *
-     * [KEY_APPLY_THIS] carries `kind`, `loop` and one variant's `frames`, and
-     * nothing else. `kind` is `dynamic` because a design still marked static
-     * would have [APPLY_DESIGN] refuse every frame but the first; `loop` is true
-     * because a marquee that plays once and stops is not a marquee. `keyMode`,
-     * `levels`, `name` and the other panel are absent from the document, and
-     * [APPLY_DESIGN] treats an absent key as "do not change this" — so a design
-     * that carries both geometries keeps the one this did not write.
-     *
-     * ## The frame budget, and refusing usefully
-     *
-     * [DesignCodec.MAX_FRAMES] is 240 and a full-height letter is around six
-     * columns, so roughly forty characters fit. A bare "too long" would send the
-     * model into shortening the phrase a word at a time, so the refusal reports
-     * the frames the phrase needs, the longest **prefix of that phrase** that
-     * fits (measured with [MarqueeText.maxPrefixLength], on this text, not on an
-     * average), and the [ARG_STEP] that would make the whole thing fit — three
-     * answers, each of which can be acted on in one move.
-     */
     private fun marqueeText(arguments: String, ctx: GlyphToolContext): GlyphToolResult {
         val args = parseObject(arguments)
             ?: return failure("The tool arguments were not a JSON object.") {
@@ -568,8 +212,6 @@ object GlyphAiTools {
         if (text.isEmpty()) {
             return failure("\"$ARG_TEXT\" is empty, so there is nothing to scroll.")
         }
-        // Reported whole rather than one at a time: somebody fixing the phrase
-        // should be able to see everything wrong with it in one result.
         val missing = MarqueeFont.unsupported(text)
         if (missing.isNotEmpty()) {
             return failure(
@@ -663,14 +305,7 @@ object GlyphAiTools {
         val stripWidth = MarqueeFont.stripWidth(text)
         val frameCount = MarqueeText.frameCount(size, stripWidth, scale, step)
         if (frameCount > DesignCodec.MAX_FRAMES) {
-            // Three separate answers, each actionable in one move: cut the
-            // phrase here, or move faster, or make the letters smaller.
             val prefix = MarqueeText.maxPrefixLength(text, size, scale, step)
-            // Smallest step whose traverse fits, or absent when even one column
-            // per panel width would not — reported as a number the model can
-            // pass straight back, never as a number that would fail again. The
-            // arithmetic lives in the generator so that this refusal and the
-            // editor's own say the same number.
             val neededStep = MarqueeText.stepThatFits(text, size, scale)
             return failure(
                 "\"$ARG_TEXT\" is ${text.length} characters, which lays out $stripWidth columns wide and " +
@@ -711,11 +346,6 @@ object GlyphAiTools {
             }
         }
 
-        // The same defence [scrollFrames] ends on, and the thing that makes
-        // "hand this straight to apply_design" a promise: the frames go through
-        // the codec apply_design finishes at, with only this variant offered so
-        // that a different panel already broken on the canvas cannot fail a call
-        // that had nothing to do with it.
         val probe = ctx.design.copy(
             kind = DesignKind.DYNAMIC,
             loop = true,
@@ -761,13 +391,6 @@ object GlyphAiTools {
                 put("variant", codename.codename)
                 put("panel_width", size)
                 put(ARG_TEXT, text)
-                // What was actually drawn, which is not always what was asked
-                // for: accents are dropped, and a model that was not told would
-                // keep sending the accented spelling. Asked of the face rather
-                // than restated here, so this cannot describe a folding rule the
-                // face does not apply — it said `uppercase()` for as long as the
-                // face was upper-case only, and the day it grew a lower case
-                // that answer became a lie.
                 put("drawn_as", MarqueeFont.drawnAs(text))
                 put("strip", picture.joinToString("\n"))
                 put("strip_width", stripWidth)
@@ -793,8 +416,6 @@ object GlyphAiTools {
                                 "animation now opens and closes on something lit."
                         },
                 )
-                // Only ever a run of spaces wider than the panel, which is
-                // something the caller asked for — reported, not refused.
                 val darkInside = frames.count { it.cells.all { c -> c == '0' } }
                 if (darkInside > 0) {
                     put("blank_frames_inside", darkInside)
@@ -830,8 +451,6 @@ object GlyphAiTools {
                                 put("index", i)
                                 put("durationMs", frames[i].durationMs)
                                 if (i < shown) {
-                                    // Cells deliberately not repeated here: they
-                                    // are in apply_this, once.
                                     val preview = GlyphAsciiPreview.renderCells(frames[i].cells, levels, codename)
                                     put(
                                         "preview",
@@ -895,9 +514,6 @@ object GlyphAiTools {
             }
         }
 
-        // Character check and lit extent in one pass. The extent is what makes
-        // frame 0 non-blank by default: the window is started so the first lit
-        // column is already on the panel, not so column 0 is.
         var firstLit = -1
         var lastLit = -1
         for (r in 0 until height) {
@@ -980,10 +596,6 @@ object GlyphAiTools {
             is IntArg.Bad -> return a.result
             is IntArg.Ok -> a.value
         } ?: defaultStart
-        // Bounded, but with room to be deliberately early or late: a start that
-        // produces blank frames is a thing to *report* (see [scrollWarnings]),
-        // not a thing to refuse. Past this the window never touches the message
-        // at any offset, so there is nothing to report about.
         val startLimit = size + width
         if (startColumn < -startLimit || startColumn > startLimit) {
             return failure(
@@ -1033,8 +645,6 @@ object GlyphAiTools {
             }
         }
 
-        // The windowing itself. ONE offset per frame, read by every row: this is
-        // the line that makes a sheared glyph unrepresentable.
         val frames = ArrayList<DesignFrame>(frameCount)
         for (n in 0 until frameCount) {
             val offset = startColumn + n * step
@@ -1050,11 +660,6 @@ object GlyphAiTools {
             frames.add(DesignFrame(durationMs, String(cells)))
         }
 
-        // Defence in depth, and the thing that makes "hand this straight to
-        // apply_design" a promise rather than a hope: the frames are put through
-        // the same codec apply_design ends at. Only this variant is offered to
-        // it, so a *different* panel that is already broken on the canvas cannot
-        // fail a call that had nothing to do with it.
         val probe = ctx.design.copy(
             kind = DesignKind.DYNAMIC,
             variants = mapOf(codename.codename to DesignVariant(frames)),
@@ -1079,8 +684,6 @@ object GlyphAiTools {
         )
 
         val document = buildJsonObject {
-            // Sent because a scroll is an animation, and a design still marked
-            // static would have apply_design refuse every frame but the first.
             put("kind", "dynamic")
             putJsonObject("variants") {
                 putJsonObject(codename.codename) {
@@ -1147,10 +750,6 @@ object GlyphAiTools {
                                 put("durationMs", frames[i].durationMs)
                                 put("source_column_at_panel_left", startColumn + i * step)
                                 if (i < shown) {
-                                    // The cells are deliberately NOT repeated here.
-                                    // They are in apply_this, once, and the one
-                                    // thing that must not happen to them is being
-                                    // read out and written back.
                                     val preview = GlyphAsciiPreview.renderCells(frames[i].cells, levels, codename)
                                     put(
                                         "preview",
@@ -1167,24 +766,11 @@ object GlyphAiTools {
         )
     }
 
-    /** The panel a single-variant tool is working on, or why it could not be settled. */
     private sealed interface Chosen {
         data class Ok(val codename: PokemonCodename) : Chosen
         data class Bad(val result: GlyphToolResult) : Chosen
     }
 
-    /**
-     * Which panel to work on: what was asked for, else the one on screen, else
-     * the only one there is.
-     *
-     * Never a *guess* between two carried panels — a marquee written onto the
-     * panel the user is not looking at would appear to have done nothing, and so
-     * would a photograph or a replaced frame.
-     *
-     * Shared by [scrollFrames], [imageToGrid] and [setFrames] so that being
-     * refused by one of them teaches the model the same thing it would learn
-     * from the others.
-     */
     private fun chooseVariant(
         args: JsonObject,
         ctx: GlyphToolContext,
@@ -1215,20 +801,11 @@ object GlyphAiTools {
         return Chosen.Ok(codename)
     }
 
-    /** The message bitmap, or why there is none. */
     private sealed interface Rows {
         data class Ok(val rows: List<String>) : Rows
         data class Bad(val result: GlyphToolResult) : Rows
     }
 
-    /**
-     * [ARG_SOURCE_ROWS] as a list of rows.
-     *
-     * An array is what the schema asks for; a single newline-separated string is
-     * what a model sends often enough to be worth accepting, for the same reason
-     * [prepare] accepts a document as an object as well as as text. Both are
-     * unambiguous, and refusing one costs a round trip and teaches nothing.
-     */
     private fun sourceRows(args: JsonObject): Rows {
         val raw = args[ARG_SOURCE_ROWS]
             ?: return Rows.Bad(
@@ -1265,16 +842,6 @@ object GlyphAiTools {
         return Rows.Ok(rows)
     }
 
-    /**
-     * Everything about this scroll that is legal, was asked for, and is probably
-     * not what the caller meant.
-     *
-     * Warnings rather than refusals throughout: a clipped marquee and a scroll
-     * that stops halfway are both things somebody might want, and this file is
-     * not the place to overrule them. But they are also all invisible in a single
-     * frame's picture — a cell lost to the rim is lost *while it moves* — so
-     * saying nothing would leave the model unable to see them at all.
-     */
     private fun scrollWarnings(
         frames: List<DesignFrame>,
         defaultStart: Int,
@@ -1340,7 +907,6 @@ object GlyphAiTools {
         return warnings
     }
 
-    /** Where a scrolling glyph can live on [codename] without losing a cell. */
     private fun scrollHeightAdvice(codename: PokemonCodename): String {
         val band = GlyphAiPrompt.fullWidthRows(codename.size)
             ?: return "${codename.codename} has no row that is live across every column."
@@ -1354,9 +920,7 @@ object GlyphAiTools {
             "encoding as cells — the WHOLE message drawn once, as wide as it needs to be. Row 0 is the " +
             "top row. \"HI\" is [\"1010111\", \"1010010\", \"1110010\", \"1010010\", \"1010111\"]."
 
-    /** An optional integer argument, or why it could not be read. */
     private sealed interface IntArg {
-        /** Null means the key was absent or explicitly null: take the default. */
         data class Ok(val value: Int?) : IntArg
         data class Bad(val result: GlyphToolResult) : IntArg
     }
@@ -1373,7 +937,6 @@ object GlyphAiTools {
         return IntArg.Ok(value)
     }
 
-    /** An optional fractional argument, or why it could not be read. */
     private sealed interface DoubleArg {
         data class Ok(val value: Double?) : DoubleArg
         data class Bad(val result: GlyphToolResult) : DoubleArg
@@ -1388,9 +951,6 @@ object GlyphAiTools {
                     put("expected", "A number, or null to take the default.")
                 },
             )
-        // NaN and the infinities parse happily and then poison every comparison
-        // downstream, which would surface as a blank frame rather than as an
-        // error. Caught here, once, for both callers.
         if (!value.isFinite()) {
             return DoubleArg.Bad(
                 failure("\"$key\" is $value.") { put("expected", "A finite number, or null.") },
@@ -1399,7 +959,6 @@ object GlyphAiTools {
         return DoubleArg.Ok(value)
     }
 
-    /** An optional boolean argument, or why it could not be read. */
     private sealed interface BoolArg {
         data class Ok(val value: Boolean?) : BoolArg
         data class Bad(val result: GlyphToolResult) : BoolArg
@@ -1420,51 +979,6 @@ object GlyphAiTools {
         return BoolArg.Ok(value)
     }
 
-    // endregion
-
-    // region image_to_grid
-
-    /**
-     * Turns an attached photograph into one frame of art.
-     *
-     * ## The failure this exists to make impossible
-     *
-     * "Draw this on my panel", with a photo attached, was the weakest thing this
-     * assistant did. The model can see the JPEG, so the *judgement* — what the
-     * picture is of, what would survive at 13x13 — was never the problem. What
-     * it then had to do was write 169 base36 characters approximating an image
-     * it could only eyeball, and no reader on earth can say what a photograph
-     * averages to at cell (7, 4). An image of a plain "10" took eight attempts
-     * and then six more.
-     *
-     * So the mechanical half moves here, exactly as it did for [scrollFrames]:
-     * the app downscales the attachment to the panel, box-averages it, applies
-     * [PanelMask] so nothing is drawn on a cell that has no LED, and quantises
-     * to the design's own `levels`. The arithmetic is [ImageQuantiser], which is
-     * pure and separately tested; this function is the argument checking and the
-     * report.
-     *
-     * ## Why it does not apply
-     *
-     * Same bargain as [scrollFrames]. It returns [KEY_APPLY_THIS] and no
-     * [GlyphToolResult.design], because a literal downsample of a photograph is
-     * a *starting point* and quite often not the answer — the model has to look
-     * at the picture that came back and decide whether it reads at this size or
-     * whether the honest thing is to draw the silhouette by hand (which is what
-     * [GlyphAiPrompt.REFERENCE_NOT_TARGET] tells it). Applying automatically
-     * would put a grey smear on somebody's canvas and call it done.
-     *
-     * ## The knobs, and why there are only three
-     *
-     * [ARG_THRESHOLD], [ARG_CONTRAST] and [ARG_INVERT]. Everything else the
-     * conversion decides — fit rather than crop, normalise to the image's own
-     * range, box-average, mask — has one defensible answer and is not the
-     * model's to get wrong; see [ImageQuantiser]. These three do not: where the
-     * light/dark cut belongs is a judgement about the *subject*, and a logo
-     * photographed on white paper needs [ARG_INVERT] or it comes back as a
-     * silhouette of the paper. Three knobs is enough to iterate with and few
-     * enough to iterate *through*.
-     */
     private fun imageToGrid(arguments: String, ctx: GlyphToolContext): GlyphToolResult {
         val args = parseObject(arguments)
             ?: return failure("The tool arguments were not a JSON object.") {
@@ -1501,9 +1015,6 @@ object GlyphAiTools {
             }
         }
 
-        // An attachment rides on ONE message. A photo sent three turns ago is
-        // genuinely not here, and saying so is the difference between the model
-        // asking for it again and the model inventing what it looked like.
         if (ctx.images.isEmpty()) {
             return failure("No image is attached to the message you are answering.") {
                 put(
@@ -1596,9 +1107,6 @@ object GlyphAiTools {
 
         val frame = DesignFrame(DEFAULT_FRAME_DURATION_MS, done.cells)
 
-        // Defence in depth, exactly as scroll_frames does it: the frame goes
-        // through the codec that apply_design ends at, with only this variant
-        // offered, so "hand this straight on" is a promise rather than a hope.
         val probe = ctx.design.copy(variants = mapOf(codename.codename to DesignVariant(listOf(frame))))
         val checked = DesignCodec.validate(probe)
         if (checked is DesignCodec.Result.Invalid) {
@@ -1607,9 +1115,6 @@ object GlyphAiTools {
 
         val warnings = imageWarnings(done, invert, contrast)
         val document = buildJsonObject {
-            // No "kind": one frame is legal for a static design and for a dynamic
-            // one alike, and changing it here would be changing something nobody
-            // asked about. A model that wants this as a still says so itself.
             putJsonObject("variants") {
                 putJsonObject(codename.codename) {
                     putJsonArray("frames") {
@@ -1683,16 +1188,6 @@ object GlyphAiTools {
         )
     }
 
-    /**
-     * Everything about a conversion that is legal and probably not what anybody
-     * wanted.
-     *
-     * All three are about the *cut*, which is the one thing that can go wrong
-     * invisibly: a frame that is 96 % lit and a frame that is 4 % lit both look
-     * like progress in a JSON payload and like nothing at all on the panel. Each
-     * names the knob and the direction, because "that did not work" without a
-     * next step is how a turn spends its whole budget.
-     */
     private fun imageWarnings(
         done: ImageQuantiser.Result.Ok,
         invert: Boolean,
@@ -1726,65 +1221,15 @@ object GlyphAiTools {
         return warnings
     }
 
-    /** Above this proportion of the picture's own cells, a frame is a blob. */
     private const val MOSTLY_LIT_PERCENT = 90
 
-    /** Below it, there is nothing to see. */
     private const val BARELY_LIT_PERCENT = 4
 
-    /**
-     * A fraction with two decimals, without `String.format` — which is
-     * locale-sensitive and would write "0,42" for a French user, in a payload
-     * that is then parsed back as an argument.
-     */
     private fun round2(value: Double): String {
         val hundredths = kotlin.math.round(value * 100).toInt()
         return "${hundredths / 100}.${(hundredths % 100).toString().padStart(2, '0')}"
     }
 
-    // endregion
-
-    // region set_frames
-
-    /**
-     * Replaces, inserts or deletes a **range** of frames in one variant, leaving
-     * every other frame exactly as it was.
-     *
-     * ## Why a second writing tool
-     *
-     * [APPLY_DESIGN] replaces the whole document. That is the right primitive
-     * and it stays, but it means changing frame 7 of a long animation costs a
-     * re-send of every frame: 240 frames of `arbok` is ~150 kB of base36, which
-     * is slow, expensive, and — the part that actually bites — a fresh
-     * opportunity to mistype a frame that was already correct. The model has no
-     * way to see that it dropped a character in frame 112 while retyping it to
-     * change frame 7.
-     *
-     * So this writes a window. Nothing outside `[at, at + n)` is read, rewritten
-     * or even parsed, which makes "leave the rest alone" a property of the code
-     * rather than an instruction the model has to execute perfectly.
-     *
-     * ## It applies, and that is a deliberate difference from [scrollFrames]
-     *
-     * [scrollFrames] and [imageToGrid] return [KEY_APPLY_THIS] and change
-     * nothing, because what they hand back is a *whole variant* that
-     * [APPLY_DESIGN] can carry unaided. This cannot work that way: a document
-     * expressing "frames 7 to 9 of 240 changed" would have to contain all 240,
-     * which is the exact cost this tool exists to avoid. So it hands back a
-     * [GlyphToolResult.design] and the caller puts it on the canvas — it is
-     * [APPLY_DESIGN] with a narrower argument, and it is checked by precisely
-     * the same rules.
-     *
-     * ## The one thing it changes that was not asked for
-     *
-     * A design whose `kind` is `static` may hold exactly one frame, so inserting
-     * a second into one would be refused with "set kind to dynamic" — and there
-     * is no way to set `kind` from here, which would leave the model stuck in a
-     * loop against a tool that cannot do what it is telling it to do. So a
-     * static design that ends up with more than one frame is promoted to
-     * `dynamic`, and the result *says so*. It is never demoted: dropping back to
-     * one frame is not evidence that anybody wanted a still.
-     */
     private fun setFrames(arguments: String, ctx: GlyphToolContext): GlyphToolResult {
         val args = parseObject(arguments)
             ?: return failure("The tool arguments were not a JSON object.") {
@@ -1868,9 +1313,6 @@ object GlyphAiTools {
             }
         }
 
-        // The window, per mode. Each of these is the place an off-by-one would
-        // silently eat a frame, so each is checked against the CURRENT list and
-        // reported with the numbers the model needs to correct it.
         val removed: Int
         when (mode) {
             MODE_REPLACE -> {
@@ -1899,9 +1341,6 @@ object GlyphAiTools {
             }
 
             MODE_INSERT -> {
-                // `at == size` is an append and is the normal way to extend an
-                // animation, so the bound is deliberately inclusive here and
-                // exclusive for the other two.
                 if (at < 0 || at > existing.size) {
                     return failure(
                         "\"$ARG_AT\" $at is outside ${codename.codename}, which has ${existing.size} " +
@@ -1947,9 +1386,6 @@ object GlyphAiTools {
         updated.addAll(incoming)
         updated.addAll(existing.subList(at + removed, existing.size))
 
-        // Checked here as well as in `precisely`, because the arithmetic is the
-        // useful part of the answer: "238 + 5 = 243" tells the model how many to
-        // drop, and "at most 240 frames per panel" does not.
         if (updated.size > DesignCodec.MAX_FRAMES) {
             return failure(
                 "That would leave ${codename.codename} with ${updated.size} frames: ${existing.size} now, " +
@@ -1966,9 +1402,6 @@ object GlyphAiTools {
         var merged = ctx.design.copy(
             variants = ctx.design.variants + (codename.codename to DesignVariant(updated)),
         )
-        // See this function's KDoc: a static design that gains a second frame
-        // would otherwise be refused by a rule this tool cannot let the model
-        // satisfy.
         val promoted = merged.kind == DesignKind.STATIC && updated.size > 1
         if (promoted) merged = merged.copy(kind = DesignKind.DYNAMIC)
 
@@ -1993,9 +1426,6 @@ object GlyphAiTools {
             )
         }
 
-        // The window that was touched, plus the frame either side of it: the
-        // join is where a wrong `at` shows up, and it is invisible in a picture
-        // of the new frames alone.
         val from = (at - 1).coerceAtLeast(0)
         val to = (at + incoming.size).coerceAtMost(updated.size - 1)
         val shown = if (updated.isEmpty()) 0 else minOf(to - from + 1, MAX_PREVIEW_FRAMES)
@@ -2062,25 +1492,11 @@ object GlyphAiTools {
         )
     }
 
-    /** The frames to write, or why there are none. */
     private sealed interface Frames {
         data class Ok(val frames: List<DesignFrame>) : Frames
         data class Bad(val result: GlyphToolResult) : Frames
     }
 
-    /**
-     * [ARG_FRAME_LIST] as frames.
-     *
-     * An entry may be `{"durationMs": …, "cells": "…"}` or just the cells
-     * string, for the same reason [prepare] accepts a document as an object as
-     * well as as text: both are unambiguous, models send both, and refusing one
-     * costs a round trip and teaches nothing. A bare string takes the default
-     * duration, which is what a model that omitted it meant.
-     *
-     * The cells themselves are NOT checked here. They go through [precisely]
-     * with the rest of the design, so a frame that is one character short is
-     * reported in the same words `apply_design` would use.
-     */
     private fun readFrames(raw: JsonElement?, codename: PokemonCodename, mode: String): Frames {
         if (raw == null) {
             return Frames.Bad(
@@ -2154,36 +1570,11 @@ object GlyphAiTools {
             "${codename.codename} is ${codename.size}x${codename.size}, so every cells string is exactly " +
             "${codename.cellCount} characters, row-major, corners included."
 
-    // endregion
-
-    // region validation
-
-    /** A prepared document, or the error result explaining why there is none. */
     private sealed interface Prepared {
         data class Ok(val design: Design) : Prepared
         data class Bad(val result: GlyphToolResult) : Prepared
     }
 
-    /**
-     * Turns the model's `design` argument into a [Design] this app would accept,
-     * or into an error precise enough to correct from.
-     *
-     * The order matters. Variant gating runs **before** decoding, because
-     * [DesignCodec] silently *drops* variants for codenames it does not know: a
-     * model that wrote `"pikachu"` would otherwise be told its design contained
-     * no artwork, or worse, be told nothing at all while its work vanished. The
-     * per-frame checks then run before [DesignCodec.validate] even though the
-     * codec repeats them, because the codec answers a user ("this design has a
-     * frame that is the wrong size for its device") and the model needs an answer
-     * it can act on ("variants.bellsprout frame 0 has 168 cells; expected 169").
-     * The codec still gets the last word — it is the authority on what this app
-     * will store, and a rule added there must never be bypassed here.
-     *
-     * The merge is **by presence, not by value**: a key the document omits keeps
-     * the canvas's value, for a top-level field exactly as for a whole variant.
-     * An explicit `null` counts as omitted. See the comment on `merged` and
-     * [supplies].
-     */
     private fun prepare(arguments: String, ctx: GlyphToolContext): Prepared {
         val args = parseObject(arguments)
             ?: return bad(
@@ -2195,9 +1586,6 @@ object GlyphAiTools {
                 put("expected", "The complete glyph.design document, as JSON text.")
             }
 
-        // A string is what the schema asks for; an object is what models send
-        // roughly half the time. Both are unambiguous, so both are accepted —
-        // refusing the object form would cost a round trip and teach nothing.
         val root: JsonObject = when {
             raw is JsonPrimitive && raw.isString -> {
                 val text = raw.content
@@ -2223,7 +1611,6 @@ object GlyphAiTools {
             return bad("This design carries no artwork for any panel this app knows, so it cannot be edited.")
         }
 
-        // Gating first: see the KDoc above.
         val written = root[DesignKey.VARIANTS]
         if (written != null && written !is JsonObject) {
             return bad("\"variants\" is not a JSON object.") {
@@ -2258,21 +1645,6 @@ object GlyphAiTools {
             }
         }
 
-        // Fields the app owns are taken from the design on screen, never from the
-        // model: an id is a filename, and a rewritten createdAt would relabel a
-        // drawing the user made last month.
-        //
-        // Everything else is *merged*, and merged by the same rule throughout: a
-        // key the model left out is a key the model is not changing. A variant it
-        // left out is kept exactly as it was, which is what makes "change only the
-        // arbok frames" a sentence the model can act on without re-sending 150 kB
-        // of bellsprout — and a top-level field it left out has to be kept for the
-        // same reason, because a model asked to change only the art quite
-        // reasonably sends only "variants". Reading [decoded] unconditionally
-        // would hand that model [Design]'s *defaults* instead of its own document:
-        // a blank name, a design forced to static, and `levels` reset to three
-        // entries — which, since cells are palette *indices*, silently re-lights
-        // every pixel in the drawing.
         val merged = ctx.design.copy(
             format = DESIGN_FORMAT,
             name = if (root.supplies(DesignKey.NAME)) decoded.name else ctx.design.name,
@@ -2289,20 +1661,10 @@ object GlyphAiTools {
 
         return when (val result = DesignCodec.validate(merged)) {
             is DesignCodec.Result.Ok -> Prepared.Ok(result.design)
-            // Everything the codec rejects that this file checks first has
-            // already been reported in the model's own terms; reaching here means
-            // a rule only the codec knows, so its sentence is the honest answer.
             is DesignCodec.Result.Invalid -> bad(result.reason)
         }
     }
 
-    /**
-     * The first thing wrong with [design], phrased for whoever has to fix it, or
-     * null if there is nothing.
-     *
-     * One problem at a time on purpose: a list of forty complaints about the same
-     * off-by-one is noise, and the model will re-send the whole document anyway.
-     */
     private fun precisely(design: Design, ctx: GlyphToolContext): Prepared.Bad? {
         if (design.name.length > DesignCodec.MAX_NAME_LENGTH) {
             return bad("The name is ${design.name.length} characters.") {
@@ -2371,15 +1733,6 @@ object GlyphAiTools {
         return null
     }
 
-    /**
-     * The first cell of [cells] that will not decode, as (what happened, what was
-     * expected), or null if every character is a palette index this design
-     * defines.
-     *
-     * Position is reported as a column and a row as well as an offset: `"the
-     * character at 84"` is not something anybody can find in a 169-character
-     * string, whereas `(column 6, row 6)` is the middle of the panel.
-     */
     private fun cellProblem(
         cells: String,
         levels: List<Int>,
@@ -2405,13 +1758,6 @@ object GlyphAiTools {
         return null
     }
 
-    /**
-     * The characters a design with this [levels] may legally use, spelled the way
-     * an error message should say it.
-     *
-     * Shared by [cellProblem] and [scrollFrames] so a model told off by one of
-     * them and then by the other is told the same thing twice, not two things.
-     */
     private fun legalChars(levels: List<Int>): String {
         val highest = levels.size - 1
         return if (highest <= 9) "'0'..'$highest'" else "'0'..'9' then 'a'..'${'a' + (highest - 10)}'"
@@ -2424,15 +1770,6 @@ object GlyphAiTools {
         else -> -1
     }
 
-    // endregion
-
-    // region json
-
-    /**
-     * Forgiving in exactly the ways [DesignCodec]'s reader is, and for the same
-     * reason: a document with one unexpected key, or `"kind": "kaleidoscope"`,
-     * should reach the *specific* checks above rather than dying as "wrong type".
-     */
     private val LENIENT = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
@@ -2444,23 +1781,7 @@ object GlyphAiTools {
         null
     }
 
-    /**
-     * The JSON key each top-level [Design] field is written under.
-     *
-     * Derived from the serializer rather than spelled out as string literals,
-     * because [prepare] decides whether to keep the canvas's value by asking
-     * whether the model supplied *that key*. A `@SerialName` added to [Design]
-     * later would rename the key in the file while leaving a literal here
-     * pointing at a name nothing writes any more — every question would quietly
-     * answer "not supplied", and every document would stop being able to change
-     * anything. Deriving them means a rename moves this file with it.
-     *
-     * Each key is read back out of a document in which that one field, and only
-     * that one, differs from its default: with `encodeDefaults` off, the single
-     * key that survives *is* the field's serial name.
-     */
     private object DesignKey {
-        /** Declared first: the vals below run at class-init in source order. */
         private val PROBE = Json { encodeDefaults = false }
 
         val NAME = keyOf("name") { it.copy(name = "probe") }
@@ -2470,12 +1791,6 @@ object GlyphAiTools {
         val LEVELS = keyOf("levels") { it.copy(levels = listOf(1)) }
         val VARIANTS = keyOf("variants") { it.copy(variants = mapOf("probe" to DesignVariant())) }
 
-        /**
-         * The key [alter]'s one change lands under, or [fallback] if the probe
-         * ever stops naming exactly one field — a field turned `@Transient`, say.
-         * Falling back to today's spelling is no worse than having hardcoded it,
-         * and nothing in this file throws, class initialisation least of all.
-         */
         private fun keyOf(fallback: String, alter: (Design) -> Design): String = try {
             PROBE.encodeToJsonElement(Design.serializer(), alter(Design()))
                 .jsonObject.keys.singleOrNull() ?: fallback
@@ -2484,20 +1799,6 @@ object GlyphAiTools {
         }
     }
 
-    /**
-     * Whether the model actually wrote [key] — with an explicit `null` deliberately
-     * counting as **not written**.
-     *
-     * `{"name": null}` is a model declining to say what the name is, not one
-     * asking for it to be blanked; there is no way to express "erase this" that
-     * is not just sending the erased value (`""`), and the app always holds a
-     * sane current value either way. Erroring on it would be worse still: it
-     * would fail a document over a key that changes nothing. Note that a null
-     * cannot be honoured *literally* even if we wanted to — [LENIENT] coerces it
-     * into [Design]'s default, so "respecting" it would blank a name via a key
-     * that says nothing. Same rule for every field, and the same rule variants
-     * already follow: say nothing, change nothing.
-     */
     private fun JsonObject.supplies(key: String): Boolean {
         val value = this[key]
         return value != null && value !is JsonNull
@@ -2510,11 +1811,6 @@ object GlyphAiTools {
     ): GlyphToolResult =
         GlyphToolResult(json = obj.toString(), isError = false, design = design, validated = validated)
 
-    /**
-     * Named `failure` rather than `error` so it cannot be confused with — or
-     * resolved against — Kotlin's built-in `error(message)`, which throws.
-     * Nothing in this file throws.
-     */
     private fun failure(message: String, extras: JsonObjectBuilder.() -> Unit = {}): GlyphToolResult =
         GlyphToolResult(
             json = buildJsonObject {
@@ -2537,7 +1833,6 @@ object GlyphAiTools {
         )
     }
 
-    /** The shared tail of an apply/validate success: what the document became. */
     private fun JsonObjectBuilder.putSummary(design: Design, ctx: GlyphToolContext) {
         put("name", design.name)
         put("kind", kindName(design.kind))
@@ -2549,15 +1844,6 @@ object GlyphAiTools {
         put("legend", GlyphAsciiPreview.LEGEND)
     }
 
-    /**
-     * Each carried variant as JSON, with a rendering of every frame (up to
-     * [MAX_PREVIEW_FRAMES]).
-     *
-     * [includeCells] is false on the way *back* to the model: it just sent those
-     * characters, and echoing 169 or 625 of them per frame would double a
-     * message that is already the largest thing in the conversation. It is true
-     * on the way *out*, where the cells are the point.
-     */
     private fun variantsJson(
         design: Design,
         allowed: List<PokemonCodename>,
@@ -2591,9 +1877,6 @@ object GlyphAiTools {
                                             design.levels,
                                             codename,
                                         )
-                                        // Null only for a frame this app would
-                                        // refuse anyway; say so rather than
-                                        // drawing a picture of something illegal.
                                         put(
                                             "preview",
                                             preview?.let { JsonPrimitive(it) }
@@ -2617,39 +1900,18 @@ object GlyphAiTools {
 
     private fun JsonObject?.orEmpty(): JsonObject = this ?: JsonObject(emptyMap())
 
-    // endregion
-
-    // region specs
-
-    // Written as literal JSON, like pulseloop's, so what the model is shown is
-    // exactly what is in this file — a schema assembled at runtime is a schema
-    // nobody can read in review. `GlyphAiToolsTest` parses each of these, so a
-    // stray quote is a failing test rather than a broken conversation.
-
     private const val SPEC_GET_CURRENT_DESIGN =
         """{"type":"function","name":"get_current_design","description":"Returns the design exactly as it appears on the user's canvas right now, including edits they have not saved: its name, kind, keyMode, loop and levels, every panel it carries with each frame's cells, an ASCII rendering of each frame with the round panel mask applied, and which panel and frame the editor has open. Call this before your first edit, and again whenever the user may have drawn something since.","parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false},"strict":true}"""
 
     private const val SPEC_APPLY_DESIGN =
         """{"type":"function","name":"apply_design","description":"Replaces the user's design with the document you supply; it appears on their canvas immediately. Send the COMPLETE glyph.design document as JSON text - every frame you want to keep, not just the ones you changed. A panel you omit entirely is left exactly as it was, and so is any of name, kind, keyMode, loop or levels that you omit - leaving a key out means 'do not change this', never 'reset this'. You may only write panels the design already carries; you cannot add one. format, formatVersion, id, author, createdAt, createdWith and modifiedAt are managed by the app and ignored if you send them. The result contains an ASCII rendering of every frame that was applied: read it, because it is the only way to see whether your art is centred on the disc rather than clipped by it.","parameters":{"type":"object","properties":{"design":{"type":"string","description":"The complete glyph.design document, as JSON text."}},"required":["design"],"additionalProperties":false},"strict":true}"""
 
-    // Every argument but source_rows is nullable AND required: strict function
-    // calling insists that `required` name every property, so "you may leave this
-    // out" has to be spelled as "you may send null". The defaults are where three
-    // of this tool's four guarantees live, so null is the answer the model should
-    // usually give.
     private const val SPEC_SCROLL_FRAMES =
         """{"type":"function","name":"scroll_frames","description":"Turns ONE wide bitmap into a scrolling animation, doing the windowing arithmetic for you. You draw the whole message once - as tall as your glyphs and as wide as the message - and this cuts a panel-width window out of it at each successive offset, pads the rows above and below with '0', works out how many frames the traverse takes, and returns every frame with an ASCII picture of it. USE THIS FOR ANY SCROLLING TEXT OR MOVING IMAGE. Windowing by hand is how a glyph shears apart (one row shifted a column further than the row above it), how frame 0 comes out blank, how an element changes brightness halfway through and how a marquee ends up with a third of the frames it needs; none of those four is expressible here. It changes NOTHING: read the pictures, then send the \"apply_this\" document it returns to apply_design exactly as it came back, without retyping the cells. The message scrolls right to left; to scroll it the other way, reverse the order of the frames before you apply them.","parameters":{"type":"object","properties":{"source_rows":{"type":"array","items":{"type":"string"},"description":"The whole message as ONE bitmap: equal-length strings, one per row, in the same base36 palette-index encoding as cells. Row 0 is the top row. \"HI\" is [\"1010111\",\"1010010\",\"1110010\",\"1010010\",\"1010111\"] - three columns for the H, one blank column, three for the I."},"variant":{"type":["string","null"],"description":"Which panel to build the frames for. null means the one the editor has open, or the only one the design carries."},"top_row":{"type":["integer","null"],"description":"The panel row source row 0 sits on. null centres the art in the band of rows that is live across every column, which is the only placement that keeps every cell at every horizontal offset. Art outside that band still works and is warned about."},"start_column":{"type":["integer","null"],"description":"The source column shown at the panel's LEFT edge in frame 0; negative means the message is still entering from the right. null starts so the message's leading column is already on the panel, which is what stops frame 0 being blank. A start that does produce blank frames is honoured and reported, not silently emitted."},"step":{"type":["integer","null"],"description":"Columns moved per frame. null means 1, which is smoothest. 2 halves the frame count and still reads."},"frames":{"type":["integer","null"],"description":"How many frames to generate. null means the full traverse - panel width + message width - 1 at one column per frame - which is what a marquee actually needs. Fewer stops the scroll mid-message and is warned about."},"duration_ms":{"type":["integer","null"],"description":"How long each frame is held. null means 120. 80-200 reads well for a scroll."}},"required":["source_rows","variant","top_row","start_column","step","frames","duration_ms"],"additionalProperties":false},"strict":true}"""
 
-    // Only `text` carries a decision; everything else may be null and null is
-    // almost always right. The description names the symbol set in full, because
-    // "printable ASCII" is a claim the model would otherwise have to test one
-    // character at a time against a tool that refuses.
     private const val SPEC_MARQUEE_TEXT =
         """{"type":"function","name":"marquee_text","description":"Scrolls a phrase right to left in the app's own full-height letterforms. USE THIS FOR ANY SCROLLING WORDS - prefer it over scroll_frames, because here you do not draw the letters at all: the app has a nine-row proportional alphabet built in, upper and lower case, so an S cannot come back looking like a 5 and a W cannot come back two columns too narrow to be a W. The letters fill the panel (9 of 13 rows at 13x13, 18 of 25 at 25x25) and the round rim cuts their tops and bottoms as they enter and leave, which is deliberate and is most of why they read as BIG. It changes NOTHING. Read \"strip\" first - it is the entire phrase as one nine-row picture, and it is the only place a wrong letter is actually visible - then send the \"apply_this\" document to apply_design EXACTLY as it came back, without retyping the cells. apply_this sets kind to dynamic and loop to true and writes one panel's frames; keyMode, levels, name and any other panel are left untouched. Around 40 characters fit inside the 240-frame limit, and a phrase that does not fit is refused with the longest prefix that does AND the step that would make the whole phrase fit, so a refusal is answerable in one move. Reach for scroll_frames instead only when the thing scrolling is a picture rather than words, or when you want letterforms of your own.","parameters":{"type":"object","properties":{"text":{"type":"string","description":"The phrase to scroll. Letters A-Z and a-z, digits 0-9, a space, and the printable ASCII symbols !\"#${'$'}%&'()*+,-./:;<=>?@[\\]^_`{|}~ . Both cases are drawn - the lower case has its own x-height, ascenders and descenders - and accents are dropped automatically (\"café\" scrolls as cafe). Leading or trailing spaces become a gap before the loop repeats. This is the only argument you have to think about."},"variant":{"type":["string","null"],"description":"Which panel to build the frames for. null means the one the editor has open, or the only one the design carries."},"scale":{"type":["integer","null"],"description":"How many panel cells one letter cell becomes. null means 1 at 13x13 and 2 at 25x25, so the letters fill the same fraction of either panel. Lowering it makes the letters smaller and lets a longer phrase fit."},"step":{"type":["integer","null"],"description":"Panel columns moved per frame. null means the scale - exactly one letter-cell - which is the smoothest step that is not wasted and gives the same frame count on both panels. Doubling it halves the frame count and still reads."},"duration_ms":{"type":["integer","null"],"description":"How long each frame is held. null means 80, a little over two letters a second. Raise it to slow the scroll down; Nothing's own big-letter marquee is slower than this and reads as sluggish."},"palette_index":{"type":["integer","null"],"description":"Which entry of this design's levels the letters are lit at, the same in every frame. null means the brightest one, which is what a marquee wants. 0 is the off level and is refused."}},"required":["text","variant","scale","step","duration_ms","palette_index"],"additionalProperties":false},"strict":true}"""
 
-    // Every argument is nullable AND required, for the reason spelled out above
-    // SPEC_SCROLL_FRAMES: strict function calling insists `required` names every
-    // property, so "leave this out" is spelled "send null".
     private const val SPEC_IMAGE_TO_GRID =
         """{"type":"function","name":"image_to_grid","description":"Converts an image the user attached to THIS message into one frame of art, doing the downscaling for you: the whole picture is scaled to fit the panel with its aspect ratio kept, box-averaged down to one value per cell, masked so nothing lands on a cell that has no LED, and quantised to this design's own levels. USE THIS FOR ANY 'put this photo/logo/screenshot on my panel' REQUEST - you can see the image, but you cannot say what it averages to at cell (7, 4), and hand-writing 169 base36 characters from a photograph is how a request for a picture takes fourteen attempts. It changes NOTHING: it returns the frame, its cells and an ASCII picture of it. LOOK AT THE PICTURE. If it reads, apply the \"apply_this\" document or put its cells into a frame with set_frames; if it does not, change threshold, contrast or invert and call again, or abandon the literal conversion and draw the silhouette yourself - at this size that is often the better answer. An attachment only travels with the message it was sent on, so this cannot reach a photo from an earlier turn.","parameters":{"type":"object","properties":{"image_index":{"type":["integer","null"],"description":"Which attached image to convert, counting from 0 in the order they were attached. null means 0, the first one."},"variant":{"type":["string","null"],"description":"Which panel to convert it for. null means the one the editor has open, or the only one the design carries."},"threshold":{"type":["number","null"],"description":"Where the cut between off and lit goes, 0.0 to 0.95, after the image has been stretched onto its own darkest and brightest cell. null picks the cut that best separates this image's light and dark cells, which is usually better than a number - the value used is reported back so you can nudge it. Higher keeps only the brightest cells; lower lights more of the picture."},"contrast":{"type":["number","null"],"description":"Gain around the mid-point, 0.25 to 4.0, applied after the image is normalised. null means 1.0, which changes nothing. Above 1 pushes light and dark apart, which is what a flat or hazy photograph needs."},"invert":{"type":["boolean","null"],"description":"Swap light and dark. null means false. Set it true when the subject is DARK on a LIGHT background - a logo on white paper, a screenshot, printed text - or the panel lights the background instead of the subject."}},"required":["image_index","variant","threshold","contrast","invert"],"additionalProperties":false},"strict":true}"""
 
@@ -2659,5 +1921,4 @@ object GlyphAiTools {
     private const val SPEC_VALIDATE_DESIGN =
         """{"type":"function","name":"validate_design","description":"Runs every check apply_design runs and changes NOTHING. Same arguments, same errors, same ASCII renderings - so it is a free look at what you are about to make, and it costs the user no undo. Use it whenever you are unsure about a document, then send the identical document to apply_design.","parameters":{"type":"object","properties":{"design":{"type":"string","description":"The complete glyph.design document, as JSON text."}},"required":["design"],"additionalProperties":false},"strict":true}"""
 
-    // endregion
 }

@@ -30,10 +30,9 @@ class DiceScreenTest {
         screen.onEvent(Events.CHANGE)
         assertEquals(33L, h.scheduler.tickerInterval)
         val framesBefore = h.frames.size
-        h.scheduler.tick(26) // 26 * 33 ms > 800 ms roll
+        h.scheduler.tick(26)
         assertTrue(h.frames.size > framesBefore)
-        assertNull(h.scheduler.tickerInterval) // roll finished, ticker cleared
-        // Final frame must be one of the six face renders.
+        assertNull(h.scheduler.tickerInterval)
         val last = h.lastFrame()
         assertTrue((1..6).any { last.contentEquals(DiceScreen.renderFace(13, it, 6)) })
     }
@@ -62,7 +61,7 @@ class CoinScreenTest {
         val screen = CoinScreen()
         screen.onActivate(h.context)
         screen.onEvent(Events.CHANGE)
-        h.scheduler.tick(32) // 32 * 33 ms > 1000 ms flip
+        h.scheduler.tick(32)
         assertNull(h.scheduler.tickerInterval)
         val last = h.lastFrame()
         assertTrue(
@@ -115,9 +114,9 @@ class CounterScreenTest {
         screen.onEvent(Events.SHAKE)
         assertEquals(0, h.prefs.getInt(PrefKeys.COUNTER, -1))
         assertTrue(h.lastFrame().contentEquals(CounterScreen.renderFrame(13, 0)))
-        h.scheduler.advanceTime(150) // blink: blank
+        h.scheduler.advanceTime(150)
         assertTrue(h.lastFrame().contentEquals(IntArray(13 * 13)))
-        h.scheduler.advanceTime(150) // blink: back
+        h.scheduler.advanceTime(150)
         assertTrue(h.lastFrame().contentEquals(CounterScreen.renderFrame(13, 0)))
     }
 }
@@ -137,7 +136,7 @@ class BreathingScreenTest {
         screen.onActivate(h.context)
         assertNull(h.scheduler.tickerInterval)
         screen.onEvent(Events.CHANGE)
-        assertEquals(500L, h.scheduler.tickerInterval) // pace 4 * 125 ms
+        assertEquals(500L, h.scheduler.tickerInterval)
         screen.onEvent(Events.CHANGE)
         assertNull(h.scheduler.tickerInterval)
     }
@@ -162,7 +161,6 @@ class TimerScreenTest {
     fun `grains fall and are reproducible`() {
         val a = TimerScreen.renderRunning(13, 0.2f, 3)
         assertTrue(a.contentEquals(TimerScreen.renderRunning(13, 0.2f, 3)))
-        // Something above the sand moves between subframes.
         assertTrue((0..8).any { s -> !TimerScreen.renderRunning(13, 0.2f, s).contentEquals(a) })
     }
 
@@ -179,12 +177,10 @@ class TimerScreenTest {
         assertEquals(h.clock.now + 10_000, h.timer.scheduledAt)
         assertTrue(h.prefs.getLong(PrefKeys.TIMER_START, 0) > 0)
 
-        h.scheduler.tick(80) // 80 x 125 ms = 10 s
+        h.scheduler.tick(80)
         assertEquals(1, h.timer.chimeCount)
-        assertNull(h.timer.scheduledAt) // backstop cancelled
+        assertNull(h.timer.scheduledAt)
         assertEquals(0L, h.prefs.getLong(PrefKeys.TIMER_START, -1))
-        // Completion shows the full matrix, then flashes for a bounded while
-        // and settles back on it with no ticker left running.
         assertTrue(h.lastFrame().contentEquals(TimerScreen.renderDone(13)))
         assertEquals(TimerScreen.TICK_MS, h.scheduler.tickerInterval)
         h.scheduler.tick(TimerScreen.PULSE_FRAMES)
@@ -200,21 +196,17 @@ class TimerScreenTest {
         screen.onActivate(h.context)
         screen.onEvent(Events.CHANGE)
         assertNotNull(h.timer.scheduledAt)
-        screen.onDeactivate() // user cycles away: alarm stays scheduled
+        screen.onDeactivate()
         assertNotNull(h.timer.scheduledAt)
         h.clock.advance(5_000)
-        screen.onActivate(h.context) // resumes from persisted start
+        screen.onActivate(h.context)
         assertEquals(TimerScreen.TICK_MS, h.scheduler.tickerInterval)
         assertTrue(h.prefs.getLong(PrefKeys.TIMER_START, 0) > 0)
-        // A quarter of the way in, a quarter of the light is on.
         val lit = totalLit(h.lastFrame())
         val full = totalLit(TimerScreen.renderDone(13))
         assertTrue(lit > full / 8 && lit < full / 2)
     }
 
-    // ---------- pause / resume ----------
-
-    /** Starts a [durationSec] timer and runs it for [runMs] (must be a whole number of ticks). */
     private fun runningTimer(h: TestHarness, durationSec: Int, runMs: Long): TimerScreen {
         h.prefs.putInt(PrefKeys.TIMER_DURATION, durationSec)
         val screen = TimerScreen()
@@ -227,18 +219,17 @@ class TimerScreenTest {
     @Test
     fun `pause freezes the fill however long the clock runs`() {
         val h = TestHarness(13)
-        val screen = runningTimer(h, 60, 30_000) // half way
-        screen.onEvent(Events.CHANGE) // pause
+        val screen = runningTimer(h, 60, 30_000)
+        screen.onEvent(Events.CHANGE)
 
         assertEquals(TimerScreen.BLINK_TICK_MS, h.scheduler.tickerInterval)
         assertEquals(30_000L, h.prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, -1))
-        assertEquals(0L, h.prefs.getLong(PrefKeys.TIMER_START, -1)) // no deadline any more
+        assertEquals(0L, h.prefs.getLong(PrefKeys.TIMER_START, -1))
         val frozen = TimerScreen.renderPaused(13, 0.5f, 0)
         assertTrue(h.lastFrame().contentEquals(frozen))
 
-        // An hour of wall clock plus a few blink ticks changes nothing.
         h.clock.advance(3_600_000)
-        h.scheduler.tick(5) // one whole blink cycle: back on the lit subframe
+        h.scheduler.tick(5)
         assertTrue(h.lastFrame().contentEquals(frozen))
         assertEquals(30_000L, h.prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, -1))
         assertEquals(0, h.timer.chimeCount)
@@ -248,36 +239,34 @@ class TimerScreenTest {
     fun `a paused timer survives process death`() {
         val h = TestHarness(13)
         val screen = runningTimer(h, 60, 20_000)
-        screen.onEvent(Events.CHANGE) // pause at a third
+        screen.onEvent(Events.CHANGE)
         screen.onDeactivate()
 
-        // New screen instance, hours later: only the prefs carried over.
         h.clock.advance(2 * 3_600_000)
         val revived = TimerScreen()
         revived.onActivate(h.context)
 
         assertEquals(TimerScreen.BLINK_TICK_MS, h.scheduler.tickerInterval)
         assertTrue(h.lastFrame().contentEquals(TimerScreen.renderPaused(13, 20_000f / 60_000f, 0)))
-        // The "deadline passed while we were away" branch must not have fired.
         assertEquals(0, h.timer.chimeCount)
         assertTrue(!h.lastFrame().contentEquals(TimerScreen.renderDone(13)))
         assertEquals(20_000L, h.prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, -1))
 
-        revived.onEvent(Events.CHANGE) // and it still resumes with 40 s left
+        revived.onEvent(Events.CHANGE)
         assertEquals(h.clock.now + 40_000, h.timer.scheduledAt)
     }
 
     @Test
     fun `a press on the finished timer goes back to idle`() {
         val h = TestHarness(13)
-        val screen = runningTimer(h, 10, 10_000) // straight to completion
+        val screen = runningTimer(h, 10, 10_000)
         assertEquals(1, h.timer.chimeCount)
 
-        screen.onEvent(Events.CHANGE) // dismiss
+        screen.onEvent(Events.CHANGE)
         assertNull(h.scheduler.tickerInterval)
         assertTrue(h.lastFrame().contentEquals(TimerScreen.renderIdle(13)))
 
-        screen.onEvent(Events.CHANGE) // and from idle it starts a fresh run
+        screen.onEvent(Events.CHANGE)
         assertEquals(TimerScreen.TICK_MS, h.scheduler.tickerInterval)
         assertEquals(h.clock.now + 10_000, h.timer.scheduledAt)
     }

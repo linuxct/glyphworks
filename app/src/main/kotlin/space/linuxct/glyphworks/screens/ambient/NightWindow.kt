@@ -1,6 +1,9 @@
 package space.linuxct.glyphworks.screens.ambient
 
-/** Fixed night window: 23:00-05:59 counts as night. */
 object NightWindow {
-    fun isNight(hourOfDay: Int): Boolean = hourOfDay >= 23 || hourOfDay < 6
+    private const val NIGHT_STARTS_HOUR = 23
+    private const val NIGHT_ENDS_HOUR = 6
+
+    fun isNight(hourOfDay: Int): Boolean =
+        hourOfDay >= NIGHT_STARTS_HOUR || hourOfDay < NIGHT_ENDS_HOUR
 }

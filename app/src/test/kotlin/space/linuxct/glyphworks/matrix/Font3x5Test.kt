@@ -15,8 +15,6 @@ class Font3x5Test {
 
     @Test
     fun `stacked clock digits fit 13`() {
-        // Two digits (3+1+3 = 7 wide) must fit with the layout used by clock
-        // screens: x = 3..9.
         assertEquals(7, Font3x5.stringWidth("12"))
         val c = MatrixCanvas(13)
         Font3x5.drawString(c, "12", 3, 1, 4095)

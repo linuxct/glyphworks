@@ -18,42 +18,10 @@ import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.PanelMask
 
-/**
- * `image_to_grid` and the pure conversion under it.
- *
- * The failure it exists for is the one the plan calls the weakest thing the
- * assistant does: "turn this photo into a design". The model can see the
- * attachment perfectly well — what it cannot do is say what the picture averages
- * to at cell (7, 4), and it was being asked to answer that 169 times per
- * attempt, by eye, with no way to check a single one. An image of a plain "10"
- * took eight attempts and then six more.
- *
- * So the arithmetic moved into [ImageQuantiser], and these tests are about the
- * three properties that make it worth having:
- *
- * - **It is a measurement, not a guess.** A synthetic gradient produces exactly
- *   the level distribution the thresholds imply.
- * - **It cannot draw where there is no LED**, and it always produces a frame the
- *   codec accepts — the length is geometric, so an off-by-one would be fatal.
- * - **The knobs move it.** A conversion the model cannot steer is a conversion
- *   it can only accept or abandon.
- */
 class ImageToGridTest {
     private val bellsprout = PokemonCodename.BELLSPROUT
     private val arbok = PokemonCodename.ARBOK
 
-    // region the pure quantiser
-
-    /**
-     * The distribution, stated as arithmetic rather than eyeballed.
-     *
-     * The image is a left-to-right ramp in thirteen equal bands, so each panel
-     * cell averages one band exactly and the normalised value of column x is
-     * `x / 12` with no rounding anywhere. Cut at 0.5 with a three-entry palette,
-     * that puts columns 0-5 off, 6-8 at the mid level and 9-12 at full — worked
-     * out from the rule rather than read off the implementation, which is the
-     * only way this assertion means anything.
-     */
     @Test
     fun `a ramp quantises into the levels its thresholds imply`() {
         val cells = okCells(quantise(ramp(130, 130), 13, 3, threshold = 0.5))
@@ -70,8 +38,6 @@ class ImageToGridTest {
                 assertEquals("cell ($x, $y)", expected, cells[y * 13 + x])
             }
         }
-        // The ramp runs left to right, so the answer varies along x and must not
-        // vary along y: every row that carries a given column agrees about it.
         for (x in 0 until 13) {
             val chars = (0 until 13).filter { PanelMask.contains(x, it, 13) }.map { cells[it * 13 + x] }
             assertEquals("column $x disagrees with itself: $chars", 1, chars.toSet().size)
@@ -81,8 +47,6 @@ class ImageToGridTest {
     @Test
     fun `nothing is ever drawn on a cell the panel has no LED for`() {
         for (codename in PokemonCodename.entries) {
-            // Solid white: every cell that CAN be lit will be, so a cell that is
-            // off can only be one the mask excluded.
             val cells = okCells(
                 quantise(ramp(200, 200), codename.size, 3, threshold = 0.0),
             )
@@ -123,27 +87,20 @@ class ImageToGridTest {
         val flattened = okCells(quantise(image, 13, 3, threshold = 0.5, contrast = 0.25))
         val punchy = okCells(quantise(image, 13, 3, threshold = 0.5, contrast = 4.0))
 
-        // A lower cut lights more of the picture, a higher cut less.
         assertTrue(lit(lower) > lit(plain))
         assertTrue(lit(higher) < lit(plain))
-        // Inverting a left-to-right ramp is the same frame read right to left.
         for (y in 0 until 13) {
             val row = plain.substring(y * 13, (y + 1) * 13)
             val other = inverted.substring(y * 13, (y + 1) * 13)
             assertEquals("row $y", row.reversed(), other)
         }
-        // Contrast is a real knob in both directions and not a no-op.
         assertTrue(flattened != plain)
         assertTrue(punchy != plain)
-        // ...and it does what it says: more contrast pushes cells to the ends of
-        // the palette, less pulls them together.
         assertTrue(punchy.count { it == '2' } > flattened.count { it == '2' })
     }
 
-    /** Otsu picks the valley, which a fixed 0.5 would miss on a dark subject. */
     @Test
     fun `the automatic threshold separates a subject from its background`() {
-        // A small bright square on a dark field: 15 % of the picture is subject.
         val w = 100
         val pixels = IntArray(w * w) { 30 }
         for (y in 40 until 78) {
@@ -153,17 +110,12 @@ class ImageToGridTest {
         val result = ImageQuantiser.quantise(SourceImage(w, w, pixels), 13, 3) as ImageQuantiser.Result.Ok
 
         assertTrue("chosen, not supplied", result.automatic)
-        // The subject is lit and the field is not — the whole claim.
         assertTrue(result.lit > 0)
         assertTrue(result.lit < result.sampled / 2)
         val cells = result.cells
         assertEquals('2', cells[6 * 13 + 6])
         assertEquals('0', cells[6 * 13 + 1])
     }
-
-    // endregion
-
-    // region the tool
 
     @Test
     fun `a converted photo is a document apply_design accepts as it stands`() {
@@ -192,8 +144,6 @@ class ImageToGridTest {
         assertEquals(bellsprout.cellCount, body["cells"]!!.jsonPrimitive.content.length)
         assertEquals("bellsprout", body["variant"]!!.jsonPrimitive.content)
         assertEquals(PanelMask.count(13), body["live_leds"]!!.jsonPrimitive.content.toInt())
-        // The threshold it chose, reported so the model can hand it straight
-        // back and reproduce the same frame.
         val chosen = body[GlyphAiTools.ARG_THRESHOLD]!!.jsonPrimitive.content.toDouble()
         val again = ok(convert(threshold = chosen))
         assertEquals(body["cells"], again["cells"])
@@ -230,7 +180,6 @@ class ImageToGridTest {
         val message = errorOf(result)
         assertTrue(message, message.contains("flat field"))
         assertTrue(message, message.contains("no picture in it"))
-        // Nothing to apply, and nothing that could be mistaken for a frame.
         val body = body(result)
         assertNull(body[GlyphAiTools.KEY_APPLY_THIS])
         assertNull(body["cells"])
@@ -247,11 +196,6 @@ class ImageToGridTest {
         )
     }
 
-    /**
-     * The property this file shares with `ScrollFramesTest`: model output is
-     * malformed as a matter of routine, and every shape of malformed comes back
-     * as something the model can read and correct from.
-     */
     @Test
     fun `no shape of nonsense throws, and each failure says what was expected`() {
         val ctx = ctx(ramp(64, 64))
@@ -285,18 +229,6 @@ class ImageToGridTest {
         }
     }
 
-    // endregion
-
-    // region helpers
-
-    /**
-     * A left-to-right luminance ramp in [bands] equal steps.
-     *
-     * Banded rather than smooth on purpose: at 13 bands over a 130-wide image
-     * each panel cell averages exactly one band, so the expected output can be
-     * worked out on paper. A smooth ramp would make the same test a
-     * reimplementation of the box filter, which would assert nothing.
-     */
     private fun ramp(
         width: Int,
         height: Int,
@@ -307,8 +239,6 @@ class ImageToGridTest {
         for (y in 0 until height) {
             for (x in 0 until width) {
                 val band = (x * bands / width).coerceAtMost(bands - 1)
-                // A round step, so the normalised value of band n is exactly
-                // n / (bands - 1) and the expected levels are arithmetic.
                 pixels[y * width + x] = (if (invert) bands - 1 - band else band) * BAND_STEP
             }
         }
@@ -332,7 +262,6 @@ class ImageToGridTest {
 
     private fun lit(cells: String): Int = cells.count { it != '0' }
 
-    /** Brightness step between two bands of [ramp]. See its KDoc. */
     private val BAND_STEP = 20
 
     private fun ctx(
@@ -379,6 +308,4 @@ class ImageToGridTest {
 
     private fun expected(result: GlyphToolResult): String =
         body(result)["expected"]!!.jsonPrimitive.content
-
-    // endregion
 }

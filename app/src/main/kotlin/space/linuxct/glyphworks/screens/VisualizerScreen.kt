@@ -8,14 +8,7 @@ import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 import kotlin.math.roundToInt
 
-/**
- * Music Visualizer: 50 ms ticker over the shared FFT engine.
- * Themes (visualizerTheme): 0 bottom-up bars, 1 centre-mirrored bars,
- * 2 palette (energy-driven pulsing rings). Silence (max band <= 0.1) shows a
- * static idle pattern; a null spectrum (no mic permission / engine blocked)
- * shows a static "permission" pattern. EVENT_AOD only records the AOD hint
- * pref.
- */
+/** Music visualizer, drawn from the shared FFT engine. */
 class VisualizerScreen : GlyphScreen {
     override val id = "visualizer"
     override val interactive = false
@@ -24,7 +17,7 @@ class VisualizerScreen : GlyphScreen {
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
-        ctx.scheduler.setTicker(50) { tick() }
+        ctx.scheduler.setTicker(TICK_MS) { tick() }
     }
 
     override fun onDeactivate() {
@@ -45,28 +38,36 @@ class VisualizerScreen : GlyphScreen {
     }
 
     companion object {
+        const val TICK_MS = 50L
+
         const val SILENCE_THRESHOLD = 0.1f
 
+        const val THEME_BARS = 0
+        const val THEME_MIRRORED = 1
+        const val THEME_RINGS = 2
+
+        /** A null spectrum means no mic. */
         fun renderFrame(size: Int, bands: FloatArray?, theme: Int): IntArray {
             if (bands == null) return renderPermissionPattern(size)
             if ((bands.maxOrNull() ?: 0f) <= SILENCE_THRESHOLD) return renderIdlePattern(size)
             val canvas = MatrixCanvas(size)
             when (theme) {
-                1 -> renderMirrored(canvas, bands)
-                2 -> renderPalette(canvas, bands)
+                THEME_MIRRORED -> renderMirrored(canvas, bands)
+                THEME_RINGS -> renderPalette(canvas, bands)
                 else -> renderBars(canvas, bands)
             }
             return canvas.copyOut()
         }
 
-        /** Faint brightness of the always-on 1-cell noise floor while audio plays. */
+        /** The 1-cell noise floor every column shows while audio plays. */
         private const val FLOOR_BRIGHTNESS = 1300
+        private const val BAR_TIP = MAX_BRIGHTNESS
+        private const val BAR_BODY = 1400
+        private const val MIRROR_AXIS = 2200
 
         private fun renderBars(canvas: MatrixCanvas, bands: FloatArray) {
             val size = canvas.size
             for (x in 0 until size) {
-                // Noise floor: while audio is active every column shows at least
-                // one faint cell — bars grow out of the floor, never from nothing.
                 val h = (bands[x % bands.size] * size).roundToInt().coerceIn(1, size)
                 if (h == 1) {
                     canvas.light(x, size - 1, FLOOR_BRIGHTNESS)
@@ -74,8 +75,7 @@ class VisualizerScreen : GlyphScreen {
                 }
                 for (i in 0 until h) {
                     val y = size - 1 - i
-                    val v = if (i == h - 1) 4095 else 1400
-                    canvas.light(x, y, v)
+                    canvas.light(x, y, if (i == h - 1) BAR_TIP else BAR_BODY)
                 }
             }
         }
@@ -90,40 +90,37 @@ class VisualizerScreen : GlyphScreen {
                     continue
                 }
                 for (i in 0 until h) {
-                    val v = if (i == h - 1) 4095 else 1400
+                    val v = if (i == h - 1) BAR_TIP else BAR_BODY
                     canvas.light(x, mid - i, v)
                     canvas.light(x, mid + i, v)
                 }
-                canvas.light(x, mid, 2200)
+                canvas.light(x, mid, MIRROR_AXIS)
             }
         }
 
-        /**
-         * The disc is the frame's fixed full-brightness element and the ring's
-         * brightness is the data (the energy in the top half of the spectrum).
-         * The disc used to be 61 % of a full-scale ring, which meant that with
-         * quiet highs the frame's peak was the ring — so the *disc* dimmed and
-         * brightened with the treble too, on top of the ring doing it on purpose.
-         */
+        // The disc holds the frame's peak so panel brightness stays put, and only the
+        // ring, which carries the treble energy, changes with the music.
         private fun renderPalette(canvas: MatrixCanvas, bands: FloatArray) {
             val size = canvas.size
             val center = (size - 1) / 2f
-            val low = bands.take(bands.size / 4).average().toFloat()
-            val high = bands.drop(bands.size / 2).average().toFloat()
-            val rOuter = 1f + low * (size / 2f - 1f)
-            canvas.discSoft(center, center, rOuter, MAX_BRIGHTNESS)
+            val low = bands.take(bands.size / BASS_BAND_DIVISOR).average().toFloat()
+            val high = bands.drop(bands.size / TREBLE_BAND_DIVISOR).average().toFloat()
+            val discRadius = 1f + low * (size / 2f - 1f)
+            canvas.discSoft(center, center, discRadius, MAX_BRIGHTNESS)
             canvas.ring(
-                center, center, rOuter + 0.5f, rOuter + 1.2f,
-                (MAX_BRIGHTNESS * high).roundToInt().coerceAtLeast(600),
+                center, center,
+                discRadius + RING_GAP, discRadius + RING_GAP + RING_THICKNESS,
+                (MAX_BRIGHTNESS * high).roundToInt().coerceAtLeast(RING_MIN),
             )
         }
 
-        /**
-         * Audio is active but silent. The three dots own full brightness and the
-         * baseline is 58 % of them, the ratio the pair has always rendered at —
-         * absolute levels matter now that brightness is a multiplication, and at
-         * the old 1200/700 the whole idle pattern would have sat at 29 %.
-         */
+        private const val BASS_BAND_DIVISOR = 4
+        private const val TREBLE_BAND_DIVISOR = 2
+        private const val RING_GAP = 0.5f
+        private const val RING_THICKNESS = 0.7f
+        private const val RING_MIN = 600
+
+        /** Audio is on but silent. */
         fun renderIdlePattern(size: Int): IntArray {
             val canvas = MatrixCanvas(size)
             val mid = size / 2
@@ -134,12 +131,11 @@ class VisualizerScreen : GlyphScreen {
             return canvas.copyOut()
         }
 
-        /** As [renderIdlePattern]: the same art, lifted so the slash owns 4095. */
+        /** No mic access: a crossed-out mic. */
         fun renderPermissionPattern(size: Int): IntArray {
             val canvas = MatrixCanvas(size)
             val cx = size / 2
             val topY = size / 4
-            // Mic glyph: capsule + stand, with a slash across.
             canvas.fillRect(cx - 1, topY, 3, 4, MIC_BODY)
             canvas.line(cx - 2, topY + 4, cx + 2, topY + 4, MIC_STAND)
             canvas.line(cx, topY + 5, cx, topY + 6, MIC_STAND)

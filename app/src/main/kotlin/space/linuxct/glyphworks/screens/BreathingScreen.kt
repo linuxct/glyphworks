@@ -4,14 +4,10 @@ import space.linuxct.glyphworks.core.Events
 import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
+import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 
-/**
- * Guided breathing: Glyph Touch toggles the animation. A soft-edged disc
- * ping-pongs through 12 radius steps with 2-step holds at both extremes
- * (inhale / hold / exhale / hold). The pace pref scales the frame interval:
- * interval = pace * 125 ms, so the default pace "4" gives a 500 ms cadence.
- */
+/** Guided breathing. Glyph Touch toggles it. */
 class BreathingScreen : GlyphScreen {
     override val id = "breathing"
     override val interactive = true
@@ -39,8 +35,8 @@ class BreathingScreen : GlyphScreen {
         if (running) {
             step = 0
             val pace = c.prefs.getString(PrefKeys.BREATHING_PACE, PrefKeys.BREATHING_PACE_DEF)
-                .toIntOrNull()?.coerceIn(1, 20) ?: 4
-            c.scheduler.setTicker(pace * 125L) { tick() }
+                .toIntOrNull()?.coerceIn(MIN_PACE, MAX_PACE) ?: DEFAULT_PACE
+            c.scheduler.setTicker(pace * MS_PER_PACE_UNIT) { tick() }
         } else {
             c.scheduler.clearTicker()
             pushIdle()
@@ -57,7 +53,7 @@ class BreathingScreen : GlyphScreen {
         val c = ctx ?: return
         val canvas = MatrixCanvas(c.size)
         val center = (c.size - 1) / 2f
-        canvas.discSoft(center, center, minRadius(c.size), 1500)
+        canvas.discSoft(center, center, minRadius(c.size), IDLE_DISC)
         c.pushFrame(canvas.copyOut())
     }
 
@@ -65,10 +61,16 @@ class BreathingScreen : GlyphScreen {
         const val STEPS = 12
         private const val HOLD = 2
 
+        private const val MIN_PACE = 1
+        private const val MAX_PACE = 20
+        private const val DEFAULT_PACE = 4
+        private const val MS_PER_PACE_UNIT = 125L
+
+        private const val IDLE_DISC = 1500
+
         private fun minRadius(size: Int) = if (size >= 25) 2.5f else 1.5f
         private fun maxRadius(size: Int) = if (size >= 25) 11.5f else 5.8f
 
-        /** Cycle: STEPS up, HOLD at max, STEPS down, HOLD at min. */
         fun radiusIndexFor(step: Int): Int {
             val period = 2 * STEPS + 2 * HOLD
             val m = ((step % period) + period) % period
@@ -86,7 +88,7 @@ class BreathingScreen : GlyphScreen {
             val idx = radiusIndexFor(step)
             val r = minRadius(size) +
                 (maxRadius(size) - minRadius(size)) * idx / (STEPS - 1)
-            canvas.discSoft(center, center, r, 4095)
+            canvas.discSoft(center, center, r, MAX_BRIGHTNESS)
             return canvas.copyOut()
         }
     }
