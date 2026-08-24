@@ -84,6 +84,8 @@ live preview on the real matrix while you draw. The `Custom Design` toy plays wh
 
 Designs export and import as a single JSON file, so you can share them with anyone else running
 GlyphWorks. The format is documented in [`docs/glyph-design-format.md`](docs/glyph-design-format.md).
+Import also accepts some third-party Glyph design formats: open one and it converts on the way in,
+keeping its frames, timings and per-pixel brightness, and lands as an ordinary design.
 The Tutorials tab has a guided walkthrough of the editor.
 
 ## Setup

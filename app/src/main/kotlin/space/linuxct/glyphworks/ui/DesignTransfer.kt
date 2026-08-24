@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.design.Design
 import space.linuxct.glyphworks.core.design.DesignCodec
@@ -59,7 +60,7 @@ internal fun importedDesign(incoming: Design, freshId: String, importedAt: Strin
 // Pass the stream, never a string read here: `DesignCodec.decode` stops one byte past
 // its size cap, so an oversized file is never fully read.
 internal fun readDesign(context: Context, uri: Uri): DesignCodec.Result = try {
-    context.contentResolver.openInputStream(uri)?.use { DesignCodec.decode(it) }
+    context.contentResolver.openInputStream(uri)?.use { DesignCodec.decode(it, Core.glyphLink.size) }
         ?: DesignCodec.Result.Invalid(DesignCodec.REASON_UNREADABLE)
 } catch (e: Exception) {
     DebugLog.w(TAG, "import from $uri failed: ${e.message}")

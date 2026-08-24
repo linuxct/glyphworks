@@ -6,6 +6,11 @@ your own tool and GlyphWorks will play it.
 It's an interchange format, not an app-private one. The same bytes go to storage, to export and
 through import.
 
+Import is not limited to this format. A file that is not a `glyph.design` gets one more attempt as
+a third-party Glyph design format, recognised by its shape rather than by any name inside it; if
+that works it is converted to the format below and stored like any other import. See
+`ThirdPartyDesign.kt`.
+
 This page describes **format version 1**, as shipped in GlyphWorks 2.0.0. The code lives in
 `app/src/main/kotlin/space/linuxct/glyphworks/core/design/` (`Design.kt`, `DesignCodec.kt`,
 `DesignFrames.kt`). If this page and the code disagree, the code wins.

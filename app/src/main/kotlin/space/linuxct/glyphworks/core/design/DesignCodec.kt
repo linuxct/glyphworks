@@ -52,6 +52,7 @@ object DesignCodec {
     const val REASON_EMPTY_PALETTE = "This design has no brightness levels."
     const val REASON_PALETTE_TOO_LONG = "This design has too many brightness levels."
     const val REASON_NO_VARIANTS = "This design contains no artwork for any known device."
+    const val REASON_WRONG_PANEL = "This design was made for a different Nothing phone's Glyph Matrix."
     const val REASON_TOO_MANY_FRAMES = "This design has too many frames."
     const val REASON_BAD_DURATION = "This design has a frame duration outside 20 ms to 60 s."
     const val REASON_BAD_FRAME_SIZE = "This design has a frame that is the wrong size for its device."
@@ -73,16 +74,21 @@ object DesignCodec {
     // Naming `Design.serializer()` lets the plugin resolve it, so R8 needs no kotlinx rule.
     fun encode(design: Design): String = writer.encodeToString(Design.serializer(), design)
 
-    fun decode(stream: InputStream): Result {
+    /**
+     * [panelSize] is the matrix this device has, or 0 to accept any. It only filters the
+     * third-party path, where a file carries exactly one panel's artwork and a mismatch can never
+     * render here. Our own format keeps a variant per device, so it is never filtered.
+     */
+    fun decode(stream: InputStream, panelSize: Int = 0): Result {
         val text = try {
             readBounded(stream) ?: return Result.Invalid(REASON_TOO_LARGE)
         } catch (e: Exception) {
             return Result.Invalid(REASON_UNREADABLE + " (" + (e.message ?: e.javaClass.simpleName) + ")")
         }
-        return decode(text)
+        return decode(text, panelSize)
     }
 
-    fun decode(text: String): Result {
+    fun decode(text: String, panelSize: Int = 0): Result {
         if (text.length > MAX_CHARS) return Result.Invalid(REASON_TOO_LARGE)
 
         // Check the magic first: every property has a default, so `{}` alone would decode as ours.
@@ -95,7 +101,7 @@ object DesignCodec {
         }
 
         val magic = (root[FIELD_FORMAT] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        if (magic != DESIGN_FORMAT) return Result.Invalid(REASON_NOT_A_DESIGN)
+        if (magic != DESIGN_FORMAT) return decodeThirdParty(root, panelSize)
 
         val raw: Design = try {
             reader.decodeFromJsonElement(Design.serializer(), root)
@@ -108,6 +114,24 @@ object DesignCodec {
         } catch (e: Exception) {
             Result.Invalid(REASON_UNREADABLE)
         }
+    }
+
+    /** A file without our magic can still be a design another app wrote. */
+    private fun decodeThirdParty(root: JsonObject, panelSize: Int): Result {
+        val converted = try {
+            ThirdPartyDesign.convert(
+                root,
+                id = newDesignId(),
+                name = "",
+                createdAt = nowIsoUtc(),
+            )
+        } catch (e: Exception) {
+            null
+        } ?: return Result.Invalid(REASON_NOT_A_DESIGN)
+        if (panelSize > 0 && converted.variantForSize(panelSize) == null) {
+            return Result.Invalid(REASON_WRONG_PANEL)
+        }
+        return validate(converted)
     }
 
     fun validate(raw: Design): Result {

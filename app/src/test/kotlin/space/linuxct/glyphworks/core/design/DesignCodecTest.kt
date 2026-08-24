@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import space.linuxct.glyphworks.matrix.PanelMask
 import java.io.ByteArrayInputStream
 import java.time.Instant
 
@@ -409,5 +410,60 @@ class DesignCodecTest {
                 "arbok" to DesignVariant(emptyList()),
             ),
         )
+    }
+
+    @Test
+    fun `a third-party format imports as a normal design`() {
+        val leds = PanelMask.count(PokemonCodename.BELLSPROUT.size)
+        val first = List(leds) { if (it == 0) 255 else 0 }
+        val second = List(leds) { if (it == 0) 128 else 0 }
+        val json = """
+            {"v":4,"meta":{"author":"someone"},"frames":[
+              {"p":${first.joinToString(",", "[", "]")},"d":170},
+              {"p":${second.joinToString(",", "[", "]")},"d":40}
+            ]}
+        """.trimIndent()
+
+        val result = DesignCodec.decode(json)
+
+        assertTrue(result.toString(), result is DesignCodec.Result.Ok)
+        val design = (result as DesignCodec.Result.Ok).design
+        assertEquals(DesignKind.DYNAMIC, design.kind)
+        assertTrue(design.loop)
+        assertEquals("someone", design.author)
+        val frames = design.variantFor(PokemonCodename.BELLSPROUT)!!.frames
+        assertEquals(listOf(170, 40), frames.map { it.durationMs })
+
+        // The source gives each LED its own brightness, so both survive as palette entries.
+        assertEquals(listOf(0, 2055, 4095), design.levels)
+        val size = PokemonCodename.BELLSPROUT.size
+        val firstCentre = DesignFrames.decode(frames[0].cells, design.levels, size)!!
+        val secondCentre = DesignFrames.decode(frames[1].cells, design.levels, size)!!
+        val topOfDisc = (0 until size * size).first { PanelMask.contains(it % size, it / size, size) }
+        assertEquals(4095, firstCentre[topOfDisc])
+        assertEquals(2055, secondCentre[topOfDisc])
+    }
+
+    @Test
+    fun `a third-party design for the other phone's panel is refused`() {
+        val forPhone3 = thirdParty(PokemonCodename.ARBOK)
+        val forPhone4aPro = thirdParty(PokemonCodename.BELLSPROUT)
+
+        assertEquals(
+            DesignCodec.REASON_WRONG_PANEL,
+            invalid(DesignCodec.decode(forPhone3, PokemonCodename.BELLSPROUT.size)),
+        )
+        assertEquals(
+            DesignCodec.REASON_WRONG_PANEL,
+            invalid(DesignCodec.decode(forPhone4aPro, PokemonCodename.ARBOK.size)),
+        )
+        assertTrue(DesignCodec.decode(forPhone3, PokemonCodename.ARBOK.size) is DesignCodec.Result.Ok)
+        // 0 means any panel, which is what reading our own stored files uses.
+        assertTrue(DesignCodec.decode(forPhone3) is DesignCodec.Result.Ok)
+    }
+
+    private fun thirdParty(codename: PokemonCodename): String {
+        val pixels = List(PanelMask.count(codename.size)) { 255 }
+        return """{"v":1,"frames":[{"p":${pixels.joinToString(",", "[", "]")},"d":120}]}"""
     }
 }
