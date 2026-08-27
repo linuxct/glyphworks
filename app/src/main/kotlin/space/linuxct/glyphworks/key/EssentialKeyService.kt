@@ -101,6 +101,7 @@ class EssentialKeyService : AccessibilityService() {
             lastConsumedPressAt = SystemClock.uptimeMillis()
             val pressNumber = counter.onPress(SystemClock.uptimeMillis())
             DebugLog.i(C, "essential key DOWN consumed: press #$pressNumber in burst ($desc)")
+            if (pressNumber == 1) Core.router.firstPress()
             restartClickWindow()
         } else {
             DebugLog.d(C, "essential key consumed (up/repeat): $desc")

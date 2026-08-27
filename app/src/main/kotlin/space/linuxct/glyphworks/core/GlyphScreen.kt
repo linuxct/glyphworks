@@ -25,6 +25,10 @@ class ScreenContext(
 interface GlyphScreen {
     val id: String
     val interactive: Boolean
+
+    /** Take [Events.CHANGE] on the first press, before the multi-press window can tell it apart. */
+    val instantAction: Boolean get() = false
+
     fun onActivate(ctx: ScreenContext)
     fun onDeactivate()
     fun onEvent(event: String) {}

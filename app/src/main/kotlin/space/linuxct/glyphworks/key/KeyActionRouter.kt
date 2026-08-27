@@ -35,7 +35,29 @@ class KeyActionRouter(
         listener(clicks, action, id)
     }
 
+    @Volatile
+    private var firedOnFirstPress = false
+
+    /** Only [GlyphScreen.instantAction] screens act here; the rest wait for the window to close. */
+    fun firstPress() {
+        scheduler.run {
+            if (!screenManager.sessionLive) return@run
+            if (prefs.getBoolean(PrefKeys.MENU_MODE_ENABLED, PrefKeys.MENU_MODE_ENABLED_DEF) &&
+                screenManager.inMenu
+            ) {
+                return@run
+            }
+            if (!screenManager.currentScreen().instantAction) return@run
+            DebugLog.i(C, "instant press -> EVENT_CHANGE to '${screenManager.currentScreen().id}'")
+            firedOnFirstPress = true
+            screenManager.dispatchGlyphEvent(Events.CHANGE)
+            report(1, KeyAction.TOY_ACTION)
+        }
+    }
+
     fun execute(clicks: Int) {
+        val handledEarly = firedOnFirstPress
+        firedOnFirstPress = false
         DebugLog.i(C, "execute clicks=$clicks sessionShouldRun=${arbiter.sessionShouldRun}")
         if (clicks !in 1..3) {
             DebugLog.d(C, "ignored ($clicks clicks)")
@@ -55,6 +77,7 @@ class KeyActionRouter(
                 report(clicks, KeyAction.SWALLOWED)
                 return@run
             }
+            if (clicks == 1 && handledEarly) return@run
             val menuModeOn = prefs.getBoolean(PrefKeys.MENU_MODE_ENABLED, PrefKeys.MENU_MODE_ENABLED_DEF)
             when {
                 menuModeOn && screenManager.inMenu -> when (clicks) {

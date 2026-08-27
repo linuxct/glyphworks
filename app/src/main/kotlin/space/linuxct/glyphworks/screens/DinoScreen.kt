@@ -12,6 +12,7 @@ import kotlin.math.roundToInt
 class DinoScreen : GlyphScreen {
     override val id = "dino"
     override val interactive = true
+    override val instantAction = true
 
     private var ctx: ScreenContext? = null
     private var game: DinoGame? = null
@@ -77,49 +78,44 @@ class DinoScreen : GlyphScreen {
 
         fun standRow(size: Int): Int = size - 2
 
-        fun charX(size: Int): Int = CHAR_X_UNITS * unit(size)
+        /**
+         * The disc narrows towards the ground — the stand row is cols 2..10 at 13 and 7..17 at
+         * 25 — so this is per panel rather than a unit multiple, or the dino stands with a foot
+         * off the panel.
+         */
+        fun charX(size: Int): Int = if (size >= 25) CHAR_X_25 else CHAR_X_13
 
         fun charW(size: Int): Int = CHAR_W_UNITS * unit(size)
 
-        fun charH(size: Int): Int = CHAR_H_UNITS * unit(size)
+        /**
+         * The sprite is wider and taller than the hitbox: the head and tail sit above every
+         * cactus, so only the feet can meet one. [charX]/[charW] stay the feet, which keeps the
+         * jump exactly as hard as it was while the dino grew.
+         */
+        private fun spriteX(size: Int): Int = charX(size) - FEET_INSET_UNITS * unit(size)
 
-        private val CHAR_13_STAND = listOf(".##", "###", "#.#")
-        private val CHAR_13_RUN_A = listOf(".##", "###", "##.")
-        private val CHAR_13_RUN_B = listOf(".##", "###", ".##")
-        private val CHAR_13_JUMP = listOf(".##", "###", ".#.")
+        // Head, neck, body and hips; only the feet row changes as it runs.
+        private val BODY_13 = listOf("...###", "...###", "...#..", "####..", "####..", ".###..")
+        private val CHAR_13_STAND = BODY_13 + ".#.#.."
+        private val CHAR_13_RUN_A = BODY_13 + ".#...."
+        private val CHAR_13_RUN_B = BODY_13 + "...#.."
+        private val CHAR_13_JUMP = BODY_13 + ".#.#.."
 
-        private val CHAR_25_STAND = listOf(
-            "#..###",
-            ".#.#.#",
-            "..####",
-            "..####",
-            ".#####",
-            ".#..#.",
-        )
-        private val CHAR_25_RUN_A = listOf(
-            "#..###",
-            ".#.#.#",
-            "..####",
-            "..####",
-            ".#####",
-            "#...##",
-        )
-        private val CHAR_25_RUN_B = listOf(
-            "#..###",
-            ".#.#.#",
-            "..####",
-            "..####",
-            ".#####",
-            ".##..#",
-        )
-        private val CHAR_25_JUMP = listOf(
-            "#..###",
-            ".#.#.#",
-            "..####",
-            "..####",
-            ".#####",
-            "..##..",
-        )
+        // [BODY_13] at two cells per pixel, so both panels show the same dino.
+        private val BODY_25 = BODY_13.flatMap { row ->
+            val doubled = row.flatMap { listOf(it, it) }.joinToString("")
+            listOf(doubled, doubled)
+        }
+
+        private fun feet25(row: String): List<String> {
+            val doubled = row.flatMap { listOf(it, it) }.joinToString("")
+            return listOf(doubled, doubled)
+        }
+
+        private val CHAR_25_STAND = BODY_25 + feet25(".#.#..")
+        private val CHAR_25_RUN_A = BODY_25 + feet25(".#....")
+        private val CHAR_25_RUN_B = BODY_25 + feet25("...#..")
+        private val CHAR_25_JUMP = BODY_25 + feet25(".#.#..")
 
         const val LEG_PHASE_AIRBORNE = -1
         const val LEG_PHASE_STRIDE_A = 0
@@ -153,13 +149,13 @@ class DinoScreen : GlyphScreen {
                 canvas.light(x, trackRow, TRACK)
                 x += TRACK_DOT_SPACING_UNITS * u
             }
-            canvas.blit(
-                charArt(size, LEG_PHASE_STANDING),
-                charX(size),
-                standRow(size) - charH(size) + 1,
-                CHAR,
-            )
+            blitChar(canvas, size, LEG_PHASE_STANDING, 0)
             return canvas.copyOut()
+        }
+
+        private fun blitChar(canvas: MatrixCanvas, size: Int, legPhase: Int, jumpCells: Int) {
+            val art = charArt(size, legPhase)
+            canvas.blit(art, spriteX(size), standRow(size) - jumpCells - art.size + 1, CHAR)
         }
 
         fun renderRun(
@@ -181,12 +177,7 @@ class DinoScreen : GlyphScreen {
             obstacles.forEach { o ->
                 canvas.fillRect(o.x, standRow(size) - o.h + 1, o.w, o.h, OBSTACLE)
             }
-            canvas.blit(
-                charArt(size, legPhase),
-                charX(size),
-                standRow(size) - jumpCells - charH(size) + 1,
-                CHAR,
-            )
+            blitChar(canvas, size, legPhase, jumpCells)
             return canvas.copyOut()
         }
 
@@ -199,9 +190,10 @@ class DinoScreen : GlyphScreen {
             return canvas.copyOut()
         }
 
-        private const val CHAR_X_UNITS = 2
+        private const val CHAR_X_13 = 2
+        private const val CHAR_X_25 = 7
         private const val CHAR_W_UNITS = 3
-        private const val CHAR_H_UNITS = 3
+        private const val FEET_INSET_UNITS = 1
 
         private const val GROUND_PERIOD_UNITS = 3
         private const val GROUND_DASH_UNITS = 2
@@ -336,14 +328,14 @@ class DinoGame(val size: Int, private val random: RandomPort) {
     private val u: Float get() = cellsPerUnit.toFloat()
 
     companion object {
-        // Integrated the way step() does, the arc peaks at 5 units and lasts 20 ticks,
-        // about a second, leaving a jump window of at least 3 units at every speed.
-        const val JUMP_V0 = 0.95f
-        const val GRAVITY = 0.10f
+        // Integrated the way step() does, the arc peaks at 5 units and lasts 30 ticks,
+        // about a second and a half, leaving a jump window of 3 units at every speed.
+        const val JUMP_V0 = 0.66f
+        const val GRAVITY = 0.045f
 
-        const val START_SPEED = 0.45f
-        const val MAX_SPEED = 0.75f
-        const val SPEED_RAMP = 0.02f
+        const val START_SPEED = 0.30f
+        const val MAX_SPEED = 0.50f
+        const val SPEED_RAMP = 0.013f
 
         const val STRIDE_TICKS = 2
         const val STRIDE_POSES = 2
@@ -360,9 +352,9 @@ class DinoGame(val size: Int, private val random: RandomPort) {
         /** An obstacle scores once its rounded right edge passes column 0. */
         private const val OFF_LEFT_EDGE_X = -0.5f
 
-        // Cactus width to height, in units. None is both widest and tallest: that one
-        // is not clearable at the slowest scroll on 13 columns.
-        val VARIANTS = listOf(1 to 1, 1 to 2, 2 to 1)
+        // Cactus width to height, in units. All one unit wide: a wider cactus stays under
+        // the dino long enough that clearing it needs a press the click window cannot deliver.
+        val VARIANTS = listOf(1 to 1, 1 to 2, 1 to 3)
 
         val MAX_OBSTACLE_H = VARIANTS.maxOf { it.second }
 
