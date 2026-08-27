@@ -23,7 +23,7 @@ android {
         applicationId = "space.linuxct.glyphworks"
         minSdk = 33
         targetSdk = 37
-        versionCode = 18
+        versionCode = 19
         versionName = "3.1.1"
     }
 
