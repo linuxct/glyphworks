@@ -68,6 +68,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import space.linuxct.glyphworks.ui.theme.dialogSurface
+import space.linuxct.glyphworks.ui.theme.glyphCorner
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.ui.CREATE_TAB_INDEX
@@ -226,8 +228,8 @@ private fun DemoCreateStage() {
 private fun DemoNewDesignSheet(sandbox: DemoSandbox) {
     Surface(
         modifier = Modifier.width(dialogCardWidth()),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface,
+        shape = glyphCorner(28.dp, 36.dp),
+        color = dialogSurface(),
     ) {
         Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
             Text(
@@ -418,8 +420,8 @@ private fun DemoCaption(
     Box(modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
         Surface(
             modifier = Modifier.widthIn(max = CAPTION_MAX_WIDTH),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
+            shape = glyphCorner(24.dp, 32.dp),
+            color = dialogSurface(),
             shadowElevation = 8.dp,
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {

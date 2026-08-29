@@ -92,6 +92,7 @@ import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.ui.theme.GlyphRadioButton
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import kotlin.math.PI
 import kotlin.math.roundToInt
@@ -675,7 +676,7 @@ private fun ModeCard(selected: Boolean, title: Int, desc: Int, onClick: () -> Un
             selected = selected,
             onClick = onClick,
             modifier = Modifier.fillMaxWidth(),
-            leadingContent = { RadioButton(selected = selected, onClick = null) },
+            leadingContent = { GlyphRadioButton(selected = selected, onClick = null) },
             supportingContent = {
                 Text(stringResource(desc), style = MaterialTheme.typography.bodySmall)
             },

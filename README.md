@@ -105,6 +105,15 @@ Install, open, and the app's built-in onboarding process walks you through it. I
 Only the Phone (3) and the Phone (4a) Pro are supported — the app refuses to run without a Glyph
 Matrix.
 
+### The Nothing OS 5 look
+
+Settings has a **Nothing OS 5 look** switch. On, the app follows the Lucent design: translucent
+surfaces, wallpaper colours from Material You, Nothing's switches and radio buttons, and Geist for
+body text. Titles stay NType 82 either way.
+
+It turns itself on the first time it sees Nothing OS 5, and once only — turn it off and it stays
+off, through any later update. On Nothing OS 4 it starts off, and you can still switch it on.
+
 ## Build it
 
 JDK 17, Android SDK platform 37, your SDK path in `local.properties`.
@@ -134,3 +143,5 @@ especially useful.
 ## License
 
 [AGPL-3.0](LICENSE)
+
+Geist is © The Geist Project Authors, under the [SIL Open Font License 1.1](app/src/main/assets/licenses/geist-ofl.txt).

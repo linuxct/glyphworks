@@ -21,6 +21,8 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.AnimationSpec
@@ -49,6 +51,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,6 +85,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Settings
@@ -111,6 +115,7 @@ import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -126,7 +131,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -147,6 +154,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -158,8 +167,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -167,11 +178,14 @@ import androidx.compose.ui.util.lerp
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import space.linuxct.glyphworks.ui.theme.DialogBackdropBlur
+import space.linuxct.glyphworks.ui.theme.dialogSurface
+import space.linuxct.glyphworks.ui.theme.glyphCorner
 import space.linuxct.glyphworks.ui.theme.fullContrastListItemColors
 import space.linuxct.glyphworks.ui.theme.fullContrastToggleColors
 import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
@@ -184,8 +198,21 @@ import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.ui.design.DemoTarget
 import space.linuxct.glyphworks.ui.design.DesignDemoActivity
 import space.linuxct.glyphworks.ui.design.demoTarget
+import space.linuxct.glyphworks.ui.theme.GlyphRadioButton
+import space.linuxct.glyphworks.ui.theme.GlyphSlider
+import space.linuxct.glyphworks.ui.theme.GlyphSwitch
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.glyphworks.ui.theme.NavPillColors
+import space.linuxct.glyphworks.ui.theme.Backdrop
+import space.linuxct.glyphworks.ui.theme.ThinBrush
+import space.linuxct.glyphworks.ui.theme.ThinCap
+import space.linuxct.glyphworks.ui.theme.ThinCog
+import space.linuxct.glyphworks.ui.theme.ThinDice
+import space.linuxct.glyphworks.ui.theme.NAV_BLUR
+import space.linuxct.glyphworks.ui.theme.backdropBlur
+import space.linuxct.glyphworks.ui.theme.recordBackdrop
+import space.linuxct.glyphworks.ui.theme.rememberBackdrop
+import space.linuxct.glyphworks.ui.theme.lucent
 import space.linuxct.glyphworks.ui.theme.navPill
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -253,6 +280,9 @@ internal val NAV_PILL_CLEARANCE = 40.dp
 
 private val NAV_PILL_MARGIN = 14.dp
 
+// Theirs floats noticeably clear of the bottom edge rather than hugging it.
+private val NAV_PILL_MARGIN_LUCENT = 44.dp
+
 // One value for all four sides. The chips only look evenly inset while
 // chip radius + gap == pill radius, and split padding breaks that at large font scales.
 private val NAV_PILL_GAP = 6.dp
@@ -274,14 +304,40 @@ private class NavOverlayPadding(
     override fun calculateBottomPadding(): Dp = base.calculateBottomPadding() + extraBottom()
 }
 
-private enum class Tab(val icon: ImageVector, val caption: Int, val title: Int) {
-    TOYS(Icons.Outlined.Casino, R.string.nav_toys, R.string.screens_title),
-    CREATE(Icons.Outlined.Brush, R.string.nav_create, R.string.create_title),
-    SETTINGS(Icons.Outlined.Settings, R.string.nav_settings, R.string.settings),
-    TUTORIAL(Icons.Outlined.School, R.string.tut_section, R.string.tut_section),
+private enum class Tab(
+    val icon: ImageVector,
+    val thinIcon: ImageVector,
+    val caption: Int,
+    val title: Int,
+) {
+    TOYS(Icons.Outlined.Casino, ThinDice, R.string.nav_toys, R.string.screens_title),
+    CREATE(Icons.Outlined.Brush, ThinBrush, R.string.nav_create, R.string.create_title),
+    SETTINGS(Icons.Outlined.Settings, ThinCog, R.string.nav_settings, R.string.settings),
+    TUTORIAL(Icons.Outlined.School, ThinCap, R.string.tut_section, R.string.tut_section),
 }
 
 internal val CREATE_TAB_INDEX: Int = Tab.CREATE.ordinal
+
+/**
+ * A page change has to end, not merely stop looking like it is moving.
+ *
+ * A spring runs until it is inside its visibility threshold, which defaults to a hundredth of a
+ * pixel, and the expressive spatial default is damped at 0.8 so it overshoots on the way. From a
+ * page's width that is about three quarters of a second, nearly half of it after the page has
+ * visibly stopped — and every bit of it counts as scrolling, so the pager holds its animation and
+ * the frosted backdrop redraws the whole screen frame after frame for no visible gain. Critically
+ * damped, and done once it is within a pixel, which is already indistinguishable from arrived.
+ */
+private val PAGE_SETTLE = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = PAGE_STIFFNESS,
+    visibilityThreshold = 1f,
+)
+
+// Twice the expressive spatial default, which is 380. Across a page's width that is about a
+// quarter of a second of movement and a third of a second of animation, against roughly three
+// quarters before — quick, but still slow enough to read as a slide rather than a cut.
+private const val PAGE_STIFFNESS = 800f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -301,8 +357,9 @@ private fun MainScreen(startTab: Int = 0) {
             Core.prefs.putBoolean(PrefKeys.UNTESTED_DEVICE_ACK, true)
         })
     }
-    val pageSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val pageSpec = PAGE_SETTLE
     val fling = PagerDefaults.flingBehavior(state = pagerState, snapAnimationSpec = pageSpec)
+    val headerExpansion = remember { HeaderExpansion() }
 
     val toysListState = rememberLazyListState()
     val createListState = rememberLazyListState()
@@ -351,16 +408,70 @@ private fun MainScreen(startTab: Int = 0) {
     ExpandHeaderOnArrival(
         pagerState = pagerState,
         scrollBehavior = scrollBehavior,
-        spec = headerSpec,
+        spec = pageSpec,
         atTopOf = ::atTopOf,
-        busy = ::busy,
+        expansion = headerExpansion,
     )
 
     var pillHeight by remember { mutableStateOf(0.dp) }
 
+    val lucent = MaterialTheme.lucent
+    val backdrop = rememberBackdrop()
+    // The frost is only redrawn while something moves; idle frames would burn a full-screen
+    // blur for an unchanged picture.
+    var backdropTick by remember { mutableIntStateOf(0) }
+    val moving by remember {
+        derivedStateOf {
+            busy(Tab.entries[pagerState.currentPage]) || pagerState.isScrollInProgress
+        }
+    }
+
+    // Open on arrival, shut on the way down a list, open again the moment the user pulls back
+    // up. The state persists once the finger lifts, which is the part scroll-in-progress missed.
+    var navExpanded by remember { mutableStateOf(true) }
+    val navScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y <= -NAV_SCROLL_SLOP) navExpanded = false
+                if (available.y >= NAV_SCROLL_SLOP) navExpanded = true
+                return Offset.Zero
+            }
+        }
+    }
+    // Consumes nothing; it is only here to be above the app bar's connection in the chain, which
+    // is the one place a drag can still be seen whole. See [HeaderExpansion].
+    val yieldHeader = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y != 0f) headerExpansion.release()
+                return Offset.Zero
+            }
+        }
+    }
+    // Landing on a tab shows you where you are, so the label has to be readable.
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.targetPage }.collect { navExpanded = true }
+    }
+    LaunchedEffect(lucent) {
+        if (!lucent) return@LaunchedEffect
+        snapshotFlow { moving }.collectLatest { live ->
+            while (live) {
+                withFrameNanos { }
+                backdropTick++
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         Scaffold(
-            modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+            modifier = Modifier
+                .fillMaxSize()
+                // Order is the point: the leftmost connection is the outermost, and gets each
+                // drag before the app bar has taken it.
+                .nestedScroll(yieldHeader)
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+                .nestedScroll(navScroll)
+                .then(if (lucent) Modifier.recordBackdrop(backdrop) else Modifier),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 LargeTopAppBar(
@@ -379,7 +490,9 @@ private fun MainScreen(startTab: Int = 0) {
             },
         ) { innerPadding ->
             val pagePadding = remember(innerPadding) {
-                NavOverlayPadding(innerPadding) { pillHeight + NAV_PILL_MARGIN }
+                NavOverlayPadding(innerPadding) {
+                    pillHeight + if (lucent) NAV_PILL_MARGIN_LUCENT else NAV_PILL_MARGIN
+                }
             }
             HorizontalPager(
                 state = pagerState,
@@ -406,6 +519,9 @@ private fun MainScreen(startTab: Int = 0) {
             position = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
             fabVisible = pagerState.targetPage == Tab.CREATE.ordinal,
             setupNeedsAttention = setup.needsAttention,
+            backdrop = backdrop,
+            backdropVersion = { backdropTick },
+            expanded = navExpanded,
             onFabClick = { createState.newDesignRequested = true },
             onSelect = { i ->
                 scope.launch { pagerState.animateScrollToPage(i, animationSpec = pageSpec) }
@@ -423,7 +539,7 @@ private fun ExpandHeaderOnArrival(
     scrollBehavior: TopAppBarScrollBehavior,
     spec: AnimationSpec<Float>,
     atTopOf: (Tab) -> Boolean,
-    busy: (Tab) -> Boolean,
+    expansion: HeaderExpansion,
 ) {
     LaunchedEffect(pagerState, scrollBehavior) {
         snapshotFlow { pagerState.currentPage }.collectLatest { page ->
@@ -440,14 +556,31 @@ private fun ExpandHeaderOnArrival(
                     ) { value, _ -> scrollBehavior.state.heightOffset = value }
                     scrollBehavior.state.contentOffset = 0f
                 }
-                val yieldToUser = launch {
-                    snapshotFlow { busy(tab) }.first { it }
-                    expand.cancel()
-                }
+                expansion.job = expand
                 expand.join()
-                yieldToUser.cancel()
+                expansion.job = null
             }
         }
+    }
+}
+
+/**
+ * Lets a touch stop the header opening itself.
+ *
+ * The app bar's own nested scroll connection sits above the pages and takes the whole gesture for
+ * as long as its height is somewhere between open and shut. The arrival animation writes that
+ * height on every frame, so between the two of them the first drag after a tab change is
+ * swallowed whole: the list never starts moving, and waiting for it to start — which is what this
+ * used to do — was waiting for the very thing the animation was preventing. So the touch cancels
+ * the animation instead, from a connection mounted above the app bar's so that it sees the drag
+ * before anything has had the chance to eat it.
+ */
+private class HeaderExpansion {
+    var job: Job? = null
+
+    fun release() {
+        job?.cancel()
+        job = null
     }
 }
 
@@ -461,27 +594,52 @@ internal fun FloatingNavBar(
     onPillHeight: (Dp) -> Unit,
     modifier: Modifier = Modifier,
     setupNeedsAttention: Boolean = false,
+    backdrop: Backdrop? = null,
+    backdropVersion: () -> Int = { 0 },
+    expanded: Boolean = true,
 ) {
     val pill = MaterialTheme.navPill
+    val lucent = MaterialTheme.lucent
     val density = LocalDensity.current
+    // Their bar grows on both axes off a pinned bottom edge, so it opens upward.
+    val springing by animateFloatAsState(
+        targetValue = if (!lucent || expanded) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow),
+        label = "navExpansion",
+    )
+    // The spring undershoots past 0 and lerp extrapolates, so the bar would draw smaller than
+    // its own collapsed size and then grow back into it. Clamp the geometry, keep the timing.
+    val open = springing.coerceIn(0f, 1f)
+    // One gap on every side, so the selected circle is inset the same amount from the ends as
+    // it is from the top. The label is what makes the bar longer, not extra padding.
+    val endGap = if (lucent) lerp(NAV_PAD_TIGHT, NAV_PAD_WIDE, open) else NAV_PILL_GAP
+    val chipPad = if (lucent) lerp(NAV_CHIP_PAD_TIGHT, NAV_CHIP_PAD_WIDE, open) else NAV_CHIP_PAD
+    val container = Modifier
+        .onSizeChanged { onPillHeight(with(density) { it.height.toDp() }) }
+        .clip(NAV_CHIP_SHAPE)
+    val frosted = if (lucent && backdrop != null) {
+        container.backdropBlur(backdrop, NAV_BLUR, backdropVersion).background(pill.container)
+    } else {
+        container
+    }
     Box(
-        modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = NAV_PILL_MARGIN),
+        modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = if (lucent) NAV_PILL_MARGIN_LUCENT else NAV_PILL_MARGIN),
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                modifier = Modifier.onSizeChanged {
-                    onPillHeight(with(density) { it.height.toDp() })
-                },
+                modifier = frosted,
                 shape = NAV_CHIP_SHAPE,
-                color = pill.container,
+                color = if (lucent) Color.Transparent else pill.container,
                 contentColor = MaterialTheme.colorScheme.onBackground,
-                shadowElevation = 8.dp,
+                shadowElevation = if (lucent) 0.dp else 8.dp,
             ) {
+                // No ripple here: while one plays it holds the tab transition open, and the
+                // page underneath cannot be scrolled until it finishes.
                 NoRipple {
                     Row(
-                        Modifier.padding(NAV_PILL_GAP),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        Modifier.padding(endGap),
+                        horizontalArrangement = Arrangement.spacedBy(if (lucent) 0.dp else 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Tab.entries.forEachIndexed { i, t ->
@@ -490,6 +648,9 @@ internal fun FloatingNavBar(
                                 index = i,
                                 selected = i == selected,
                                 position = position,
+                                pad = chipPad,
+                                // Collapsed shows icons only; the label belongs to the open bar.
+                                labelWidth = { open },
                                 badge = setupNeedsAttention && t == Tab.SETTINGS,
                             ) { onSelect(i) }
                         }
@@ -497,17 +658,30 @@ internal fun FloatingNavBar(
                 }
             }
 
-            NavFab(visible = fabVisible, onClick = onFabClick)
+            // The FAB keeps Nothing's red and blue, so it keeps the content-derived ripple too.
+            DefaultRipple { NavFab(visible = fabVisible, open = open, onClick = onFabClick) }
         }
     }
 }
+
+// Measured off Nothing OS 5: 98 px tall open, 86 px closed, at 1.75 px/dp.
+private val NAV_PAD_WIDE = 4.dp
+private val NAV_PAD_TIGHT = 2.dp
+private val NAV_CHIP_PAD_WIDE = 15.dp
+private val NAV_CHIP_PAD_TIGHT = 13.dp
+private val NAV_CHIP_PAD = 12.dp
 
 private val NAV_FAB_GAP = 10.dp
 
 private val NAV_FAB_SIZE = 56.dp
 
+private val NAV_FAB_SIZE_TIGHT = 48.dp
+
+// Ignore sub-pixel jitter so the bar does not flip state on a stationary finger.
+private const val NAV_SCROLL_SLOP = 1.5f
+
 @Composable
-private fun NavFab(visible: Boolean, onClick: () -> Unit) {
+private fun NavFab(visible: Boolean, open: Float, onClick: () -> Unit) {
     val pill = MaterialTheme.navPill
     val revealSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val fadeSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -539,7 +713,7 @@ private fun NavFab(visible: Boolean, onClick: () -> Unit) {
         FloatingActionButton(
             onClick = onClick,
             modifier = Modifier
-                .size(NAV_FAB_SIZE)
+                .size(if (MaterialTheme.lucent) lerp(NAV_FAB_SIZE_TIGHT, NAV_FAB_SIZE, open) else NAV_FAB_SIZE)
                 .demoTarget(DemoTarget.FAB)
                 .graphicsLayer {
                     val scale = reveal.value.coerceAtLeast(0f)
@@ -566,6 +740,8 @@ private fun NavChip(
     index: Int,
     selected: Boolean,
     position: () -> Float,
+    pad: Dp = NAV_CHIP_PAD,
+    labelWidth: () -> Float = { 1f },
     badge: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -590,11 +766,15 @@ private fun NavChip(
                 )
             }
             .clickable(onClick = onClick)
-            .padding(12.dp),
+            .padding(pad),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
-            Icon(tab.icon, contentDescription = stringResource(tab.caption), tint = tint)
+            Icon(
+                if (MaterialTheme.lucent) tab.thinIcon else tab.icon,
+                contentDescription = stringResource(tab.caption),
+                tint = tint,
+            )
             if (badge) {
                 AttentionBadge(
                     Modifier
@@ -606,11 +786,11 @@ private fun NavChip(
         Box(
             Modifier
                 .clearAndSetSemantics {}
-                .graphicsLayer { alpha = selectedness() }
+                .graphicsLayer { alpha = selectedness() * labelWidth() }
                 .clipToBounds()
                 .layout { measurable, constraints ->
                     val placeable = measurable.measure(constraints)
-                    val width = (placeable.width * selectedness())
+                    val width = (placeable.width * selectedness() * labelWidth())
                         .roundToInt()
                         .coerceIn(0, placeable.width)
                     layout(width, placeable.height) { placeable.place(0, 0) }
@@ -963,6 +1143,16 @@ private fun AppSettingsSection(refreshTick: Int) {
                 leading = Icons.Outlined.Schedule,
             )
         }
+        item {
+            PrefSwitchRow(
+                refreshTick = refreshTick,
+                title = stringResource(R.string.pref_lucent),
+                subtitle = stringResource(R.string.pref_lucent_summary),
+                key = PrefKeys.LUCENT_ENABLED,
+                def = PrefKeys.LUCENT_ENABLED_DEF,
+                leading = Icons.Outlined.Palette,
+            )
+        }
         item { BrightnessRow() }
         item { CreatorNameRow() }
         // Adds its own `item`, and none at all in the Play build, so [SectionCard] never
@@ -991,6 +1181,9 @@ private const val MIN_BRIGHTNESS = 0.05f
 private val BRIGHTNESS_ICON_SIZE = 20.dp
 private val BRIGHTNESS_TOGGLE_GAP = 8.dp
 
+// The Lucent slider reserves its own room for a bigger thumb, so it needs no spacer of its own.
+private val BRIGHTNESS_TOGGLE_GAP_LUCENT = 0.dp
+
 @Composable
 private fun BrightnessRow() {
     PrefRow(lines = PrefRowLines.THREE, leading = { PrefIcon(Icons.Outlined.BrightnessMedium) }) {
@@ -1003,8 +1196,12 @@ private fun BrightnessRow() {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             AutoBrightnessToggle(auto)
-            Spacer(Modifier.width(BRIGHTNESS_TOGGLE_GAP))
-            Slider(
+            Spacer(
+                Modifier.width(
+                    if (MaterialTheme.lucent) BRIGHTNESS_TOGGLE_GAP_LUCENT else BRIGHTNESS_TOGGLE_GAP,
+                ),
+            )
+            GlyphSlider(
                 value = brightness,
                 onValueChange = {
                     if (auto) Core.prefs.putBoolean(PrefKeys.AUTO_BRIGHTNESS, false)
@@ -1172,16 +1369,19 @@ private fun DisplayRow(
     }
 
     val color by animateColorAsState(
-        targetValue = if (shown) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surface
+        targetValue = when {
+            shown -> MaterialTheme.colorScheme.secondaryContainer
+            // The same token the section Cards use, so a toy row reads as a card like the rest.
+            MaterialTheme.lucent -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> MaterialTheme.colorScheme.surface
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "toyRowContainer",
     )
+    // A tonal overlay on a translucent colour just pulls the row back toward the page.
+    val restingTonal = if (MaterialTheme.lucent) 0.dp else 1.dp
     val tonal by animateDpAsState(
-        targetValue = if (dragging) 8.dp else 1.dp,
+        targetValue = if (dragging) 8.dp else restingTonal,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "toyRowTonalElevation",
     )
@@ -1204,7 +1404,7 @@ private fun DisplayRow(
             }
             .onSizeChanged { drag.rowHeightPx = it.height }
             .padding(horizontal = 16.dp, vertical = 3.dp),
-        shape = RoundedCornerShape(TOY_ROW_CORNER),
+        shape = glyphCorner(TOY_ROW_CORNER, 28.dp),
         color = color,
         tonalElevation = tonal.coerceAtLeast(0.dp),
         shadowElevation = shadow.coerceAtLeast(0.dp),
@@ -1220,15 +1420,13 @@ private fun DisplayRow(
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f).padding(start = 4.dp),
             )
-            NoRipple {
-                FilledIconToggleButton(
-                    colors = fullContrastToggleColors(),
-                    checked = shown,
-                    onCheckedChange = { onSelect() },
-                    shapes = IconButtonDefaults.toggleableShapes(),
-                ) {
-                    Icon(Icons.Outlined.PlayArrow, contentDescription = stringResource(R.string.set_active))
-                }
+            FilledIconToggleButton(
+                colors = fullContrastToggleColors(),
+                checked = shown,
+                onCheckedChange = { onSelect() },
+                shapes = IconButtonDefaults.toggleableShapes(),
+            ) {
+                Icon(Icons.Outlined.PlayArrow, contentDescription = stringResource(R.string.set_active))
             }
             if (id in CONFIGURABLE) {
                 IconButton(onClick = onSettings) {
@@ -1311,7 +1509,7 @@ private fun ToyEnabledSwitch(id: String) {
         mutableStateOf(Core.prefs.getBoolean(PrefKeys.screenEnabled(id), true))
     }
     NoRipple {
-        Switch(checked = enabled, onCheckedChange = {
+        GlyphSwitch(checked = enabled, onCheckedChange = {
             enabled = it
             Core.prefs.putBoolean(PrefKeys.screenEnabled(id), it)
         })
@@ -1375,23 +1573,36 @@ internal fun sectionItemPosition(index: Int, count: Int): SectionItemPosition = 
 private val SECTION_OUTER_CORNER = 16.dp
 private val SECTION_INNER_CORNER = 3.dp
 private val SECTION_ITEM_GAP = 2.dp
+
+// Measured off Nothing OS 5 at 1.96 px/dp: 43 px outer corner, 8 px inner, 4 px between rows,
+// 35 px from the screen edge. The inner corner is far tighter than Material groups them.
+private val LUCENT_SECTION_OUTER_CORNER = 22.dp
+private val LUCENT_SECTION_INNER_CORNER = 4.dp
+private val LUCENT_SECTION_ITEM_GAP = 2.dp
+private val LUCENT_SECTION_HORIZONTAL_MARGIN = 18.dp
 private val SECTION_HORIZONTAL_MARGIN = 16.dp
 
-private fun SectionItemPosition.shape(): RoundedCornerShape = when (this) {
-    SectionItemPosition.ONLY -> RoundedCornerShape(SECTION_OUTER_CORNER)
-    SectionItemPosition.FIRST -> RoundedCornerShape(
-        topStart = SECTION_OUTER_CORNER,
-        topEnd = SECTION_OUTER_CORNER,
-        bottomStart = SECTION_INNER_CORNER,
-        bottomEnd = SECTION_INNER_CORNER,
-    )
-    SectionItemPosition.MIDDLE -> RoundedCornerShape(SECTION_INNER_CORNER)
-    SectionItemPosition.LAST -> RoundedCornerShape(
-        topStart = SECTION_INNER_CORNER,
-        topEnd = SECTION_INNER_CORNER,
-        bottomStart = SECTION_OUTER_CORNER,
-        bottomEnd = SECTION_OUTER_CORNER,
-    )
+@Composable
+private fun SectionItemPosition.shape(): RoundedCornerShape {
+    val lucent = MaterialTheme.lucent
+    val outer = if (lucent) LUCENT_SECTION_OUTER_CORNER else SECTION_OUTER_CORNER
+    val inner = if (lucent) LUCENT_SECTION_INNER_CORNER else SECTION_INNER_CORNER
+    return when (this) {
+        SectionItemPosition.ONLY -> RoundedCornerShape(outer)
+        SectionItemPosition.FIRST -> RoundedCornerShape(
+            topStart = outer,
+            topEnd = outer,
+            bottomStart = inner,
+            bottomEnd = inner,
+        )
+        SectionItemPosition.MIDDLE -> RoundedCornerShape(inner)
+        SectionItemPosition.LAST -> RoundedCornerShape(
+            topStart = inner,
+            topEnd = inner,
+            bottomStart = outer,
+            bottomEnd = outer,
+        )
+    }
 }
 
 internal class SectionCardScope internal constructor() {
@@ -1408,8 +1619,16 @@ internal class SectionCardScope internal constructor() {
 internal fun SectionCard(content: SectionCardScope.() -> Unit) {
     val items = SectionCardScope().apply(content).items
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = SECTION_HORIZONTAL_MARGIN),
-        verticalArrangement = Arrangement.spacedBy(SECTION_ITEM_GAP),
+        modifier = Modifier.fillMaxWidth().padding(
+            horizontal = if (MaterialTheme.lucent) {
+                LUCENT_SECTION_HORIZONTAL_MARGIN
+            } else {
+                SECTION_HORIZONTAL_MARGIN
+            },
+        ),
+        verticalArrangement = Arrangement.spacedBy(
+            if (MaterialTheme.lucent) LUCENT_SECTION_ITEM_GAP else SECTION_ITEM_GAP,
+        ),
     ) {
         items.forEachIndexed { index, item ->
             key(index) {
@@ -1438,6 +1657,11 @@ internal fun selectedRowColors(): ListItemColors = ListItemDefaults.colors(
 @Composable
 internal fun NoRipple(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalRippleConfiguration provides null, content = content)
+}
+
+@Composable
+internal fun DefaultRipple(content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(), content = content)
 }
 
 @Composable
@@ -1478,6 +1702,10 @@ private val TOGGLE_CHECKED_CORNER = 12.dp
 internal val TOGGLE_CONTAINER_SIZE = 36.dp
 
 internal val DIALOG_VERTICAL_MARGIN = 40.dp
+
+// The platform dialog width leaves a toy's options crammed into the middle of the screen, so
+// these size themselves off the window instead and keep only a margin at the edges.
+private val DIALOG_HORIZONTAL_MARGIN = 20.dp
 
 @Composable
 internal fun HintText(text: String) {
@@ -1661,7 +1889,7 @@ private fun SwitchRow(
             else -> PrefRowLines.TWO
         },
         leading = leading?.let { { PrefIcon(it) } },
-        trailing = { NoRipple { Switch(checked = checked, onCheckedChange = onChange) } },
+        trailing = { NoRipple { GlyphSwitch(checked = checked, onCheckedChange = onChange) } },
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         if (subtitle != null) {
@@ -1678,8 +1906,10 @@ private fun SwitchRow(
 @Composable
 private fun UntestedDeviceDialog(onDismiss: () -> Unit) {
     AlertDialog(
+        containerColor = dialogSurface(),
         onDismissRequest = onDismiss,
         confirmButton = {
+            DialogBackdropBlur()
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.untested_dismiss)) }
         },
         title = { Text(stringResource(R.string.untested_title)) },
@@ -1704,6 +1934,9 @@ private fun UnsupportedDeviceScreen() {
         Column(
             Modifier
                 .fillMaxSize()
+                // The activity is edge to edge, so without this the title sits under the clock and
+                // the disclosure runs off under the navigation bar with nothing left to scroll.
+                .safeDrawingPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(32.dp),
         ) {
@@ -1726,9 +1959,16 @@ private fun UnsupportedDeviceScreen() {
 @Composable
 private fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
     AlertDialog(
-        modifier = Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
+        containerColor = dialogSurface(),
+        modifier = Modifier
+            .padding(horizontal = DIALOG_HORIZONTAL_MARGIN, vertical = DIALOG_VERTICAL_MARGIN)
+            .fillMaxWidth(),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        confirmButton = {
+            DialogBackdropBlur()
+            TextButton(onClick = onDismiss) { Text("OK") }
+        },
         title = { Text(stringResource(SCREEN_DISPLAY_NAMES[id] ?: R.string.settings)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -1940,7 +2180,7 @@ internal fun ChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
             selected = selected,
             onClick = onSelect,
             modifier = Modifier.fillMaxWidth(),
-            leadingContent = { RadioButton(selected = selected, onClick = null) },
+            leadingContent = { GlyphRadioButton(selected = selected, onClick = null) },
             colors = selectedRowColors(),
             contentPadding = CHOICE_ROW_PADDING,
         ) {
@@ -1961,7 +2201,7 @@ private fun PrefSwitch(title: String, key: String, def: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         trailingContent = {
             NoRipple {
-                Switch(checked = checked, onCheckedChange = {
+                GlyphSwitch(checked = checked, onCheckedChange = {
                     checked = it
                     Core.prefs.putBoolean(key, it)
                 })

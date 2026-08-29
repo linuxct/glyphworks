@@ -254,6 +254,9 @@ internal class DemoStep(
 private const val KIND_DYNAMIC = 1
 private const val PALETTE_GREY = 1
 private const val PALETTE_WHITE = 2
+
+// Far enough below the 2048 it starts at to read as a different shade at swatch size.
+private const val SHADE_DEMO_LEVEL = 1000
 private const val TOOL_UNDO = 0
 private const val TOOL_REDO = 1
 private const val FRAME_ACTION_ADD = 0
@@ -299,6 +302,21 @@ internal val DEMO_STEPS: List<DemoStep> = listOf(
         beat(600)
         tap(DemoTarget.TOOLS, index = TOOL_REDO)
         sandbox.state.redo()
+    },
+    DemoStep(
+        caption = R.string.demo_cap_shade,
+        stage = DemoStage.EDITOR,
+        target = DemoTarget.PALETTE,
+        targetIndex = PALETTE_GREY,
+    ) { sandbox ->
+        beat(300)
+        holdOn(DemoTarget.PALETTE, index = PALETTE_GREY)
+        beat(700)
+        release()
+        // The brush stays on white, so everything drawn after this step is unchanged; only the
+        // swatch that was held moves, which is the whole point being made.
+        sandbox.state.setBrushLevel(PALETTE_GREY, SHADE_DEMO_LEVEL)
+        beat(500)
     },
     DemoStep(
         caption = R.string.demo_cap_frames,

@@ -55,7 +55,6 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -91,6 +90,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import space.linuxct.glyphworks.ui.theme.DialogBackdropBlur
+import space.linuxct.glyphworks.ui.theme.dialogSurface
+import space.linuxct.glyphworks.ui.theme.glyphCorner
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
+import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.PrefKeys
@@ -410,7 +416,7 @@ private fun TourOfferCard(
     dismissLabel: String,
     onDismiss: () -> Unit,
 ) {
-    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
+    Surface(shape = glyphCorner(28.dp, 36.dp), color = dialogSurface()) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
@@ -653,7 +659,7 @@ private fun DesignCard(
         modifier = Modifier
             .fillMaxWidth()
             .then(placement),
-        shape = RoundedCornerShape(DESIGN_CARD_CORNER),
+        shape = glyphCorner(DESIGN_CARD_CORNER, 28.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Box(Modifier.fillMaxWidth()) {
@@ -700,6 +706,7 @@ private fun DesignCard(
                     expanded = menuOpen,
                     onDismissRequest = { menuOpen = false },
                     shape = MaterialTheme.shapes.large,
+                    containerColor = dialogSurface(),
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.create_show)) },
@@ -987,6 +994,7 @@ private fun NewDesignDialog(
     var dynamic by remember { mutableStateOf(false) }
     var target by remember(defaultTarget) { mutableStateOf(setOf(defaultTarget)) }
     AlertDialog(
+        containerColor = dialogSurface(),
         modifier = Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.create_new)) },
@@ -1001,6 +1009,7 @@ private fun NewDesignDialog(
             )
         },
         confirmButton = {
+            DialogBackdropBlur()
             TextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
@@ -1038,12 +1047,14 @@ internal fun NewDesignFields(
         )
         Spacer(Modifier.height(16.dp))
         NoRipple {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            GlyphSegmentedRow(selected = if (dynamic) 1 else 0, count = 2, modifier = Modifier.fillMaxWidth(), onCard = true) {
                 SegmentedButton(
                     selected = !dynamic,
                     onClick = { onDynamic(false) },
                     modifier = Modifier.demoTarget(DemoTarget.DIALOG_KIND, 0),
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    shape = glyphSegmentedShape(index = 0, count = 2),
+                    colors = glyphSegmentedColors(selected = !dynamic, onCard = true),
+                    icon = glyphSegmentedIcon(!dynamic),
                 ) {
                     Text(stringResource(R.string.create_kind_static))
                 }
@@ -1051,7 +1062,9 @@ internal fun NewDesignFields(
                     selected = dynamic,
                     onClick = { onDynamic(true) },
                     modifier = Modifier.demoTarget(DemoTarget.DIALOG_KIND, 1),
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    shape = glyphSegmentedShape(index = 1, count = 2),
+                    colors = glyphSegmentedColors(selected = dynamic, onCard = true),
+                    icon = glyphSegmentedIcon(dynamic),
                 ) {
                     Text(stringResource(R.string.create_kind_dynamic))
                 }
@@ -1112,6 +1125,7 @@ private fun RenameDesignDialog(design: Design, onDismiss: () -> Unit, onRename: 
     var typed by remember(design.id) { mutableStateOf(design.name) }
     val renamed = renamedName(design.name, typed)
     AlertDialog(
+        containerColor = dialogSurface(),
         modifier = Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.create_rename_title)) },
@@ -1123,6 +1137,7 @@ private fun RenameDesignDialog(design: Design, onDismiss: () -> Unit, onRename: 
             )
         },
         confirmButton = {
+            DialogBackdropBlur()
             TextButton(enabled = renamed != null, onClick = { renamed?.let(onRename) }) {
                 Text(stringResource(R.string.create_rename_save))
             }
@@ -1149,11 +1164,15 @@ private fun targetLabel(option: Set<PokemonCodename>): String =
 private fun DeleteDesignDialog(design: Design, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val unnamed = stringResource(R.string.pref_custom_unnamed)
     AlertDialog(
+        containerColor = dialogSurface(),
         modifier = Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.create_delete_title, design.name.ifBlank { unnamed })) },
         text = { Text(stringResource(R.string.create_delete_body)) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.create_delete)) } },
+        confirmButton = {
+            DialogBackdropBlur()
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.create_delete)) }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.create_cancel)) } },
     )
 }
@@ -1161,11 +1180,13 @@ private fun DeleteDesignDialog(design: Design, onDismiss: () -> Unit, onConfirm:
 @Composable
 private fun ImportFailedDialog(reason: String, onDismiss: () -> Unit) {
     AlertDialog(
+        containerColor = dialogSurface(),
         modifier = Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.create_import_failed_title)) },
         text = { Text(reason) },
         confirmButton = {
+            DialogBackdropBlur()
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.create_import_dismiss)) }
         },
     )

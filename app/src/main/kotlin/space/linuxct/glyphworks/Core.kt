@@ -11,6 +11,8 @@ import space.linuxct.glyphworks.core.Events
 import space.linuxct.glyphworks.core.GlyphLink
 import space.linuxct.glyphworks.core.Ports
 import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.core.resolveLucent
+import space.linuxct.glyphworks.core.runsLucentOs
 import space.linuxct.glyphworks.core.Prefs
 import space.linuxct.glyphworks.core.PrefsMigration
 import space.linuxct.glyphworks.core.ScreenManager
@@ -81,6 +83,8 @@ object Core {
 
         prefs = AndroidPrefs(app)
         if (PrefsMigration.run(prefs)) DebugLog.i("Core", "prefs migrated to v${PrefKeys.PREFS_VERSION_CURRENT}")
+        val lucent = resolveLucent(prefs, runsLucentOs(android.os.Build.DISPLAY))
+        DebugLog.i("Core", "build ${android.os.Build.DISPLAY} -> lucent=$lucent")
         armToyProbe()
         designStore = DesignStore(app)
         installOptionalHooks(app, designStore)

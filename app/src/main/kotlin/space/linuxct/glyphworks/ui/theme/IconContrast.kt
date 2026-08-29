@@ -16,6 +16,8 @@ internal fun fullContrastListItemColors() = ListItemDefaults.colors(
 
 @Composable
 internal fun fullContrastToggleColors() = IconButtonDefaults.filledIconToggleButtonColors(
+    // Unchecked sits on a card, so it shows the card rather than a white disc on top of it.
+    containerColor = if (MaterialTheme.lucent) Color.Transparent else Color.Unspecified,
     contentColor = MaterialTheme.colorScheme.onSurface,
     // M3 defaults this to contentColorFor(checkedContainerColor), but naming any argument
     // evaluates that against Color.Unspecified and the checked glyph turns invisible.

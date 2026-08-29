@@ -108,8 +108,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -137,7 +135,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -181,6 +178,8 @@ import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.ui.design.DemoTarget
 import space.linuxct.glyphworks.ui.design.DesignDemoActivity
 import space.linuxct.glyphworks.ui.design.demoTarget
+import space.linuxct.glyphworks.ui.theme.GlyphSlider
+import space.linuxct.glyphworks.ui.theme.dialogSurface
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.glyphworks.ui.theme.NavPillColors
 import space.linuxct.glyphworks.ui.theme.navPill
@@ -251,7 +250,7 @@ private fun AiRoundsRow() {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp),
         )
-        Slider(
+        GlyphSlider(
             value = rounds.toFloat(),
             onValueChange = {
                 Core.prefs.putInt(AiPrefKeys.MAX_ROUNDS, it.roundToInt())
@@ -260,13 +259,6 @@ private fun AiRoundsRow() {
             // `steps` counts the detents between the two ends, not the selectable values.
             steps = (AiPrefKeys.MAX_ROUNDS_MAX - AiPrefKeys.MAX_ROUNDS_MIN) /
                 AiPrefKeys.MAX_ROUNDS_STEP - 1,
-            // Ticks on the empty half of the track only, the way Nothing's volume panel
-            // draws them. Transparent active ticks rather than a custom `track`, so
-            // material3 keeps handling the geometry.
-            colors = SliderDefaults.colors(
-                activeTickColor = Color.Transparent,
-                disabledActiveTickColor = Color.Transparent,
-            ),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -359,6 +351,9 @@ private fun AiEffortRow() {
                 // `MenuTokens.ContainerShape` (4 dp); `SegmentedMenuTokens` says
                 // `CornerLarge` = 16 dp and nothing routes it to `DropdownMenu` yet.
                 shape = MaterialTheme.shapes.large,
+                // A menu is a Popup, so the window blur behind a dialog cannot reach it. It has
+                // to be opaque or the rows underneath read straight through it.
+                containerColor = dialogSurface(),
             ) {
                 // The enum is the only list, so the menu cannot fall out of step with the
                 // wire. Declaration order is ascending effort.

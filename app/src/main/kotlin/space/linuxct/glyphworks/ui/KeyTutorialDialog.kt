@@ -34,7 +34,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +67,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import space.linuxct.glyphworks.ui.theme.DialogBackdropBlur
+import space.linuxct.glyphworks.ui.theme.dialogSurface
+import space.linuxct.glyphworks.ui.theme.glyphCorner
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
+import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.ui.design.Camera
 import space.linuxct.glyphworks.ui.design.DeviceBack
@@ -77,7 +83,7 @@ import space.linuxct.glyphworks.ui.design.drawMatrix
 @Composable
 fun KeyTutorialDialog(onDismiss: () -> Unit) {
     MotionDialog(onDismiss) { dismiss ->
-        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
+        Surface(shape = glyphCorner(28.dp, 36.dp), color = dialogSurface()) {
             Column(
                 Modifier
                     .verticalScroll(rememberScrollState())
@@ -117,6 +123,7 @@ internal fun MotionDialog(
         ),
     ) {
         if (fullScreen) MatchDialogWindowSystemBarIconsToTheme()
+        DialogBackdropBlur()
         AnimatedVisibility(
             visibleState = visible,
             modifier = if (fullScreen) Modifier else Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
@@ -205,7 +212,7 @@ fun TutorialInfoDialog(
     onDismiss: () -> Unit,
 ) {
     MotionDialog(onDismiss) { dismiss ->
-        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface) {
+        Surface(shape = glyphCorner(28.dp, 36.dp), color = dialogSurface()) {
             Column(
                 Modifier
                     .verticalScroll(rememberScrollState())
@@ -292,18 +299,22 @@ private fun KeyTutorialContent(modifier: Modifier = Modifier) {
 @Composable
 private fun ModeSwitcher(menuMode: Boolean, onModeChange: (Boolean) -> Unit) {
     NoRipple {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        GlyphSegmentedRow(selected = if (menuMode) 1 else 0, count = 2, modifier = Modifier.fillMaxWidth(), onCard = true) {
             SegmentedButton(
                 selected = !menuMode,
                 onClick = { onModeChange(false) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                shape = glyphSegmentedShape(index = 0, count = 2),
+                colors = glyphSegmentedColors(selected = !menuMode, onCard = true),
+                icon = glyphSegmentedIcon(!menuMode),
             ) {
                 Text(stringResource(R.string.onb_mode_regular))
             }
             SegmentedButton(
                 selected = menuMode,
                 onClick = { onModeChange(true) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                shape = glyphSegmentedShape(index = 1, count = 2),
+                colors = glyphSegmentedColors(selected = menuMode, onCard = true),
+                icon = glyphSegmentedIcon(menuMode),
             ) {
                 Text(stringResource(R.string.onb_mode_menu))
             }

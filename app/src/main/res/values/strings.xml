@@ -201,6 +201,7 @@
     <string name="demo_cap_fab">Every design starts with the + beside the navigation bar. It is there on the Create tab and nowhere else.</string>
     <string name="demo_cap_new">A name is suggested for you and the drawing starts on the phone you are holding — each Glyph Matrix size is a separate drawing, and the other one can be added later. This is the answer you cannot change afterwards: static is a single still picture, dynamic adds a timeline of frames. The demo picks dynamic.</string>
     <string name="demo_cap_draw">The black disc is the Glyph Matrix, drawn where it sits on the back of the phone. Pick one of the three shades under it — “off” is the eraser — then drag across the disc to paint every cell your finger crosses; pinch with two fingers to zoom in. Undo takes back a whole stroke rather than one pixel, and beside it sit redo, clear and fill.</string>
+    <string name="demo_cap_shade">The three shades are not fixed ones. Press and hold any of them and a slider opens for that swatch alone, anywhere from off to full brightness, so you can keep three shades of your own choosing to hand. Whatever you have already drawn keeps the shade you drew it in — re-shading a swatch changes what you paint next, never what is already on the canvas.</string>
     <string name="demo_cap_frames">The strip is your frames. Duplicate copies the one you are on — copy, nudge a few pixels, repeat is how an animation gets drawn — and + adds a blank one after it. Nothing says so, so it is worth remembering: a frame is moved by pressing and holding it until it lifts, then dragging it along the strip. Each frame has its own length, set by the − and + on the left.</string>
     <string name="demo_cap_preview">The disc in the corner is your animation actually running, at the lengths you just set — the canvas behind it only ever shows the one frame you are drawing. Tap it and it grows to nearly the whole screen; tap again to send it back.</string>
     <string name="demo_cap_top_bar">Four buttons, left to right. Play runs the animation on the real Glyph Matrix, and pause puts the frame you are editing back on it — pressing play, or changing anything at all, also makes this the design the matrix keeps afterwards. The eye hides the preview disc when it sits over what you are drawing. Sparkles opens the design assistant: describe what you want, or hand it a photo, and it draws or animates it for you. The sliders are Design settings, which we are opening now — repeat, the Essential Key and artwork for the other phone size live behind them, the three easiest things in the editor to miss.</string>
@@ -263,6 +264,8 @@
 
     <!-- Per-screen settings -->
     <string name="pref_use12h">12-hour time</string>
+    <string name="pref_lucent">Nothing OS 5\'s Lucent theme</string>
+    <string name="pref_lucent_summary">Translucent surfaces, wallpaper colours and the Geist typeface</string>
     <string name="pref_coin_design">Coin design</string>
     <string name="pref_battery_watts">Show charging wattage while charging</string>
     <string name="pref_breathing_pace">Breathing pace (higher = slower)</string>
@@ -374,6 +377,8 @@
     <string name="editor_zoom_reset">Reset the zoom</string>
     <string name="editor_brush_off">Off</string>
     <string name="editor_brush_level">%1$d%% brightness</string>
+    <string name="editor_shade">Shade</string>
+    <string name="editor_shade_reshade">Change shade</string>
     <string name="editor_variant_hint">Each Glyph Matrix size is its own drawing — nothing is scaled between them.</string>
     <!-- The way back from "this phone only" at creation: names the size the design
          does NOT have yet, by product name. Adding it is not undoable from here —

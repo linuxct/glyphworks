@@ -3,6 +3,8 @@ package space.linuxct.glyphworks.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -10,15 +12,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import space.linuxct.glyphworks.core.DebugLog
+import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.ui.rememberPref
 import java.io.File
 
 private val LightScheme = lightColorScheme(
@@ -191,21 +197,44 @@ private fun buildTypography(headline: FontFamily): Typography = Typography().let
 
 @Composable
 fun GlyphWorksTheme(content: @Composable () -> Unit) {
-    val typography = remember {
+    val base = remember {
         val headline = deviceHeadlineFont() ?: run {
             DebugLog.i("Theme", "no Nothing headline font found; using system serif")
             FontFamily.Serif
         }
         buildTypography(headline)
     }
+    val lucent by rememberPref(PrefKeys.LUCENT_ENABLED) {
+        it.getBoolean(PrefKeys.LUCENT_ENABLED, PrefKeys.LUCENT_ENABLED_DEF)
+    }
     val dark = isSystemInDarkTheme()
-    CompositionLocalProvider(LocalNavPillColors provides if (dark) DarkNavPill else LightNavPill) {
+    val fallbackPill = if (dark) DarkNavPill else LightNavPill
+    val scheme = when {
+        lucent -> lucentColorScheme(dark)
+        dark -> DarkScheme
+        else -> LightScheme
+    }
+    CompositionLocalProvider(
+        LocalLucent provides lucent,
+        LocalNavPillColors provides
+            if (lucent) lucentNavPill(scheme, fallbackPill) else fallbackPill,
+        // `NoRipple` still nulls this out where it is provided further down.
+        LocalRippleConfiguration provides if (lucent) {
+            lucentRipple(
+                resting = scheme.surfaceContainerHighest.compositeOver(scheme.background),
+                pressed = scheme.secondaryContainer,
+            )
+        } else {
+            RippleConfiguration()
+        },
+    ) {
         MaterialTheme(
-            colorScheme = if (dark) DarkScheme else LightScheme,
+            colorScheme = scheme,
             // Keep plain MaterialTheme: MaterialExpressiveTheme would also swap the shape and
             // colour defaults, which breaks the monochrome palette.
+            shapes = if (lucent) LucentShapes else MaterialTheme.shapes,
             motionScheme = MotionScheme.expressive(),
-            typography = typography,
+            typography = if (lucent) lucentTypography(base) else base,
             content = content,
         )
     }

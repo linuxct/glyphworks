@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
@@ -27,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -54,7 +54,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -89,6 +88,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -106,6 +106,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import space.linuxct.glyphworks.ui.theme.lucent
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
+import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
 import space.linuxct.glyphworks.ui.theme.fullContrastListItemColors
 import space.linuxct.glyphworks.ui.theme.fullContrastToggleColors
 import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
@@ -133,6 +138,8 @@ import space.linuxct.glyphworks.ui.requestPeakRefreshRateWhileVisible
 import space.linuxct.glyphworks.ui.saveRespectingAuthor
 import space.linuxct.glyphworks.ui.showDesignOnMatrix
 import space.linuxct.glyphworks.ui.ShowOnMatrix
+import space.linuxct.glyphworks.ui.theme.GlyphSlider
+import space.linuxct.glyphworks.ui.theme.dialogSurface
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import kotlin.math.ceil
 import kotlin.math.max
@@ -435,7 +442,7 @@ private fun EditorBody(
             modifier = Modifier.fillMaxWidth().weight(1f).demoTarget(DemoTarget.CANVAS),
         )
         Spacer(Modifier.height(CANVAS_PALETTE_GAP))
-        PaletteRow(state)
+        PaletteRow(state, onEdit)
         Spacer(Modifier.height(4.dp))
         ToolRow(
             state,
@@ -468,7 +475,7 @@ internal fun DesignSettingsCard(state: EditorState, onChanged: () -> Unit, onClo
     Surface(
         modifier = Modifier.width(dialogCardWidth()),
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = dialogSurface(),
     ) {
         Column(
             Modifier
@@ -735,11 +742,55 @@ private const val LIGHT_SWATCH_LED = 0.29f
 private const val DARK_SWATCH_LED = 0.46f
 
 @Composable
-private fun PaletteRow(state: EditorState) {
-    val ring = MaterialTheme.colorScheme.onSurface
+private fun SwatchFace(level: Int, selected: Boolean, modifier: Modifier = Modifier) {
+    val ring = if (MaterialTheme.lucent) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val hairline = MaterialTheme.colorScheme.outline
-    val off = stringResource(R.string.editor_brush_off)
+    Canvas(modifier) {
+        val radius = size.minDimension / 2f
+        val glass = if (light) radius * LIGHT_SWATCH_GLASS else radius
+        val led = radius * if (light) LIGHT_SWATCH_LED else DARK_SWATCH_LED
+        if (light) {
+            drawCircle(Color.White, radius = radius, center = center)
+            drawCircle(
+                hairline,
+                radius = radius - HAIRLINE.toPx() / 2f,
+                center = center,
+                style = Stroke(width = HAIRLINE.toPx()),
+            )
+        }
+        drawCircle(MATRIX_DISC_COLOR, radius = glass, center = center)
+        val alpha = level / DesignFrames.MAX_BRIGHTNESS.toFloat()
+        drawCircle(
+            Color.White.copy(alpha = if (level == 0) UNLIT_SWATCH_ALPHA else alpha),
+            radius = led,
+            center = center,
+        )
+        if (selected) {
+            val half = SELECTION_RING.toPx()
+            drawCircle(ring, radius = radius - half, center = center, style = Stroke(width = half * 2f))
+        }
+    }
+}
+
+@Composable
+private fun shadeLabel(level: Int): String = if (level == 0) {
+    stringResource(R.string.editor_brush_off)
+} else {
+    stringResource(
+        R.string.editor_brush_level,
+        (level * 100f / DesignFrames.MAX_BRIGHTNESS).roundToInt(),
+    )
+}
+
+@Composable
+private fun PaletteRow(state: EditorState, onChanged: () -> Unit) {
+    var shading by remember { mutableStateOf<Int?>(null) }
+    val reshade = stringResource(R.string.editor_shade_reshade)
     NoRipple {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).selectableGroup(),
@@ -747,57 +798,85 @@ private fun PaletteRow(state: EditorState) {
         ) {
             state.brushIndices.forEach { index ->
                 val level = state.levelAt(index)
-                val selected = index == state.brushIndex
-                val percent = (level * 100f / DesignFrames.MAX_BRIGHTNESS).roundToInt()
-                val label = if (level == 0) off else stringResource(R.string.editor_brush_level, percent)
+                val isSelected = index == state.brushIndex
+                val label = shadeLabel(level)
                 Box(
                     Modifier
                         .padding(horizontal = 8.dp)
                         .size(SWATCH_SIZE)
                         .demoTarget(DemoTarget.PALETTE, index)
-                        .selectable(
-                            selected = selected,
+                        .combinedClickable(
                             role = Role.RadioButton,
+                            onLongClickLabel = reshade,
+                            onLongClick = { shading = index },
                             onClick = { state.brushIndex = index },
                         )
-                        .semantics { contentDescription = label },
+                        .semantics {
+                            selected = isSelected
+                            contentDescription = label
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val radius = size.minDimension / 2f
-                        val glass = if (light) radius * LIGHT_SWATCH_GLASS else radius
-                        val led = radius * if (light) LIGHT_SWATCH_LED else DARK_SWATCH_LED
-                        if (light) {
-                            drawCircle(Color.White, radius = radius, center = center)
-                            drawCircle(
-                                hairline,
-                                radius = radius - HAIRLINE.toPx() / 2f,
-                                center = center,
-                                style = Stroke(width = HAIRLINE.toPx()),
-                            )
-                        }
-                        drawCircle(MATRIX_DISC_COLOR, radius = glass, center = center)
-                        val alpha = level / DesignFrames.MAX_BRIGHTNESS.toFloat()
-                        drawCircle(
-                            Color.White.copy(alpha = if (level == 0) UNLIT_SWATCH_ALPHA else alpha),
-                            radius = led,
-                            center = center,
-                        )
-                        if (selected) {
-                            val half = SELECTION_RING.toPx()
-                            drawCircle(
-                                ring,
-                                radius = radius - half,
-                                center = center,
-                                style = Stroke(width = half * 2f),
-                            )
-                        }
-                    }
+                    SwatchFace(level = level, selected = isSelected, modifier = Modifier.fillMaxSize())
+                }
+            }
+        }
+    }
+    shading?.let { index ->
+        ShadeDialog(
+            state = state,
+            index = index,
+            onChanged = onChanged,
+            onDismiss = { shading = null },
+        )
+    }
+}
+
+@Composable
+private fun ShadeDialog(state: EditorState, index: Int, onChanged: () -> Unit, onDismiss: () -> Unit) {
+    var level by remember(index) { mutableIntStateOf(state.levelAt(index)) }
+    MotionDialog(
+        onDismiss = {
+            if (state.setBrushLevel(index, level)) onChanged()
+            onDismiss()
+        },
+    ) { dismiss ->
+        Surface(
+            modifier = Modifier.width(dialogCardWidth()),
+            shape = RoundedCornerShape(28.dp),
+            color = dialogSurface(),
+        ) {
+            Column(
+                Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.editor_shade),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(shadeLabel(level), style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(16.dp))
+                SwatchFace(level = level, selected = false, modifier = Modifier.size(SHADE_PREVIEW_SIZE))
+                Spacer(Modifier.height(16.dp))
+                GlyphSlider(
+                    value = level.toFloat(),
+                    onValueChange = { level = it.roundToInt() },
+                    valueRange = 0f..DesignFrames.MAX_BRIGHTNESS.toFloat(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = dismiss) { Text(stringResource(R.string.tut_close)) }
                 }
             }
         }
     }
 }
+
+private val SHADE_PREVIEW_SIZE = 88.dp
 
 private const val UNLIT_SWATCH_ALPHA = 0.10f
 
@@ -882,12 +961,18 @@ private fun ToolRow(
 private fun VariantRow(state: EditorState, onSwitched: () -> Unit) {
     val present = state.variantsPresent
     NoRipple {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        GlyphSegmentedRow(
+            selected = present.indexOf(state.codename),
+            count = present.size,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        ) {
             present.forEachIndexed { i, codename ->
                 SegmentedButton(
                     selected = codename == state.codename,
                     onClick = { if (state.switchTo(codename)) onSwitched() },
-                    shape = SegmentedButtonDefaults.itemShape(index = i, count = present.size),
+                    shape = glyphSegmentedShape(index = i, count = present.size),
+                    colors = glyphSegmentedColors(selected = codename == state.codename),
+                    icon = glyphSegmentedIcon(codename == state.codename),
                 ) {
                     SegmentLabel(stringResource(codename.displayNameRes()))
                 }
@@ -1052,6 +1137,60 @@ internal class EditorState(design: Design, codename: PokemonCodename) {
         design.levels.getOrElse(index) { 0 }.coerceIn(0, DesignFrames.MAX_BRIGHTNESS)
 
     fun brushValue(): Int = levelAt(brushIndex)
+
+    /**
+     * Every codename stores its pixels as indices into [Design.levels], so a swatch cannot just be
+     * written over. A shade that is still painted somewhere moves to a fresh index first and the
+     * codenames that are not open are re-encoded around it, which leaves their artwork alone.
+     */
+    fun setBrushLevel(index: Int, level: Int): Boolean {
+        if (index !in brushIndices) return false
+        val wanted = level.coerceIn(0, DesignFrames.MAX_BRIGHTNESS)
+        val previous = design.levels[index]
+        if (previous == wanted) return false
+        val levels = design.levels.toMutableList()
+        levels[index] = wanted
+        if (previous !in levels && levels.size < DesignFrames.MAX_PALETTE && stillPainted(previous)) {
+            levels.add(previous)
+        }
+        design = design.copy(levels = levels, variants = repaletted(levels))
+        markEdited()
+        return true
+    }
+
+    private fun stillPainted(level: Int): Boolean =
+        frames.any { entry -> entry.frame.copyOfCells().any { it == level } } ||
+            closedVariantCells().any { cells -> cells.any { it == level } }
+
+    private fun closedVariantCells(): List<IntArray> = buildList {
+        forEachClosedVariant { other, variant ->
+            variant.frames.forEach { frame ->
+                DesignFrames.decode(frame.cells, design.levels, other.size)?.let { add(it) }
+            }
+        }
+    }
+
+    private fun repaletted(levels: List<Int>): Map<String, DesignVariant> {
+        val out = design.variants.toMutableMap()
+        forEachClosedVariant { other, variant ->
+            val encoded = ArrayList<DesignFrame>(variant.frames.size)
+            for (frame in variant.frames) {
+                val cells = DesignFrames.decode(frame.cells, design.levels, other.size)
+                val recoded = cells?.let { DesignFrames.encode(it, levels, other.size) } ?: return@forEachClosedVariant
+                encoded.add(frame.copy(cells = recoded))
+            }
+            out[other.codename] = variant.copy(frames = encoded)
+        }
+        return out
+    }
+
+    private inline fun forEachClosedVariant(body: (PokemonCodename, DesignVariant) -> Unit) {
+        for ((name, variant) in design.variants) {
+            val other = PokemonCodename.ofCodename(name) ?: continue
+            if (other == codename) continue
+            body(other, variant)
+        }
+    }
 
     fun cellsForDraw(): IntArray = selected.frame.cellsForDraw()
 

@@ -33,6 +33,12 @@ object PrefKeys {
     const val MENU_MODE_ENABLED = "menuModeEnabled"
     const val MENU_MODE_ENABLED_DEF = false
 
+    const val LUCENT_ENABLED = "lucentEnabled"
+    const val LUCENT_ENABLED_DEF = false
+
+    const val LUCENT_ADOPTED = "lucentAdopted"
+    const val LUCENT_ADOPTED_DEF = false
+
     const val SCREEN_ORDER = "screen_order"
 
     // `rps` stays listed while Rock Paper Scissors is off. Readers drop ids they cannot

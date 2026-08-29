@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import space.linuxct.glyphworks.ui.theme.DialogBackdropBlur
+import space.linuxct.glyphworks.ui.theme.dialogSurface
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.design.Design
 import space.linuxct.glyphworks.core.design.DesignFrame
@@ -44,6 +46,7 @@ internal fun MarqueeDialog(state: EditorState, onDismiss: () -> Unit, onGenerate
     val drawnFrames = remember(state) { drawnFrameCount(state) }
 
     AlertDialog(
+        containerColor = dialogSurface(),
         modifier = Modifier.padding(vertical = DIALOG_VERTICAL_MARGIN),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.marquee_title)) },
@@ -66,6 +69,7 @@ internal fun MarqueeDialog(state: EditorState, onDismiss: () -> Unit, onGenerate
             }
         },
         confirmButton = {
+            DialogBackdropBlur()
             TextButton(
                 enabled = ready != null,
                 onClick = {
@@ -158,13 +162,15 @@ private fun MarqueeStatus(
 
 internal fun marqueePlanFor(state: EditorState, text: String, step: Int? = null): MarqueePlan {
     val size = state.codename.size
-    val brightestLevel = state.design.levels.lastIndex
-    val paletteCanDrawText = brightestLevel >= 1
-    if (!paletteCanDrawText) return MarqueePlan.Blank
+    // By value, not by position: re-shading a swatch parks the shade it replaced at the end of
+    // the palette, so the last entry is not the brightest one.
+    val levels = state.design.levels
+    val brightest = levels.indices.filter { levels[it] > 0 }.maxByOrNull { levels[it] }
+        ?: return MarqueePlan.Blank
     return MarqueeText.plan(
         text = text,
         size = size,
-        paletteIndex = state.brushIndex.takeIf { it in 1..brightestLevel } ?: brightestLevel,
+        paletteIndex = state.brushIndex.takeIf { levels.getOrElse(it) { 0 } > 0 } ?: brightest,
         step = step ?: MarqueeText.defaultStep(size),
     )
 }

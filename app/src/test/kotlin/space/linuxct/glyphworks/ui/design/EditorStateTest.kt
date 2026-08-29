@@ -449,4 +449,55 @@ class EditorStateTest {
         assertEquals(before.copy(modifiedAt = ""), state.composed().copy(modifiedAt = ""))
         assertEquals(DEFAULT_LEVELS.last(), state.cells(0)[2 * home.size + 2])
     }
+
+    @Test
+    fun aReShadedSwatchPaintsTheNewShadeAndLeavesTheOldStrokeAlone() {
+        val state = state()
+        state.brushIndex = 2
+        state.stroke(0, 0)
+
+        assertTrue(state.setBrushLevel(2, 1000))
+        assertEquals(1000, state.brushValue())
+        state.stroke(1, 0)
+
+        val saved = state.composed()
+        val cells = DesignFrames.decode(
+            saved.variantFor(home)!!.frames[0].cells,
+            saved.levels,
+            home.size,
+        )!!
+        assertEquals("the earlier stroke followed the swatch", DEFAULT_LEVELS.last(), cells[0])
+        assertEquals(1000, cells[1])
+    }
+
+    @Test
+    fun aReShadedSwatchLeavesTheOtherGlyphSizeAlone() {
+        val other = PokemonCodename.ARBOK
+        val painted = IntArray(other.cellCount).also { it[0] = DEFAULT_LEVELS.last() }
+        val base = design().let { start ->
+            start.copy(
+                variants = start.variants + (
+                    other.codename to DesignVariant(
+                        frames = listOf(
+                            DesignFrame(
+                                durationMs = 100,
+                                cells = DesignFrames.encode(painted, DEFAULT_LEVELS, other.size)!!,
+                            ),
+                        ),
+                    )
+                    ),
+            )
+        }
+        val state = EditorState(base, home)
+
+        assertTrue(state.setBrushLevel(2, 1000))
+
+        val saved = state.composed()
+        val cells = DesignFrames.decode(
+            saved.variantFor(other)!!.frames[0].cells,
+            saved.levels,
+            other.size,
+        )!!
+        assertEquals(DEFAULT_LEVELS.last(), cells[0])
+    }
 }

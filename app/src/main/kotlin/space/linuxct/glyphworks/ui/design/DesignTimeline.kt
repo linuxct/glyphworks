@@ -39,8 +39,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -78,6 +76,10 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.core.design.KeyMode
@@ -579,13 +581,20 @@ internal fun PlaybackRow(state: EditorState, onChanged: () -> Unit) {
     )
     Spacer(Modifier.height(8.dp))
     NoRipple {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        GlyphSegmentedRow(
+            selected = KEY_MODES.indexOfFirst { it.first == state.design.keyMode },
+            count = KEY_MODES.size,
+            modifier = Modifier.fillMaxWidth(),
+            onCard = true,
+        ) {
             KEY_MODES.forEachIndexed { i, (mode, label) ->
                 SegmentedButton(
                     selected = state.design.keyMode == mode,
                     onClick = { if (state.setKeyMode(mode)) onChanged() },
                     modifier = Modifier.demoTarget(DemoTarget.KEY_MODE, i),
-                    shape = SegmentedButtonDefaults.itemShape(index = i, count = KEY_MODES.size),
+                    shape = glyphSegmentedShape(index = i, count = KEY_MODES.size),
+                    colors = glyphSegmentedColors(selected = state.design.keyMode == mode, onCard = true),
+                    icon = glyphSegmentedIcon(state.design.keyMode == mode),
                 ) {
                     SegmentLabel(stringResource(label))
                 }
