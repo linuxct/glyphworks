@@ -20,6 +20,7 @@ import kotlin.math.abs
 
 class SystemClockPort : ClockPort {
     override fun nowMillis(): Long = System.currentTimeMillis()
+    override fun elapsedMillis(): Long = android.os.SystemClock.elapsedRealtime()
     override fun hourOfDay(): Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     override fun minute(): Int = Calendar.getInstance().get(Calendar.MINUTE)
     override fun second(): Int = Calendar.getInstance().get(Calendar.SECOND)

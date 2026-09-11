@@ -15,6 +15,8 @@ object ScreenRegistry {
         EyesScreen(),
         SpeedScreen(),
         BatteryScreen(),
+        NotificationsScreen(),
+        WeatherScreen(),
         SolarScreen(),
         MoonScreen(),
         DiceScreen(),

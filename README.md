@@ -42,7 +42,7 @@
 The Phone (4a) Pro has a Glyph Matrix but no Glyph Button, so Nothing gives it a single always-on
 toy that you can't tap or switch.
 
-GlyphWorks remaps the **Essential Key** to do that job. You get 19 toys, a pixel editor for your own
+GlyphWorks remaps the **Essential Key** to do that job. You get 20 toys, a pixel editor for your own
 designs, and control of all of them from the key — on the lock screen, on the always-on display, and
 while you use the phone. The Phone (3) works too, through its real Glyph Button.
 
@@ -53,7 +53,7 @@ Essential Voice if the system opens them.
 
 **Regular mode** (default)
 
-- **1 press** — the current toy's action (roll, flip, +1, start the timer…)
+- **1 press** — the current toy's action (change Ambient background, roll, flip, +1, start the timer…)
 - **2 presses** — next toy
 - **3 presses** — back to the first toy in your list
 
@@ -68,11 +68,18 @@ Nothing OS.
 
 ## Toys
 
-**Interactive** (a single press does something): Dice · Coin Flip · Dino Run · Spin the Bottle ·
-Rock Paper Scissors · Counter · Breathing · Timer · Custom Design
+**Interactive** (a single press does something): Ambient · Dice · Coin Flip · Dino Run ·
+Spin the Bottle · Counter · Breathing · Timer · Custom Design
 
-**Passive:** Ambient (10 backgrounds, plus charge and music layers) · Clock · Eyes · Download Speed ·
-Battery · Solar Path · Moon Phase · Compass · Level · Music Visualizer
+**Passive:** Clock · Eyes · Download Speed · Battery · Solar Path · Moon Phase · Notifications ·
+Weather · Compass · Level · Music Visualizer
+
+Ambient cycles through the backgrounds you enable, with a single press or optionally every
+15 seconds. Its 12 choices include the new **Notifications** and **Weather** displays, and music
+and charging still take priority. Notifications shows **0–9**, then **9+**, with a choice of envelope,
+lowercase “txt”, notification dot, or a full-size bell/count marquee. Ambient uses the individual
+toys' settings, including Battery's charging display and the Notifications style.
+Weather alternates a condition icon and temperature with a leftward marquee, in Celsius or Fahrenheit.
 
 All of them can be switched off, reordered and configured in the app. [`docs/TOYS.md`](docs/TOYS.md)
 says what each one actually does.
@@ -94,13 +101,19 @@ Install, open, and the app's built-in onboarding process walks you through it. I
 
 1. Turn on the accessibility service (sideloaded builds may need *Allow restricted settings* first).
 2. Pick GlyphWorks as your always-on Glyph Toy.
-3. Grant what you want: microphone (visualizer), location (solar path, compass), notifications and
-   exact alarms (timer).
+3. Grant what you want: microphone (visualizer), approximate location (solar path, compass and
+   optional weather), permission to post notifications and exact alarms (timer). The Notifications
+   toy has its own **notification access** setting. Use **Set up Weather** during onboarding,
+   or **Settings → Initial setup → Weather & location**, to enable weather and allow location
+   **all the time** if you want it to follow your movements while the phone is locked.
 4. Hand the key over — keep Essential Space and Recorder enabled, then:
    - Settings → Intelligence Toolkit → **Essential Key Settings** → turn **on** "Activate with single
      tap before use"
    - Settings → Intelligence Toolkit → **Essential Voice** → turn **off** "Activate via Essential Key"
 5. Press the key twice.
+
+The **Make Ambient your own** tutorial explains background selection, key presses, automatic cycling,
+and notification/weather setup, with a button straight to Ambient settings.
 
 Only the Phone (3) and the Phone (4a) Pro are supported — the app refuses to run without a Glyph
 Matrix.
@@ -130,10 +143,15 @@ There's a second flavour, `play`, which ships without the design assistant and t
 
 ## Privacy
 
-The GitHub version does automatically only one network call: a daily check of this repo's GitHub 
-Releases for a new version. Nothing else leaves your phone. If you wish to enable it, the design assitant
-will send the custom design you are currently editing and help you customize it to your liking with the help
-of OpenAI's models. On the other hand, the Play build has no `INTERNET` permission at all.
+Weather is optional in both builds. When enabled and in use, it sends approximate coordinates to
+[Open-Meteo](https://open-meteo.com/) over HTTPS; the provider also receives your IP address.
+Notification counting stays on the phone and never reads notification text. There are no ads,
+analytics, or crash-report uploads.
+
+The GitHub build also checks GitHub Releases for updates and includes an optional design assistant
+that sends your prompts and selected design inputs to OpenAI. Those two features are absent from
+the Play build. Both builds now have internet permission for Weather. See the
+[privacy policy](docs/privacy.md) for permissions, local caching, and provider retention.
 
 ## Contributing
 

@@ -4,6 +4,8 @@ import space.linuxct.glyphworks.core.design.Design
 
 interface ClockPort {
     fun nowMillis(): Long
+    /** Monotonic time for animation and intervals; calendar changes must not advance them. */
+    fun elapsedMillis(): Long
     fun hourOfDay(): Int
     fun minute(): Int
     fun second(): Int
@@ -94,4 +96,6 @@ class Ports(
     val location: LocationPort,
     val timer: TimerSignalPort,
     val design: DesignPort,
+    val notifications: NotificationPort = NotificationPort { null },
+    val weather: WeatherPort = NoWeatherPort,
 )

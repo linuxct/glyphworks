@@ -20,6 +20,7 @@ import space.linuxct.glyphworks.FakeSpectrum
 import space.linuxct.glyphworks.FakeSpeed
 import space.linuxct.glyphworks.FakeTimer
 import space.linuxct.glyphworks.FakeTilt
+import space.linuxct.glyphworks.TestHarness
 import space.linuxct.glyphworks.core.Events
 import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.Ports
@@ -27,6 +28,8 @@ import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
 import space.linuxct.glyphworks.core.ScreenManager
 import space.linuxct.glyphworks.core.SessionControl
+import space.linuxct.glyphworks.screens.ambient.AmbientScreen
+import space.linuxct.glyphworks.screens.ambient.BackgroundRenderers
 
 private class RouterProbe(override val id: String) : GlyphScreen {
     override val interactive = true
@@ -167,5 +170,44 @@ class KeyActionRouterTest {
         router.execute(SINGLE_PRESS)
         assertEquals(1, arbiter.reviveCount)
         assertTrue(ambient.events.isEmpty())
+    }
+
+    @Test
+    fun `real Ambient cycles through both key paths without consuming multi press navigation`() {
+        for (menuMode in listOf(false, true)) {
+            val h = TestHarness()
+            h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, "text_clock,connection")
+            h.prefs.putString(PrefKeys.SCREEN_ORDER, "ambient,clock")
+            h.prefs.putBoolean(PrefKeys.MENU_MODE_ENABLED, menuMode)
+            val ambientScreen = AmbientScreen()
+            val otherScreen = RouterProbe("clock")
+            val manager = h.manager(listOf(ambientScreen, otherScreen))
+            manager.startSession()
+            val router = KeyActionRouter(FakeSessionControl(), manager, h.scheduler, h.prefs)
+            val initial = h.output.last()
+
+            router.firstPress()
+            assertTrue(h.output.last().contentEquals(initial))
+            router.execute(SINGLE_PRESS)
+            val connection = h.output.last()
+            assertTrue(connection.contentEquals(BackgroundRenderers.create("connection").render(h.context, h.clock.now)))
+            router.glyphButtonChange()
+            assertTrue(h.output.last().contentEquals(initial))
+
+            router.firstPress()
+            router.execute(DOUBLE_PRESS)
+            if (menuMode) {
+                assertTrue(manager.inMenu)
+                assertEquals("ambient", manager.currentScreen().id)
+                router.glyphButtonChange()
+                assertEquals("clock", manager.currentScreen().id)
+                router.execute(DOUBLE_PRESS)
+                assertFalse(manager.inMenu)
+            }
+            assertEquals("clock", manager.currentScreen().id)
+            router.execute(TRIPLE_PRESS)
+            assertEquals("ambient", manager.currentScreen().id)
+            assertTrue(h.output.last().contentEquals(initial))
+        }
     }
 }

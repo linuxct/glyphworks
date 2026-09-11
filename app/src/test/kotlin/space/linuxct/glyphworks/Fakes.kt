@@ -23,6 +23,10 @@ import space.linuxct.glyphworks.core.SpeedPort
 import space.linuxct.glyphworks.core.TimerSignalPort
 import space.linuxct.glyphworks.core.TiltPort
 import space.linuxct.glyphworks.core.design.Design
+import space.linuxct.glyphworks.core.NotificationPort
+import space.linuxct.glyphworks.core.WeatherPort
+import space.linuxct.glyphworks.core.weather.WeatherSnapshot
+import space.linuxct.glyphworks.core.weather.WeatherStatus
 
 class FakePrefs : Prefs {
     val map = mutableMapOf<String, Any>()
@@ -67,7 +71,9 @@ class FakeClock(
     var utcOffsetMin: Int = 0,
     var doy: Int = 80,
 ) : ClockPort {
+    var elapsed = now
     override fun nowMillis() = now
+    override fun elapsedMillis() = elapsed
     override fun hourOfDay() = hour
     override fun minute() = min
     override fun second() = sec
@@ -76,6 +82,7 @@ class FakeClock(
 
     fun advance(ms: Long) {
         now += ms
+        elapsed += ms
     }
 }
 
@@ -145,6 +152,16 @@ class FakeConnectivity(var value: ConnectionState = ConnectionState.WIFI) : Conn
 
 class FakeLocation(var value: Pair<Double, Double>? = 0.0 to 0.0) : LocationPort {
     override fun latLon() = value
+}
+
+class FakeNotifications(var value: Int? = null) : NotificationPort {
+    override fun count() = value
+}
+
+class FakeWeather(var value: WeatherSnapshot = WeatherSnapshot(WeatherStatus.DISABLED)) : WeatherPort {
+    val demands = mutableListOf<Boolean>()
+    override fun snapshot() = value
+    override fun setActive(active: Boolean) { demands += active }
 }
 
 class FakeDesignPort(var design: Design? = null) : DesignPort {
@@ -243,10 +260,12 @@ class TestHarness(
     val location = FakeLocation()
     val timer = FakeTimer()
     val design = FakeDesignPort()
+    val notifications = FakeNotifications()
+    val weather = FakeWeather()
 
     val ports = Ports(
         clock, random, battery, speed, spectrum, azimuth, shake, tilt, incline, light,
-        connectivity, location, timer, design,
+        connectivity, location, timer, design, notifications, weather,
     )
 
     val frames = mutableListOf<IntArray>()

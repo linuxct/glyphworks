@@ -71,8 +71,12 @@ The pages, in order. **Next** skips any step, and the main screen holds all of t
    It shows a live status line, a button to the Accessibility settings, and a card for sideloaded
    installs with a direct button to App info.
 2. **Put GlyphWorks on the matrix** — the always-on toy, and a deep link to the picker of the system.
-3. **Permissions** — the optional permissions in one card: notifications, microphone, location and
-   exact alarms. Each one names the single feature that it powers. The states refresh live.
+3. **Permissions** — optional access for posting Timer notifications, the microphone, approximate
+   location and exact alarms, plus separate notification-listener access for the Notifications toy.
+   **Set up Weather** opens the shared weather settings during onboarding: explicit opt-in,
+   approximate location, then the explanation and link for Android's separate background-location
+   grant. The same controls are always available under **Settings → Initial setup → Weather &
+   location**, including before weather is enabled. States refresh on returning from Android Settings.
 4. **Key mode** — Regular mode or Menu mode. This page appears only when the service is on. A
    **"How do they work?"** button opens the animated tutorial.
 5. **Ready-made toys, or your own** — the toys in the app, the Create tab and the Tutorials tab. It
@@ -84,19 +88,24 @@ The flow re-reads system state each time you come back from Settings, so the sta
 conditional page stay correct. Finishing the flow sets a preference. Until then, MainActivity sends
 you back to onboarding.
 
+**Make Ambient your own** in Tutorials uses the shared `TutorialInfoDialog` presentation. It explains
+background selections and ordering, manual and 15-second cycling, menu behavior, overlay priority,
+and setup for Notifications and Weather. Its action opens the same Ambient settings dialog used by
+the Glyph Toys page.
+
 ## The two flavours
 
 The build has one flavour dimension, `distribution`, with **`github`** and **`play`**.
 
-The Play build ships without the design assistant and without the update check. The code is absent,
-not switched off. `src/github/` holds `ai/`, `core/ai/`, `update/`, the AI dialogs and their strings.
-`src/play/` does not hold them, and it declares no `INTERNET` permission. A reviewer can check the
-claim "no data collected, no data shared" from the binary:
+The Play build ships without the design assistant and without the update check. `src/github/`
+holds `ai/`, `core/ai/`, `update/`, the AI dialogs and their strings; `src/play/` excludes them.
+Starting with 3.3.0, **Weather is in both flavours** and `INTERNET` is declared in the common
+manifest. Optional weather requests send approximate coordinates to Open-Meteo, which also receives
+the connection's IP address. The [privacy policy](privacy.md) describes those requests and caching.
 
-```sh
-aapt2 dump permissions app-play-release.apk | grep INTERNET                     # no output
-unzip -p app-play-release.apk classes.dex | strings | grep -ciE 'openai|codex'  # 0
-```
+Review both merged manifests and the compiled Play classes when checking flavour separation.
+The Play APK should contain the weather client and the new listener, with no assistant or updater
+classes. Internet permission is now expected in both APKs; its absence is no longer a valid check.
 
 Each excluded entry point is a seam. One function has two declarations with the same signature: a
 real one in `src/github/…/ui/OptionalFeatures.kt`, and an empty one in
@@ -121,11 +130,28 @@ Data ports hide the platform, so every toy draws in pure Kotlin. The JVM tests d
 13×13 and 25×25, then compare the result to an **ASCII golden file** in
 `app/src/test/resources/goldens/`. Open one and you can see the frame with your own eyes.
 
-After an intended visual change, write the goldens again:
+For the new information toys, `InformationScreensTest` also writes enlarged panel sheets and
+replayable weather SVGs to `app/build/reports/information-toys/`. These use the same rendered frames
+and physical `PanelMask` as the assertions. Preview generation lives in the JVM tests; no device or
+separate image-generation tool is needed. The Phone (4a) Pro artwork uses 13×13, then Phone (3) gets
+its own 25×25 design.
+
+After an intended visual change, update only the affected goldens, inspect the resulting artwork,
+and run the test again in comparison mode:
 
 ```sh
-./gradlew :app:testGithubDebugUnitTest -DupdateGoldens=true
+./gradlew :app:testGithubDebugUnitTest --tests '*InformationScreensTest' -DupdateGoldens=true
+./gradlew :app:testGithubDebugUnitTest --tests '*InformationScreensTest'
 ```
+
+The notification counter tests cover duplicate posts, removals, grouping, excluded entries and
+listener lifecycle. Weather repository tests exercise refresh timing, provider responses, movement,
+cache expiry and permission changes without real network or location access. Ambient tests use
+fake elapsed time for manual cycling, 15-second boundaries, overlays and hidden backgrounds.
+Notification presentation tests cover all four styles, bell/count marquee boundaries and visibility
+resets, and parity with Ambient. Preferences schema 4 removes `ambientChargingStyle` without
+copying it over `batteryShowWatts`; Battery, Ambient's charging overlay, and its Battery gauge
+background use one preference-aware renderer.
 
 ## CI and releases
 
@@ -149,6 +175,32 @@ workflow verifies the signature before it creates the tag. Without a `keystore.p
 writes an unsigned release instead of failing, and the Play Console rejects that hours later. Put a
 `keystore.properties` in the repository root for the same setup on your machine.
 
+### Version 3.3.0 release and listing notes
+
+Version 3.3.0 uses version code **21**. Its release text should highlight selectable Ambient
+backgrounds, single-press cycling, optional 15-second cycling, Notifications (0–9 / 9+), and Weather
+with the icon/temperature marquee. Both new toys are standalone and Ambient backgrounds. There are
+20 registered toys; Rock Paper Scissors remains excluded from the registry.
+
+Before publishing this version:
+
+- Update the store description and privacy link for optional Weather in both builds and separate
+  notification access. Remove any claim that the current Play build cannot access the internet.
+- Review the Play Console Data safety answers against the actual release: optional approximate
+  coordinates sent to Open-Meteo, provider IP/log handling, and local-only notification metadata.
+  The old blanket “no data collected” declaration must not be carried forward without this review.
+- Describe the background-location use case as keeping the user-enabled Weather display current
+  when the phone moves while locked/AOD. Provide the required review material showing Weather
+  opt-in, the in-app explanation, Android's separate grant, and the resulting display. Foreground
+  location remains usable without that additional grant.
+- Keep the accessibility disclosure specific to Essential Key control. Notification access uses
+  its own Android service; neither notification data nor accessibility events enter weather requests.
+
+Open-Meteo's free service supports noncommercial apps without advertising or subscriptions, fitting
+GlyphWorks' permanently noncommercial distribution. Retain its data attribution and review its
+[current terms](https://open-meteo.com/en/terms) if distribution or request volume changes.
+AGPL-3.0 continues to cover GlyphWorks' source; weather data uses CC BY 4.0.
+
 ## Essential Key coexistence
 
 The accessibility service watches window events from the Essential Space and Essential Recorder
@@ -163,8 +215,11 @@ The clean answer is still the hand-off in the system settings. Keep both apps on
 app/src/main/kotlin/space/linuxct/glyphworks/
 ├── core/      GlyphLink (SDK binding + self-repair), ScreenManager, SessionArbiter,
 │              scheduler, prefs (device-protected storage), ports
-│   └ design/  The glyph.design format: model, codec, validation, cell encoding
+│   ├ design/  The glyph.design format: model, codec, validation, cell encoding
 │              (pure Kotlin, JVM tests — see glyph-design-format.md)
+│   ├ ambient/ Stable background IDs, selection and elapsed-time cycling
+│   ├ notifications/ In-memory notification counting model
+│   └ weather/ Weather snapshots, provider parsing, caching and refresh policy
 ├── designs/   The design file store (device-protected, atomic writes) and its port
 ├── matrix/    Pure-Kotlin drawing primitives and a 3×5 dot font
 ├── screens/   All toys, and the ambient/ compositor with its backgrounds
@@ -173,12 +228,15 @@ app/src/main/kotlin/space/linuxct/glyphworks/
 ├── toy/       The system Glyph Toy service, and the alarm backstop for the timer
 ├── audio/     The shared FFT engine
 ├── sensors/   Shake, tilt, incline, compass and light
-├── update/    The GitHub Releases check and its daily WorkManager job
+├── notifications/ Android notification listener and access checks
+├── weather/   Open-Meteo client, approximate-location updates and private cache
 └── ui/        Compose UI: the tabbed main screen, the onboarding, the Essential Key
                tutorial, the setup guides, the design list with import and export,
                design/ (the pixel editor, the canvas and the timeline),
                theme/ (the monochrome Nothing style and the run-time NType82)
 ```
+
+The assistant and update checker live under `app/src/github/kotlin/space/linuxct/glyphworks/`.
 
 ## Key behaviour, in detail
 

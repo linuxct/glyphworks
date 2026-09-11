@@ -26,15 +26,14 @@
          music playback capture in the 3.0.0 pre-release. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- ACCESS_NETWORK_STATE without INTERNET is not an oversight: the ambient
-         screen draws a Wi-Fi/cellular indicator from getNetworkCapabilities
-         (util/AndroidPorts.kt). This build cannot open a socket at all — see the
-         github flavour's manifest for the permission it does not share. -->
+    <!-- Both distributions fetch optional current weather from Open-Meteo. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Connection-status background and weather connectivity. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Coarse only. Both call sites (sensors/CompassSensor, util/AndroidLocationPort)
-         want a latitude/longitude for magnetic declination and sunrise maths, where
-         a city-block fix and a metre-accurate one give the same answer. -->
+    <!-- Approximate location is sufficient for weather, declination, and sunrise. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Optional separate grant: Weather follows location changes on the locked AOD. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -77,6 +76,16 @@
         <activity
             android:name=".ui.design.DesignDemoActivity"
             android:exported="false" />
+
+        <service
+            android:name=".notifications.GlyphNotificationListenerService"
+            android:exported="false"
+            android:label="@string/screen_notifications"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".key.EssentialKeyService"

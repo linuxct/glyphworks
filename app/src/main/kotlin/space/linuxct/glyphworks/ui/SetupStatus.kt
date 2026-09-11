@@ -9,6 +9,10 @@ internal data class SetupStatus(
     val microphone: Boolean,
     val location: Boolean,
     val exactAlarms: Boolean,
+    val notificationAccess: Boolean = false,
+    val notificationAccessNeeded: Boolean = false,
+    val weatherEnabled: Boolean = false,
+    val backgroundLocation: Boolean = false,
 ) {
     val needsAttention: Boolean
         get() = !accessibility ||
@@ -16,7 +20,9 @@ internal data class SetupStatus(
             !notifications ||
             !microphone ||
             !location ||
-            !exactAlarms
+            !exactAlarms ||
+            (notificationAccessNeeded && !notificationAccess) ||
+            (weatherEnabled && !backgroundLocation)
 
     val toyNeedsAttention: Boolean get() = !alwaysOnToy && toyProbeArmed
 
@@ -29,6 +35,8 @@ internal data class SetupStatus(
             microphone = true,
             location = true,
             exactAlarms = true,
+            notificationAccess = true,
+            backgroundLocation = true,
         )
     }
 }

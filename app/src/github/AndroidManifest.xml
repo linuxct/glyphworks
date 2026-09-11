@@ -4,16 +4,11 @@
 
     The split is not a feature flag: the design assistant and the update checker
     are absent from the Play APK, so the permissions and components they need are
-    declared here rather than in main/ and merged in for this flavour only. The
-    Play build ships without INTERNET at all, which is what makes "collects no
-    data" checkable from the binary instead of taken on trust.
+    declared here rather than in main/ and merged in for this flavour only.
+    INTERNET is common to both flavors for optional Weather.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
-    <!-- The design assistant talks to OpenAI; the update checker polls GitHub
-         releases. Nothing else in the app opens a socket. -->
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- The assistant's turn keeps the process alive while it runs; see
          ai/GlyphAiTurnService for why the type is dataSync and not shortService. -->

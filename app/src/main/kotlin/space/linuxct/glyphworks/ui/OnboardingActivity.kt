@@ -92,6 +92,7 @@ import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.notifications.NotificationAccess
 import space.linuxct.glyphworks.ui.theme.GlyphRadioButton
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import kotlin.math.PI
@@ -373,6 +374,7 @@ private fun ToyPage() {
 @Composable
 private fun PermsPage(refreshTick: Int, onRefresh: () -> Unit) {
     val context = LocalContext.current
+    var showWeatherSettings by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { onRefresh() }
@@ -386,6 +388,12 @@ private fun PermsPage(refreshTick: Int, onRefresh: () -> Unit) {
                 R.string.onb_perm_notif_why,
                 granted = remember(refreshTick) { hasAny(context, Manifest.permission.POST_NOTIFICATIONS) },
             ) { launcher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) }
+            HorizontalDivider()
+            PermRow(
+                R.string.information_notification_access,
+                R.string.information_notification_onboarding,
+                granted = remember(refreshTick) { NotificationAccess.isGranted(context) },
+            ) { openInformationSettings(context, NotificationAccess.settingsIntent(context)) }
             HorizontalDivider()
             PermRow(
                 R.string.onb_perm_mic,
@@ -422,6 +430,18 @@ private fun PermsPage(refreshTick: Int, onRefresh: () -> Unit) {
                     ),
                 )
             }
+        }
+        Spacer(Modifier.height(12.dp))
+        BodyText(stringResource(R.string.information_weather_onboarding))
+        Spacer(Modifier.height(10.dp))
+        Button(onClick = { showWeatherSettings = true }) {
+            Text(stringResource(R.string.information_weather_setup_action))
+        }
+    }
+    if (showWeatherSettings) {
+        ScreenSettingsDialog("weather") {
+            showWeatherSettings = false
+            onRefresh()
         }
     }
 }
@@ -554,6 +574,7 @@ private fun DonePage(refreshTick: Int) {
             listOf(
                 R.string.onb_recap_key to isEssentialKeyServiceEnabled(context),
                 R.string.onb_perm_notif to hasAny(context, Manifest.permission.POST_NOTIFICATIONS),
+                R.string.information_notification_access to NotificationAccess.isGranted(context),
                 R.string.onb_perm_mic to hasAny(context, Manifest.permission.RECORD_AUDIO),
                 R.string.onb_perm_loc to hasAny(
                     context,

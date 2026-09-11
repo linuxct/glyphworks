@@ -15,8 +15,7 @@ import space.linuxct.glyphworks.core.design.DesignVariant
 import space.linuxct.glyphworks.core.design.KeyMode
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
-import space.linuxct.glyphworks.screens.ambient.BackgroundRenderers
-import space.linuxct.glyphworks.screens.ambient.ChargingRenderer
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
 
 class ScreenBrightnessAuditTest {
 
@@ -126,21 +125,26 @@ class ScreenBrightnessAuditTest {
 
     private fun statesOf(id: String): List<State> = when (id) {
         "ambient" -> buildList {
-            for (bg in 0 until BackgroundRenderers.COUNT) {
+            for (bg in AmbientBackgrounds.orderedIds) {
                 add(
                     State("background $bg") {
-                        it.prefs.putInt(PrefKeys.AMBIENT_BACKGROUND, bg)
+                        it.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, bg)
                     },
                 )
             }
-            for (style in 0..ChargingRenderer.STYLE_WATTS) {
+            for (showWatts in listOf(false, true)) {
                 add(
-                    State("charging style $style") {
+                    State("charging, show watts $showWatts") {
                         it.battery.charging = true
-                        it.prefs.putInt(PrefKeys.AMBIENT_CHARGING_STYLE, style)
+                        it.prefs.putBoolean(PrefKeys.BATTERY_SHOW_WATTS, showWatts)
                     },
                 )
             }
+            add(State("charging, missing watts fallback") {
+                it.battery.charging = true
+                it.battery.watts = null
+                it.prefs.putBoolean(PrefKeys.BATTERY_SHOW_WATTS, true)
+            })
             add(State("audio override") { it.spectrum.values = loudBands() })
         }
         "clock" -> (0..2).map { theme ->

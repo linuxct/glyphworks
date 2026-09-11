@@ -1,5 +1,6 @@
 package space.linuxct.glyphworks.core
 
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
 import kotlin.math.abs
 
 object PrefsMigration {
@@ -9,15 +10,31 @@ object PrefsMigration {
     private const val OLD_START = "teaStartMillis"
     private const val OLD_DURATION = "teaDurationSec"
     private const val OLD_CHIMED_FOR = "teaChimedFor"
+    private const val OLD_AMBIENT_CHARGING_STYLE = "ambientChargingStyle"
 
     fun run(prefs: Prefs): Boolean {
         val from = prefs.getInt(PrefKeys.PREFS_VERSION, PrefKeys.PREFS_VERSION_DEF)
         if (from >= PrefKeys.PREFS_VERSION_CURRENT) return false
-        renameTimerKeys(prefs)
-        renameScreenId(prefs)
-        snapTimerDuration(prefs)
+        if (from < 2) {
+            renameTimerKeys(prefs)
+            renameScreenId(prefs)
+            snapTimerDuration(prefs)
+        }
+        if (from < 3) migrateAmbientBackground(prefs)
+        // The standalone Battery preference is authoritative. Discard the old override
+        // without translating it into or otherwise changing BATTERY_SHOW_WATTS.
+        if (from < 4) prefs.remove(OLD_AMBIENT_CHARGING_STYLE)
         prefs.putInt(PrefKeys.PREFS_VERSION, PrefKeys.PREFS_VERSION_CURRENT)
         return true
+    }
+
+    private fun migrateAmbientBackground(prefs: Prefs) {
+        if (!prefs.contains(PrefKeys.AMBIENT_BACKGROUND)) return
+        if (!prefs.contains(PrefKeys.AMBIENT_BACKGROUNDS)) {
+            val oldIndex = prefs.getInt(PrefKeys.AMBIENT_BACKGROUND, PrefKeys.AMBIENT_BACKGROUND_DEF)
+            prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, AmbientBackgrounds.legacyId(oldIndex))
+        }
+        prefs.remove(PrefKeys.AMBIENT_BACKGROUND)
     }
 
     private fun renameTimerKeys(prefs: Prefs) {

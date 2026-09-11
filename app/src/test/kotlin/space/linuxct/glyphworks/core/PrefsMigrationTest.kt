@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import space.linuxct.glyphworks.FakePrefs
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
 
 class PrefsMigrationTest {
     private fun legacyStore(): FakePrefs = FakePrefs().apply {
@@ -76,6 +77,95 @@ class PrefsMigrationTest {
             }
             PrefsMigration.run(prefs)
             assertEquals(expected, prefs.getInt(PrefKeys.TIMER_DURATION, -1))
+        }
+    }
+
+    @Test
+    fun `version two selection migrates each old index including out of range values`() {
+        for (index in listOf(-1) + (0..9).toList() + listOf(99)) {
+            val prefs = FakePrefs().apply {
+                putInt(PrefKeys.PREFS_VERSION, 2)
+                putInt(PrefKeys.AMBIENT_BACKGROUND, index)
+            }
+            assertTrue(PrefsMigration.run(prefs))
+            assertEquals(listOf(AmbientBackgrounds.legacyId(index)), AmbientBackgrounds.readSelection(prefs))
+            assertFalse(prefs.contains(PrefKeys.AMBIENT_BACKGROUND))
+            assertFalse(prefs.getBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, PrefKeys.AMBIENT_AUTO_CYCLE_DEF))
+            val afterMigration = prefs.map.toMap()
+            assertFalse(PrefsMigration.run(prefs))
+            assertEquals(afterMigration, prefs.map)
+        }
+    }
+
+    @Test
+    fun `ambient migration preserves existing new selection including empty`() {
+        for (selection in listOf("", "weather,notifications")) {
+            val prefs = FakePrefs().apply {
+                putInt(PrefKeys.PREFS_VERSION, 2)
+                putInt(PrefKeys.AMBIENT_BACKGROUND, 4)
+                putString(PrefKeys.AMBIENT_BACKGROUNDS, selection)
+                putBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, true)
+            }
+            assertTrue(PrefsMigration.run(prefs))
+            assertEquals(selection, prefs.getString(PrefKeys.AMBIENT_BACKGROUNDS, "missing"))
+            assertTrue(prefs.getBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, false))
+            assertFalse(prefs.contains(PrefKeys.AMBIENT_BACKGROUND))
+        }
+    }
+
+    @Test
+    fun `version one also migrates ambient while version two leaves timer values alone`() {
+        val legacy = legacyStore().apply { putInt(PrefKeys.AMBIENT_BACKGROUND, 9) }
+        assertTrue(PrefsMigration.run(legacy))
+        assertEquals(listOf("moon_phase"), AmbientBackgrounds.readSelection(legacy))
+        val currentTimer = FakePrefs().apply {
+            putInt(PrefKeys.PREFS_VERSION, 2)
+            putInt(PrefKeys.TIMER_DURATION, 120)
+        }
+        assertTrue(PrefsMigration.run(currentTimer))
+        assertEquals(120, currentTimer.getInt(PrefKeys.TIMER_DURATION, -1))
+        assertEquals(listOf("text_clock"), AmbientBackgrounds.readSelection(currentTimer))
+    }
+
+    @Test
+    fun `every older schema drops Ambient charging override without replacing Battery preference`() {
+        for (version in 1..3) {
+            for (oldStyle in listOf(0, 1, 2, 3, 4, 99)) {
+                for (batteryWatts in listOf(null, false, true)) {
+                    val prefs = FakePrefs().apply {
+                        putInt(PrefKeys.PREFS_VERSION, version)
+                        putInt("ambientChargingStyle", oldStyle)
+                        if (batteryWatts != null) putBoolean(PrefKeys.BATTERY_SHOW_WATTS, batteryWatts)
+                        putString(PrefKeys.AMBIENT_BACKGROUNDS, "weather,battery_gauge")
+                        putBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, true)
+                    }
+                    assertTrue(PrefsMigration.run(prefs))
+                    assertFalse(prefs.contains("ambientChargingStyle"))
+                    assertEquals(batteryWatts != null, prefs.contains(PrefKeys.BATTERY_SHOW_WATTS))
+                    assertEquals(batteryWatts ?: PrefKeys.BATTERY_SHOW_WATTS_DEF,
+                        prefs.getBoolean(PrefKeys.BATTERY_SHOW_WATTS, PrefKeys.BATTERY_SHOW_WATTS_DEF))
+                    assertEquals("weather,battery_gauge", prefs.getString(PrefKeys.AMBIENT_BACKGROUNDS, ""))
+                    assertTrue(prefs.getBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, false))
+                    assertEquals(4, prefs.getInt(PrefKeys.PREFS_VERSION, -1))
+                    val migrated = prefs.map.toMap()
+                    assertFalse(PrefsMigration.run(prefs))
+                    assertEquals(migrated, prefs.map)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `current and future schema versions are left unchanged`() {
+        for (version in listOf(4, 5)) {
+            val prefs = FakePrefs().apply {
+                putInt(PrefKeys.PREFS_VERSION, version)
+                putBoolean(PrefKeys.BATTERY_SHOW_WATTS, true)
+                putString(PrefKeys.AMBIENT_BACKGROUNDS, "")
+            }
+            val before = prefs.map.toMap()
+            assertFalse(PrefsMigration.run(prefs))
+            assertEquals(before, prefs.map)
         }
     }
 }

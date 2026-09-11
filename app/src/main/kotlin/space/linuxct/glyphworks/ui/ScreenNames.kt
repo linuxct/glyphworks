@@ -10,6 +10,8 @@ internal val SCREEN_DISPLAY_NAMES = mapOf(
     "eyes" to R.string.screen_eyes,
     "speed" to R.string.screen_speed,
     "battery" to R.string.screen_battery,
+    "notifications" to R.string.screen_notifications,
+    "weather" to R.string.screen_weather,
     "solar" to R.string.screen_solar,
     "moon" to R.string.screen_moon,
     "dice" to R.string.screen_dice,

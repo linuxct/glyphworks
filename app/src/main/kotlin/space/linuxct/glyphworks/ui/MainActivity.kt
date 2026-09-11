@@ -194,6 +194,9 @@ import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.SessionArbiter
+import space.linuxct.glyphworks.core.WeatherPrefs
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
+import space.linuxct.glyphworks.notifications.NotificationAccess
 import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.ui.design.DemoTarget
 import space.linuxct.glyphworks.ui.design.DesignDemoActivity
@@ -268,7 +271,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private val CONFIGURABLE =
-    setOf("ambient", "clock", "dice", "coin", "battery", "breathing", "timer", "visualizer", "custom")
+    setOf("ambient", "clock", "dice", "coin", "battery", "breathing", "timer", "visualizer", "custom", "notifications", "weather")
 
 private fun loadOrder(): List<String> {
     val stored = Core.prefs.getString(PrefKeys.SCREEN_ORDER, PrefKeys.SCREEN_ORDER_DEF)
@@ -370,7 +373,15 @@ private fun MainScreen(startTab: Int = 0) {
 
     val setupContext = LocalContext.current
     var setupTick by remember { mutableIntStateOf(0) }
-    val setup = remember(setupTick, setupContext) { probeSetup(setupContext) }
+    val configuredWeather by rememberPref(WeatherPrefs.ENABLED) { it.getBoolean(WeatherPrefs.ENABLED, false) }
+    val configuredBackgrounds by rememberPref(PrefKeys.AMBIENT_BACKGROUNDS) { AmbientBackgrounds.readSelection(it) }
+    val useBackground by rememberPref(PrefKeys.AMBIENT_USE_BACKGROUND) {
+        it.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF)
+    }
+    val selectedToy by rememberPref(PrefKeys.CURRENT_SCREEN) { it.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF) }
+    val setup = remember(setupTick, setupContext, configuredWeather, configuredBackgrounds, useBackground, selectedToy) {
+        probeSetup(setupContext)
+    }
     LifecycleResumeEffect(Unit) {
         setupTick++
         onPauseOrDispose { }
@@ -922,6 +933,12 @@ private fun probeSetup(context: Context): SetupStatus {
         microphone = anyGranted(SETUP_MICROPHONE_PERMISSIONS),
         location = anyGranted(SETUP_LOCATION_PERMISSIONS),
         exactAlarms = context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true,
+        notificationAccess = NotificationAccess.isGranted(context),
+        notificationAccessNeeded = Core.prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF) == "notifications" ||
+            (Core.prefs.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF) &&
+                AmbientBackgrounds.NOTIFICATIONS in AmbientBackgrounds.readSelection(Core.prefs)),
+        weatherEnabled = Core.prefs.getBoolean(WeatherPrefs.ENABLED, false),
+        backgroundLocation = backgroundLocationGranted(context),
     )
 }
 
@@ -939,7 +956,7 @@ private fun SettingsTab(
 
     Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
         Spacer(Modifier.height(innerPadding.calculateTopPadding()))
-        InitialSetupSection(setup, refreshTick) { permissionLauncher.launch(it) }
+        InitialSetupSection(setup, refreshTick, onRefresh) { permissionLauncher.launch(it) }
         AppSettingsSection(refreshTick)
         AiSettingsSection()
         Spacer(Modifier.height(innerPadding.calculateBottomPadding() + NAV_PILL_CLEARANCE))
@@ -950,9 +967,11 @@ private fun SettingsTab(
 private fun ColumnScope.InitialSetupSection(
     setup: SetupStatus,
     refreshTick: Int,
+    onRefresh: () -> Unit,
     onRequestPermissions: (Array<String>) -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(setup.needsAttention) }
+    var informationSettings by remember { mutableStateOf<String?>(null) }
     CollapsibleSectionHeader(
         text = stringResource(R.string.section_initial_setup),
         expanded = expanded,
@@ -987,6 +1006,19 @@ private fun ColumnScope.InitialSetupSection(
                     )
                 }
                 item {
+                    ChecklistRow(
+                        stringResource(R.string.information_notification_access),
+                        stringResource(
+                            when {
+                                setup.notificationAccess -> R.string.information_notification_access_on
+                                setup.notificationAccessNeeded -> R.string.information_notification_access_off
+                                else -> R.string.information_notification_optional
+                            },
+                        ),
+                        if (setup.notificationAccess) true else if (setup.notificationAccessNeeded) false else null,
+                    ) { informationSettings = "notifications" }
+                }
+                item {
                     PermissionRow(
                         stringResource(R.string.checklist_location),
                         SETUP_LOCATION_PERMISSIONS,
@@ -994,10 +1026,30 @@ private fun ColumnScope.InitialSetupSection(
                         onRequestPermissions,
                     )
                 }
+                item {
+                    ChecklistRow(
+                        stringResource(R.string.information_weather_setup),
+                        stringResource(
+                            when {
+                                !setup.weatherEnabled -> R.string.information_weather_optional
+                                !setup.location -> R.string.information_weather_location_off
+                                !setup.backgroundLocation -> R.string.information_weather_background_off
+                                else -> R.string.information_weather_permissions_on
+                            },
+                        ),
+                        if (setup.weatherEnabled && setup.location && setup.backgroundLocation) true else null,
+                    ) { informationSettings = "weather" }
+                }
                 item { ExactAlarmChecklistRow(setup.exactAlarms) }
                 item { WalkthroughRow() }
             }
             HintText(stringResource(R.string.checklist_hint_guides))
+        }
+    }
+    informationSettings?.let { id ->
+        ScreenSettingsDialog(id) {
+            informationSettings = null
+            onRefresh()
         }
     }
 }
@@ -1260,12 +1312,13 @@ private fun CreatorNameRow() {
     }
 }
 
-private enum class TutorialTopic { KEY, HANDOVER }
+private enum class TutorialTopic { KEY, AMBIENT, HANDOVER }
 
 @Composable
 private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
     val context = LocalContext.current
     var topic by remember { mutableStateOf<TutorialTopic?>(null) }
+    var showAmbientSettings by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
         Spacer(Modifier.height(innerPadding.calculateTopPadding()))
@@ -1278,6 +1331,13 @@ private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
                     subtitle = stringResource(R.string.tut_button_subtitle),
                     good = null,
                 ) { topic = TutorialTopic.KEY }
+            }
+            item {
+                SetupRow(
+                    title = stringResource(R.string.tut_ambient_title),
+                    subtitle = stringResource(R.string.tut_ambient_subtitle),
+                    good = null,
+                ) { topic = TutorialTopic.AMBIENT }
             }
             item {
                 SetupRow(
@@ -1301,8 +1361,18 @@ private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
 
     when (topic) {
         TutorialTopic.KEY -> KeyTutorialDialog(onDismiss = { topic = null })
+        TutorialTopic.AMBIENT -> AmbientTutorialDialog(
+            onDismiss = { topic = null },
+            onOpenAmbientSettings = {
+                topic = null
+                showAmbientSettings = true
+            },
+        )
         TutorialTopic.HANDOVER -> HandoverTutorialDialog(onDismiss = { topic = null })
         null -> {}
+    }
+    if (showAmbientSettings) {
+        ScreenSettingsDialog("ambient") { showAmbientSettings = false }
     }
 }
 
@@ -1957,7 +2027,7 @@ private fun UnsupportedDeviceScreen() {
 }
 
 @Composable
-private fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
+internal fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
     AlertDialog(
         containerColor = dialogSurface(),
         modifier = Modifier
@@ -1982,6 +2052,8 @@ private fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
                     "visualizer" -> VisualizerSettings()
                     "ambient" -> AmbientSettings()
                     "custom" -> CustomDesignSettings()
+                    "notifications" -> NotificationsSettings()
+                    "weather" -> WeatherSettings()
                 }
             }
         },
@@ -2105,28 +2177,59 @@ private fun CustomDesignSettings() {
 
 @Composable
 private fun AmbientSettings() {
-    ChoiceGroupLabel(stringResource(R.string.pref_ambient_background))
-    IntChoiceGroup(
-        optionsInStoredOrder = listOf(
-            "Digital clock", "Analog clock", "Connection status", "Battery %",
-            "Download speed", "Tilt ball", "Clock (themed)",
-            "Battery gauge", "Solar path", "Moon phase",
-        ),
-        key = PrefKeys.AMBIENT_BACKGROUND,
-        def = PrefKeys.AMBIENT_BACKGROUND_DEF,
+    val selected by rememberPref(PrefKeys.AMBIENT_BACKGROUNDS) { AmbientBackgrounds.readSelection(it) }
+    val automatic by rememberPref(PrefKeys.AMBIENT_AUTO_CYCLE) {
+        it.getBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, PrefKeys.AMBIENT_AUTO_CYCLE_DEF)
+    }
+    var informationSettings by remember { mutableStateOf<String?>(null) }
+    ChoiceGroupLabel(stringResource(R.string.ambient_cycle_backgrounds))
+    Text(
+        stringResource(R.string.ambient_cycle_explanation),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    val labels = listOf(
+        R.string.ambient_cycle_digital_clock, R.string.ambient_cycle_analog_clock,
+        R.string.ambient_cycle_connection, R.string.ambient_cycle_battery_text,
+        R.string.ambient_cycle_speed, R.string.ambient_cycle_tilt_ball,
+        R.string.ambient_cycle_pixel_clock, R.string.ambient_cycle_battery_gauge,
+        R.string.ambient_cycle_solar_path, R.string.ambient_cycle_moon_phase,
+        R.string.screen_notifications, R.string.screen_weather,
+    )
+    AmbientBackgrounds.orderedIds.forEachIndexed { index, id ->
+        InformationSwitch(stringResource(labels[index]), id in selected) { checked ->
+            Core.prefs.putString(
+                PrefKeys.AMBIENT_BACKGROUNDS,
+                AmbientBackgrounds.encode(if (checked) selected + id else selected - id),
+            )
+        }
+    }
+    InformationSwitch(stringResource(R.string.ambient_cycle_automatic), automatic) {
+        Core.prefs.putBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, it)
+    }
+    Text(
+        stringResource(R.string.ambient_cycle_automatic_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    InformationToySetupRows(
+        notifications = AmbientBackgrounds.NOTIFICATIONS in selected,
+        weather = AmbientBackgrounds.WEATHER in selected,
+        onConfigure = { informationSettings = it },
     )
     PrefSwitch(stringResource(R.string.pref_ambient_night), PrefKeys.AMBIENT_NIGHT_VISIBLE, PrefKeys.AMBIENT_NIGHT_VISIBLE_DEF)
     PrefSwitch(stringResource(R.string.pref_ambient_shake), PrefKeys.AMBIENT_SHAKE_ACTIVATE, PrefKeys.AMBIENT_SHAKE_ACTIVATE_DEF)
     PrefSwitch(stringResource(R.string.pref_ambient_charging), PrefKeys.AMBIENT_USE_CHARGING, PrefKeys.AMBIENT_USE_CHARGING_DEF)
-    ChoiceGroupLabel(
-        stringResource(R.string.pref_ambient_charging_style),
-        Modifier.padding(top = 12.dp),
+    Text(
+        stringResource(R.string.pref_ambient_shared_settings),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp),
     )
-    IntChoiceGroup(
-        optionsInStoredOrder = listOf("Fill + wave", "Particles", "Battery + bolt", "Percent + bolt", "Charging wattage"),
-        key = PrefKeys.AMBIENT_CHARGING_STYLE,
-        def = PrefKeys.AMBIENT_CHARGING_STYLE_DEF,
-    )
+    TextButton(onClick = { informationSettings = "battery" }) {
+        Text(stringResource(R.string.pref_ambient_battery_settings))
+    }
+    informationSettings?.let { id -> ScreenSettingsDialog(id) { informationSettings = null } }
 }
 
 @Composable

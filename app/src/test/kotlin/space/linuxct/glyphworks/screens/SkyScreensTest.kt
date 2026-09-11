@@ -6,6 +6,7 @@ import org.junit.Test
 import space.linuxct.glyphworks.GoldenAscii
 import space.linuxct.glyphworks.TestHarness
 import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
 import space.linuxct.glyphworks.screens.ambient.AmbientScreen
 import kotlin.math.abs
 
@@ -54,6 +55,51 @@ class BatteryScreenTest {
         h.scheduler.tick()
         assertTrue(h.lastFrame().contentEquals(BatteryScreen.renderFrame(13, 60, false, h.clock.now)))
     }
+
+    @Test
+    fun `Battery and both Ambient render paths share preferences and wattage fallback on both panels`() {
+        for (size in listOf(13, 25)) {
+            val h = TestHarness(size)
+            h.battery.level = 60
+            val battery = BatteryScreen()
+            val ambient = AmbientScreen()
+            battery.onActivate(h.context)
+            val states = listOf(
+                Triple(false, false, 45f),
+                Triple(false, true, 45f),
+                Triple(true, false, 45f),
+                Triple(true, true, 45f),
+                Triple(true, true, null),
+                Triple(true, true, 0f),
+                Triple(true, true, -1f),
+                Triple(true, true, Float.NaN),
+                Triple(true, true, Float.POSITIVE_INFINITY),
+            )
+            for ((charging, showWatts, watts) in states) {
+                h.battery.charging = charging
+                h.battery.watts = watts
+                h.prefs.putBoolean(PrefKeys.BATTERY_SHOW_WATTS, showWatts)
+                h.scheduler.tick()
+                val standalone = h.lastFrame()
+                val expected = if (charging && showWatts && watts != null && watts.isFinite() && watts > 0) {
+                    BatteryScreen.renderWattage(size, watts)
+                } else {
+                    BatteryScreen.renderFrame(size, 60, charging, h.clock.now)
+                }
+                val state = "$size, charging=$charging, watts enabled=$showWatts, reading=$watts"
+                assertTrue("standalone: $state", standalone.contentEquals(expected))
+
+                h.prefs.putBoolean(PrefKeys.AMBIENT_USE_CHARGING, false)
+                h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, AmbientBackgrounds.BATTERY_GAUGE)
+                assertTrue("background: $state", ambient.composite(h.context).contentEquals(standalone))
+                if (charging) {
+                    h.prefs.putBoolean(PrefKeys.AMBIENT_USE_CHARGING, true)
+                    h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, AmbientBackgrounds.TEXT_CLOCK)
+                    assertTrue("overlay: $state", ambient.composite(h.context).contentEquals(standalone))
+                }
+            }
+        }
+    }
 }
 
 class SolarScreenTest {
@@ -87,28 +133,28 @@ class SkyAmbientBackgroundsTest {
         h.prefs.putBoolean(PrefKeys.AMBIENT_USE_CHARGING, false)
         val screen = AmbientScreen()
 
-        h.prefs.putInt(PrefKeys.AMBIENT_BACKGROUND, 7)
+        h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, AmbientBackgrounds.legacyId(7))
         assertTrue(
             screen.composite(h.context)
-                .contentEquals(BatteryScreen.renderFrame(13, 60, true, h.clock.now)),
+                .contentEquals(BatteryScreen.renderFrame(h.context)),
         )
         h.battery.watts = 45f
         h.prefs.putBoolean(PrefKeys.BATTERY_SHOW_WATTS, true)
         assertTrue(
             screen.composite(h.context)
-                .contentEquals(BatteryScreen.renderFrame(13, 60, true, h.clock.now)),
+                .contentEquals(BatteryScreen.renderWattage(13, 45f)),
         )
         h.prefs.putBoolean(PrefKeys.BATTERY_SHOW_WATTS, false)
         h.battery.watts = null
 
         h.battery.charging = false
-        h.prefs.putInt(PrefKeys.AMBIENT_BACKGROUND, 9)
+        h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, AmbientBackgrounds.legacyId(9))
         assertTrue(
             screen.composite(h.context)
                 .contentEquals(MoonScreen.renderFrame(13, MoonMath.phaseFraction(h.clock.now))),
         )
 
-        h.prefs.putInt(PrefKeys.AMBIENT_BACKGROUND, 8)
+        h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, AmbientBackgrounds.legacyId(8))
         h.clock.hour = 12
         h.clock.min = 0
         val times = SolarMath.sunTimes(h.clock.doy, 0.0, 0.0, 0)

@@ -72,4 +72,21 @@ class SetupStatusTest {
         assertEquals("each case must differ from COMPLETE", 6, oneMissing.toSet().size)
         oneMissing.forEach { assertTrue(it.toString(), badgeShown(it)) }
     }
+
+    @Test
+    fun `notification access is distinct from posting permission and optional until used`() {
+        val unused = SetupStatus.COMPLETE.copy(notificationAccess = false)
+        assertFalse(unused.needsAttention)
+        assertNeedsAttention(unused.copy(notificationAccessNeeded = true))
+        assertFalse(unused.copy(notificationAccessNeeded = true, notificationAccess = true).needsAttention)
+        assertNeedsAttention(SetupStatus.COMPLETE.copy(notifications = false, notificationAccess = true))
+    }
+
+    @Test
+    fun `locked location is optional until weather opt in`() {
+        val unused = SetupStatus.COMPLETE.copy(backgroundLocation = false)
+        assertFalse(unused.needsAttention)
+        assertNeedsAttention(unused.copy(weatherEnabled = true))
+        assertFalse(unused.copy(weatherEnabled = true, backgroundLocation = true).needsAttention)
+    }
 }

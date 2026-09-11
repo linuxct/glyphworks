@@ -1,163 +1,148 @@
 # Privacy Policy — GlyphWorks for Nothing
 
-Applies to **GlyphWorks for Nothing** (`space.linuxct.glyphworks`), version 3.0.0 and later, as
-distributed on Google Play. Last updated: 2026-08-08.
+Applies to **GlyphWorks for Nothing** (`space.linuxct.glyphworks`), version 3.3.0, as distributed
+on Google Play and GitHub. Last updated: 2026-09-11.
 
-This covers the Google Play build only. The GitHub build adds two features that use the network: an
-AI design assistant and an update checker. If you installed the app anywhere other than Google Play,
-read [Other builds](#other-builds) instead.
+GlyphWorks is an independent, noncommercial, open-source app under AGPL-3.0. It has no advertising,
+analytics, crash-report uploads, or GlyphWorks accounts. The optional Weather toy uses the network
+in both builds. The GitHub build also includes the features described under [GitHub builds](#github-builds).
 
-## No data collected, no data shared
+## Weather and location
 
-**This app collects no data and shares no data.** That's the same answer as on the Play Data Safety
-form, and it's meant literally. Nothing about you or your device leaves your phone, because the app
-has no way to send it.
+The **Compass** uses approximate location to correct magnetic north to true north. **Solar Path**
+uses it to calculate sunrise and sunset on the phone. These two features read an existing Android
+location and do not send it anywhere. Without access, Compass uses magnetic north and Solar Path
+uses a nominal 06:00/18:00 day.
 
-There are no accounts, no analytics, no crash reporting, no advertising, and no third-party SDK that
-contacts a server.
+**Weather** is off until you enable it. When enabled and in use, it obtains approximate location and
+sends latitude and longitude, rounded to two decimal places, to **Open-Meteo** over HTTPS to request
+current weather. Open-Meteo also receives your IP address as part of that connection. Requests do
+not include a name, account, advertising identifier, notification data, or device identifier.
 
-## You can check this, not just trust it
+Open-Meteo's free API privacy terms say that it may retain IP addresses for technical purposes and
+that its troubleshooting logs may include coordinates. It says those logs are deleted after
+90 days. This retention is controlled by Open-Meteo; clearing GlyphWorks' local cache does not
+delete provider logs. See [Open-Meteo's terms and privacy policy](https://open-meteo.com/en/terms).
 
-The Play build doesn't request `android.permission.INTERNET`. Android only grants network access to
-packages that hold it, so the platform refuses every socket this process could try to open. You can
-verify that on the exact file you installed:
+GlyphWorks requests **approximate location**, not precise location. With the separate optional
+**Allow all the time** grant, Weather can follow location changes while the phone is locked or
+showing AOD. With foreground-only access, location updates while the app is visible, and Weather
+can refresh for that last location while locked. Android may delay background updates in deep idle.
 
-```
-aapt2 dump permissions base.apk
-```
+While needed, weather refreshes about every 15 minutes and after a meaningful location change.
+The most recent rounded coordinates and weather observation are cached in app-private,
+credential-protected storage, unavailable before the first unlock and excluded from Android backup.
+Weather observations expire after two hours. The app stops unnecessary requests and location
+updates when Weather is no longer in use. A manual refresh in settings can request an update.
 
-`android.permission.INTERNET` does not appear in the output. The app is also open source (AGPL-3.0),
-so you can read the code behind every statement below.
+Turning Weather off or revoking approximate-location access clears its cached location and weather
+when the app observes the change. Switching device location off stops location-based requests and
+leaves the previous weather marked stale until expiry. You can change permissions in Android's
+app settings or remove all local app data through Android's storage settings.
 
-## What the app touches, and where it stays
+Weather data by [Open-Meteo](https://open-meteo.com/), under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-### Microphone
+## Notification access
 
-The Music Visualizer and the music-reactive ambient layer read the **output mix** through Android's
-`android.media.audiofx.Visualizer`, at a capture size of 256 samples, and take an FFT of it. What
-comes back is a set of frequency magnitudes. Those become the heights of the bars on the Glyph
-Matrix.
+The **Notifications** toy and its Ambient background require Android's notification-listener
+access. This is separate from the permission to post the Timer's own notifications.
 
-No audio is recorded. Nothing is written to a file, kept in memory beyond the current frame, or
-transmitted — the app couldn't transmit it if it wanted to. The capture engine releases itself after
-five seconds without a poll, so nothing is captured once an audio toy stops being drawn. Deny the
-permission and the visualizer shows its idle pattern.
+The listener receives notification events from Android. GlyphWorks extracts only the opaque
+notification key, grouping information, and metadata needed to identify dismissible, ongoing,
+foreground-service, and media entries. It keeps that metadata only in memory to calculate the
+number shown on the Glyph Matrix. It does not read titles, message text, or notification actions;
+store notification data on disk; transmit it; or log notification payloads.
 
-**Why it asks for the microphone, and why your phone may say the mic is in use.** Two permissions
-are involved and the app chooses neither. Android requires `RECORD_AUDIO` for any use of
-`Visualizer`, whatever it's attached to. It requires `MODIFY_AUDIO_SETTINGS` to attach to the output
-mix — the app changes no audio setting with it. Android also accounts for this under the microphone
-app-op, so the privacy indicator can light up and background restrictions apply while the visualizer
-runs.
+Android provides outstanding notification entries, not a reliable per-app unread-message count.
+GlyphWorks excludes ongoing services and media controls, and avoids counting a group summary
+alongside its children. The display shows 0–9, then 9+. It never dismisses, snoozes, or marks
+notifications read. Disconnecting or revoking notification access clears the in-memory state and
+shows an unavailable state instead of zero. Reconnection rebuilds the count from active notifications.
 
-What's being read is the mix your phone is already playing, not the room. The app contains no
-`AudioRecord` and no `MediaRecorder`. The only audio APIs in it are `android.media.audiofx.Visualizer`
-and `android.media.RingtoneManager` for the Timer chime. Recording the microphone isn't something the
-app declines to do, it's something it has no code to do. You can check that in the source linked at
-the bottom of this page.
+## Microphone
 
-### Location
+The Music Visualizer and music-reactive Ambient layer analyse the phone's **output mix** using
+Android's `android.media.audiofx.Visualizer`. Frequency magnitudes become bar heights on the matrix.
+Audio is processed locally and is not recorded to a file or transmitted. The capture engine
+releases itself after five seconds without a poll. Denying permission leaves the idle pattern.
 
-Two toys ask about your position: the **Compass**, to correct magnetic north to true north, and the
-**Solar Path**, to place the sun on its daily arc where you actually are.
+Android requires `RECORD_AUDIO` for `Visualizer` and `MODIFY_AUDIO_SETTINGS` to attach it to the
+output mix. GlyphWorks does not change audio settings. Android accounts for this through the
+microphone app operation, so the privacy indicator can appear and background restrictions apply.
+The input is audio already playing on the phone, not sound from the room; GlyphWorks does not use
+`AudioRecord` or `MediaRecorder`. The Timer uses `RingtoneManager` for its chime.
 
-Only `ACCESS_COARSE_LOCATION` is requested. The app never asks for a fix and never starts location
-updates. It reads `LocationManager.getLastKnownLocation` — a position some other app already asked
-for — and caches it for ten minutes, so a toy redrawn many times a second doesn't re-query it. The
-coordinates go to `android.hardware.GeomagneticField` for the declination angle, and to the on-device
-solar maths for sunrise and sunset. They are never stored to disk and never leave the device. Deny
-the permission and the Compass points at magnetic north while the Solar Path falls back to a nominal
-06:00/18:00 day.
+## The Essential Key and accessibility service
 
-### The Essential Key, and the accessibility service
+The accessibility service receives hardware key events so it can recognise Essential Key presses,
+including while locked or on AOD. It consumes recognised presses to control toys. Its
+`canRetrieveWindowContent` setting is false, so it cannot retrieve your screen contents.
 
-The Essential Key drives the toys. An accessibility service is the only way an ordinary app can
-observe a hardware key, including while the phone is locked or on the Always-On Display. The service
-exists for that and nothing else.
+It also receives window-state events scoped to Essential Space and Essential Recorder
+(`com.nothing.ntessentialspace`, `com.nothing.ntessentialrecorder`). If one opens within three seconds
+of a captured press, the service closes it once using Back when unlocked or Home when locked.
+This is disabled when key capture is off. The service is declared `isAccessibilityTool="false"`.
 
-It is declared `android:canRetrieveWindowContent="false"`, so the platform doesn't give it your
-screen contents. It cannot read what's on screen, in this app or any other. It receives key events,
-plus one event type — `typeWindowStateChanged` — scoped to two packages
-(`com.nothing.ntessentialspace`, `com.nothing.ntessentialrecorder`). That event is used only to close
-Essential Space when the system reacted to a press the app had already consumed. It is declared
-`android:isAccessibilityTool="false"`, because it isn't an assistive tool and doesn't pretend to be
-one.
+Press counts are held in memory to choose toy actions. Local Android diagnostic logs include
+hardware key codes, click counts, toy actions, and service events; they are not uploaded by
+GlyphWorks. The service does not use accessibility information for advertising or profiling, or
+send it with weather requests. You can disable it in Android's Accessibility settings.
 
-Key presses are counted in memory and turned into a toy action. They are not logged, not persisted,
-and not transmitted.
+## Designs, settings and alarms
 
-The service does one thing to another app's window, and that's worth saying plainly. It consumes the
-key press so Essential Space doesn't open on top of the toy you just acted on. On firmware where
-Essential Space opens anyway, it closes it once, immediately after. That's the only use of the
-accessibility API's global actions in this app. It happens only within three seconds of a press
-GlyphWorks itself captured, and never while key capture is switched off. The in-app disclosure — the
-first screen you see on a new install — says the same thing before you're asked to enable anything.
+Designs in the Create tab are `glyph.design` JSON files in app-private device-protected storage.
+They contain the artwork, design name, and creator name you provide. Sharing a design gives the
+single selected file to the app you choose in Android's share sheet. Copies prepared for sharing
+are cleaned from the cache after a day. The GitHub assistant can send design inputs when you use
+that feature, as described below.
 
-### Designs you draw
+Preferences, including enabled toys, Ambient backgrounds, brightness and creator name, are stored
+in device-protected `SharedPreferences`. Android's app storage controls let you remove local data.
 
-Designs made in the Create tab are `glyph.design` JSON files in the app's own device-protected
-storage. They hold your artwork, a name, and your creator name if you set one in Settings. All of it
-is text you typed.
+The Timer schedules an exact alarm as a backstop and posts a notification when it finishes.
+Timer data stays on the device.
 
-The app never uploads a design. Sharing is something you do: the ⋮ menu hands **one** file to
-Android's share sheet through a `FileProvider` that is not exported, and the app you pick receives
-it. Where it goes after that is between you and that app. Copies staged for sharing sit in the cache
-and are cleaned up after a day.
+## Permissions in both builds
 
-### Settings
-
-Preferences — which toys are enabled, their order, brightness, creator name — are stored in
-device-protected `SharedPreferences` on this phone. Uninstalling removes them.
-
-### Notifications and alarms
-
-The Timer schedules an exact alarm as a backstop, so the chime lands even if the app's process has
-been killed. It posts a notification when it fires. Nothing about a timer leaves the device.
-
-## Permissions in the Play build
-
-| Permission | Why |
+| Permission or access | Why |
 |---|---|
-| `com.nothing.ketchum.permission.ENABLE` | Draw on the Glyph Matrix through Nothing's Glyph SDK. |
-| Accessibility service (`BIND_ACCESSIBILITY_SERVICE`) | Observe Essential Key presses. Cannot read screen content. |
-| `RECORD_AUDIO` | On-device FFT for the visualizer. Optional. |
-| `MODIFY_AUDIO_SETTINGS` | Required alongside it: the visualizer attaches to the output mix, and Android gates that on this permission. It changes no audio setting. |
-| `ACCESS_COARSE_LOCATION` | Compass declination and solar path. Optional. |
-| `POST_NOTIFICATIONS` | The Timer chime notification. Optional. |
+| `com.nothing.ketchum.permission.ENABLE` | Draw on the Glyph Matrix through Nothing's SDK. |
+| Accessibility service (`BIND_ACCESSIBILITY_SERVICE`) | Recognise Essential Key presses and dismiss the related Essential pop-up. Cannot retrieve screen content. |
+| Notification access (`BIND_NOTIFICATION_LISTENER_SERVICE`) | Count outstanding dismissible notifications locally. Optional. |
+| `RECORD_AUDIO` | On-device output-mix analysis for the visualizer. Optional. |
+| `MODIFY_AUDIO_SETTINGS` | Required by Android to analyse the output mix; no audio settings are changed. |
+| `ACCESS_COARSE_LOCATION` | Compass declination, Solar Path and optional Weather. |
+| `ACCESS_BACKGROUND_LOCATION` | Follow approximate-location changes for Weather while locked or on AOD. Optional and granted separately. |
+| `INTERNET` | Request Weather from Open-Meteo in both builds; also used by the GitHub-only features below. |
+| `ACCESS_NETWORK_STATE` | Read Wi-Fi/cellular connection state for the connection-status background and network availability. |
+| `POST_NOTIFICATIONS` | Post Timer notifications; the GitHub build can also post update notices. Optional. |
 | `SCHEDULE_EXACT_ALARM` | The Timer's backstop alarm. Optional. |
-| `VIBRATE` | Haptic feedback on each recognised key press. |
-| `ACCESS_NETWORK_STATE` | Reads the connection *type* (Wi-Fi / cellular / none) for the connection-status background. It grants no network access. |
+| `VIBRATE` | Haptic feedback for recognised key presses. |
 
-This build has no `INTERNET` permission, no foreground service, and no background network work of
-any kind. The authoritative list for the version you installed is whatever `aapt2 dump permissions`
-prints for it.
+Weather needs internet permission in the Play build from 3.3.0 onward. Statements about older
+releases having no network access do not describe this version. The manifest and source for each
+release are available in the repository.
 
-## Children
+## GitHub builds
 
-The app has no accounts, no user-to-user features, no ads and no data collection. So there is
-nothing here that's collected from anyone, of any age.
+The GitHub build includes two additional network features whose code is absent from the Play build:
 
-## Other builds
+- The **design assistant** sends your prompts and the design inputs you provide to OpenAI over
+  HTTPS using your account. Review the feature's setup information and
+  [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/) before using it.
+- The **update checker** requests release information from GitHub's Releases API, normally once a
+  day, and can download a release you choose. GitHub receives the request and your IP address;
+  see [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
 
-The GitHub release is a different package configuration. It holds `INTERNET` and adds two optional
-features:
+These requests are separate from local notification counting and optional Weather.
 
-- an **AI design assistant**, which sends the prompts you type and the design you're editing to
-  OpenAI under your own account, over HTTPS
-- an **update checker**, an unauthenticated GET to the GitHub Releases API, once a day
+## Changes and contact
 
-Neither exists in the Google Play build. The code is excluded from it, not merely switched off. The
-privacy policy for those features ships with that build.
-
-## Changes
-
-Material changes to this policy get published here, with the date at the top updated. The history of
-this file is public in the repository below.
-
-## Contact and source
+Material changes are published here with an updated date. The history of this policy is public.
 
 - Email: **glyphworks@linuxct.space**
 - Source code, AGPL-3.0: **https://github.com/linuxct/glyphworks**
 
-GlyphWorks is an independent project. It is not affiliated with, endorsed by, or connected to Nothing
-Technology Limited.
+GlyphWorks is an independent project. It is not affiliated with, endorsed by, or connected to
+Nothing Technology Limited.

@@ -47,8 +47,8 @@ jobs:
       # `github` APK — the sideload build, with the design assistant and the
       # in-app update checker. This is what a human downloads and installs.
       #
-      # `play` bundle — the Play Store build: no assistant, no updater, no
-      # INTERNET permission (see app/src/play/). An .aab, because Play has taken
+      # `play` bundle — the Play Store build: no assistant or updater; Weather
+      # uses INTERNET in both flavours. An .aab, because Play has taken
       # bundles only since 2021.
       #
       # `play` APK — the same build as that bundle, installable. Play cannot
@@ -154,7 +154,7 @@ jobs:
             echo "|---|---|"
             echo "| **glyphworks-$V.apk** | **Install this one.** The full build: design assistant and in-app update checker included. |"
             echo "| glyphworks-$V-play.aab | Upload to the Play Console. Not installable. |"
-            echo "| glyphworks-$V-play.apk | The Play build, installable — for checking what Play users get. No assistant, no updater, no INTERNET permission. |"
+            echo "| glyphworks-$V-play.apk | The Play build, installable — for checking what Play users get. Includes Weather; no assistant or updater. |"
             echo
             cat /tmp/release_notes.md
           } > /tmp/release_body.md

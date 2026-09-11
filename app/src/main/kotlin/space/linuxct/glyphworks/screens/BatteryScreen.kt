@@ -30,21 +30,24 @@ class BatteryScreen : GlyphScreen {
 
     private fun tick() {
         val c = ctx ?: return
-        val charging = c.ports.battery.isCharging()
-        val showWatts = c.prefs.getBoolean(PrefKeys.BATTERY_SHOW_WATTS, PrefKeys.BATTERY_SHOW_WATTS_DEF)
-        c.pushFrame(
-            renderFrame(
-                c.size,
-                c.ports.battery.levelPercent(),
-                charging,
-                c.ports.clock.nowMillis(),
-                if (charging && showWatts) c.ports.battery.chargeWatts() else null,
-            ),
-        )
+        c.pushFrame(renderFrame(c))
     }
 
     companion object {
         const val TICK_MS = 1000L
+
+        /** One preference-aware renderer for the Battery toy and both Ambient uses. */
+        fun renderFrame(c: ScreenContext, nowMs: Long = c.ports.clock.nowMillis()): IntArray {
+            val charging = c.ports.battery.isCharging()
+            val showWatts = c.prefs.getBoolean(PrefKeys.BATTERY_SHOW_WATTS, PrefKeys.BATTERY_SHOW_WATTS_DEF)
+            return renderFrame(
+                c.size,
+                c.ports.battery.levelPercent(),
+                charging,
+                nowMs,
+                if (charging && showWatts) c.ports.battery.chargeWatts() else null,
+            )
+        }
 
         private const val PERCENT_FULL = 100
         private const val MIN_WATTS = 1
@@ -100,7 +103,7 @@ class BatteryScreen : GlyphScreen {
             return canvas.copyOut()
         }
 
-        /** [chargeWatts] defaults to null so the ambient background gets the gauge. */
+        /** A missing or invalid wattage reading falls back to the battery gauge. */
         fun renderFrame(
             size: Int,
             levelPercent: Int,
@@ -108,7 +111,9 @@ class BatteryScreen : GlyphScreen {
             nowMs: Long,
             chargeWatts: Float? = null,
         ): IntArray {
-            if (charging && chargeWatts != null) return renderWattage(size, chargeWatts)
+            if (charging && chargeWatts != null && chargeWatts.isFinite() && chargeWatts > 0f) {
+                return renderWattage(size, chargeWatts)
+            }
             val canvas = MatrixCanvas(size)
             val level = levelPercent.coerceIn(0, PERCENT_FULL)
             val fillRows = (size * level / PERCENT_FULL).coerceIn(0, size)

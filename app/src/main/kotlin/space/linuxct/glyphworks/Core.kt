@@ -36,6 +36,9 @@ import space.linuxct.glyphworks.util.JavaRandomPort
 import space.linuxct.glyphworks.util.ScreenStateWatcher
 import space.linuxct.glyphworks.util.SystemClockPort
 import space.linuxct.glyphworks.util.TrafficSpeedPort
+import space.linuxct.glyphworks.core.WeatherPrefs
+import space.linuxct.glyphworks.notifications.NotificationSource
+import space.linuxct.glyphworks.weather.AndroidWeatherPort
 
 /**
  * The process-wide object graph, shared by the services and the UI. [init] is safe to call
@@ -72,6 +75,8 @@ object Core {
         private set
     lateinit var router: KeyActionRouter
         private set
+    lateinit var weather: AndroidWeatherPort
+        private set
 
     @Synchronized
     fun init(context: Context) {
@@ -93,6 +98,7 @@ object Core {
         shake = ShakeDetector(app)
         audio = AudioVisualizerEngine(app, prefs)
 
+        weather = AndroidWeatherPort(app, prefs)
         ports = Ports(
             clock = SystemClockPort(),
             random = JavaRandomPort(),
@@ -108,6 +114,8 @@ object Core {
             location = AndroidLocationPort(app),
             timer = AndroidTimerSignal(app),
             design = AndroidDesignPort(prefs, designStore),
+            notifications = NotificationSource.initialize(app),
+            weather = weather,
         )
 
         screenManager = ScreenManager(
@@ -145,6 +153,7 @@ object Core {
             when (key) {
                 PrefKeys.MASTER_TOGGLE -> arbiter.onMasterToggleChanged()
                 PrefKeys.AUTO_BRIGHTNESS -> autoBrightness.onEnabledChanged()
+                WeatherPrefs.ENABLED -> weather.onConfigurationChanged()
                 PrefKeys.CUSTOM_DESIGN_ID -> scheduler.run {
                     screenManager.onSelectedDesignChanged(CustomScreen.ID)
                 }

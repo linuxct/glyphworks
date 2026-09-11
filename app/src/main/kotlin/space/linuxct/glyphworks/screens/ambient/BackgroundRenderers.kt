@@ -3,6 +3,9 @@ package space.linuxct.glyphworks.screens.ambient
 import space.linuxct.glyphworks.core.ConnectionState
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
+import space.linuxct.glyphworks.core.WeatherPrefs
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
+import space.linuxct.glyphworks.core.weather.WeatherStatus
 import space.linuxct.glyphworks.matrix.Font3x5
 import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
@@ -10,11 +13,15 @@ import space.linuxct.glyphworks.screens.BatteryScreen
 import space.linuxct.glyphworks.screens.ClockScreen
 import space.linuxct.glyphworks.screens.MoonMath
 import space.linuxct.glyphworks.screens.MoonScreen
+import space.linuxct.glyphworks.screens.NotificationsPresentation
 import space.linuxct.glyphworks.screens.SolarMath
 import space.linuxct.glyphworks.screens.SolarScreen
 import space.linuxct.glyphworks.screens.SpeedScreen
+import space.linuxct.glyphworks.screens.WeatherRenderer
 
 interface AmbientBackground {
+    fun onShow(c: ScreenContext, elapsedMs: Long) {}
+    fun onHide(c: ScreenContext) {}
     fun render(c: ScreenContext, nowMs: Long): IntArray
 }
 
@@ -29,19 +36,27 @@ object BackgroundRenderers {
     const val BATTERY_GAUGE = 7
     const val SOLAR_PATH = 8
     const val MOON_PHASE = 9
+    const val NOTIFICATIONS = 10
+    const val WEATHER = 11
 
-    const val COUNT = 10
+    const val COUNT = 12
 
-    fun create(index: Int): AmbientBackground = when (index) {
-        ANALOG_CLOCK -> AnalogClockBackground()
-        CONNECTION -> ConnectionBackground()
-        BATTERY_TEXT -> BatteryTextBackground()
-        SPEED -> SpeedBackground()
-        TILT_BALL -> TiltBallBackground()
-        PIXEL_CLOCK -> PixelClockBackground()
-        BATTERY_GAUGE -> BatteryGaugeBackground()
-        SOLAR_PATH -> SolarPathBackground()
-        MOON_PHASE -> MoonPhaseBackground()
+    fun create(index: Int): AmbientBackground = create(
+        AmbientBackgrounds.orderedIds.getOrElse(index) { AmbientBackgrounds.TEXT_CLOCK },
+    )
+
+    fun create(id: String): AmbientBackground = when (id) {
+        AmbientBackgrounds.ANALOG_CLOCK -> AnalogClockBackground()
+        AmbientBackgrounds.CONNECTION -> ConnectionBackground()
+        AmbientBackgrounds.BATTERY_TEXT -> BatteryTextBackground()
+        AmbientBackgrounds.SPEED -> SpeedBackground()
+        AmbientBackgrounds.TILT_BALL -> TiltBallBackground()
+        AmbientBackgrounds.PIXEL_CLOCK -> PixelClockBackground()
+        AmbientBackgrounds.BATTERY_GAUGE -> BatteryGaugeBackground()
+        AmbientBackgrounds.SOLAR_PATH -> SolarPathBackground()
+        AmbientBackgrounds.MOON_PHASE -> MoonPhaseBackground()
+        AmbientBackgrounds.NOTIFICATIONS -> NotificationsBackground()
+        AmbientBackgrounds.WEATHER -> WeatherBackground()
         else -> TextClockBackground()
     }
 }
@@ -147,15 +162,22 @@ private class SpeedBackground : AmbientBackground {
     private var lastSampleAt = 0L
     private var bytesPerSec = 0L
 
+    override fun onShow(c: ScreenContext, elapsedMs: Long) {
+        lastTotal = c.ports.speed.totalRxBytes()
+        lastSampleAt = elapsedMs
+        bytesPerSec = 0L
+    }
+
     override fun render(c: ScreenContext, nowMs: Long): IntArray {
-        if (nowMs - lastSampleAt >= MILLIS_PER_SECOND) {
+        val elapsedMs = c.ports.clock.elapsedMillis()
+        if (elapsedMs - lastSampleAt >= MILLIS_PER_SECOND) {
             val total = c.ports.speed.totalRxBytes()
-            if (lastTotal >= 0 && nowMs > lastSampleAt) {
-                val elapsed = nowMs - lastSampleAt
+            if (lastTotal >= 0 && elapsedMs > lastSampleAt) {
+                val elapsed = elapsedMs - lastSampleAt
                 bytesPerSec = ((total - lastTotal) * MILLIS_PER_SECOND / elapsed).coerceAtLeast(0)
             }
             lastTotal = total
-            lastSampleAt = nowMs
+            lastSampleAt = elapsedMs
         }
         return SpeedScreen.renderFrame(c.size, bytesPerSec)
     }
@@ -199,12 +221,7 @@ private class PixelClockBackground : AmbientBackground {
 }
 
 private class BatteryGaugeBackground : AmbientBackground {
-    override fun render(c: ScreenContext, nowMs: Long): IntArray = BatteryScreen.renderFrame(
-        c.size,
-        c.ports.battery.levelPercent(),
-        c.ports.battery.isCharging(),
-        nowMs,
-    )
+    override fun render(c: ScreenContext, nowMs: Long): IntArray = BatteryScreen.renderFrame(c, nowMs)
 }
 
 private class SolarPathBackground : AmbientBackground {
@@ -241,4 +258,36 @@ private class SolarPathBackground : AmbientBackground {
 private class MoonPhaseBackground : AmbientBackground {
     override fun render(c: ScreenContext, nowMs: Long): IntArray =
         MoonScreen.renderFrame(c.size, MoonMath.phaseFraction(nowMs))
+}
+
+private class NotificationsBackground : AmbientBackground {
+    private val presentation = NotificationsPresentation()
+    override fun onShow(c: ScreenContext, elapsedMs: Long) = presentation.reset()
+    override fun onHide(c: ScreenContext) = presentation.reset()
+    override fun render(c: ScreenContext, nowMs: Long): IntArray = presentation.render(c)
+}
+
+private class WeatherBackground : AmbientBackground {
+    private var startedAt = 0L
+    private var wasUsable = false
+
+    override fun onShow(c: ScreenContext, elapsedMs: Long) {
+        startedAt = elapsedMs
+        wasUsable = false
+    }
+
+    override fun onHide(c: ScreenContext) {
+        wasUsable = false
+    }
+
+    override fun render(c: ScreenContext, nowMs: Long): IntArray {
+        val snapshot = c.ports.weather.snapshot()
+        val elapsedMs = c.ports.clock.elapsedMillis()
+        val usable = (snapshot.status == WeatherStatus.READY || snapshot.status == WeatherStatus.STALE) &&
+            snapshot.condition != null && snapshot.temperatureC?.isFinite() == true
+        // Loading may outlast the icon hold. Give the first usable condition its full hold.
+        if (usable && !wasUsable) startedAt = elapsedMs
+        wasUsable = usable
+        return WeatherRenderer.renderFrame(c.size, snapshot, elapsedMs - startedAt, WeatherPrefs.fahrenheit(c.prefs))
+    }
 }

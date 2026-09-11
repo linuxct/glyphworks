@@ -23,8 +23,8 @@ android {
         applicationId = "space.linuxct.glyphworks"
         minSdk = 33
         targetSdk = 37
-        versionCode = 20
-        versionName = "3.2.0"
+        versionCode = 21
+        versionName = "3.3.0"
     }
 
     signingConfigs {
@@ -58,13 +58,11 @@ android {
 
     // ---------- distribution flavours ----------
     //
-    // The Play build must not merely disable the design assistant and the update
-    // checker — their CODE must not be in the APK. That is what makes three Play
-    // filings unnecessary rather than merely favourable: no foreground-service
-    // justification, no data-collection entry on the Data Safety form, and no
-    // reviewer credentials for a sign-in. A runtime flag would leave the classes,
-    // the strings and the INTERNET permission in the binary, and a reviewer reads
-    // the binary.
+    // The Play build excludes the design assistant and update checker from the APK.
+    // Their code and strings belong only to the GitHub source set, not behind a
+    // runtime switch. Weather is a common feature from 3.3.0 onward, so INTERNET
+    // is now in the common manifest and both flavours disclose weather requests.
+    // Store declarations must describe the actual data flows of the built version.
     //
     // So `ai/`, `core/ai/`, `update/` and the three AI dialogs live in
     // `src/github/`, never in `src/main/`, and the two flavours agree only on a

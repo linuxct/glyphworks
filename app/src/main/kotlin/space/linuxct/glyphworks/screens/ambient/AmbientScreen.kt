@@ -1,20 +1,28 @@
 package space.linuxct.glyphworks.screens.ambient
 
 import space.linuxct.glyphworks.core.GlyphScreen
+import space.linuxct.glyphworks.core.Events
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.ScreenContext
+import space.linuxct.glyphworks.core.ambient.AmbientBackgrounds
+import space.linuxct.glyphworks.core.ambient.AmbientCarousel
+import space.linuxct.glyphworks.screens.BatteryScreen
 import space.linuxct.glyphworks.screens.VisualizerScreen
 
 /**
- * The ambient home screen. Layers run background, then charging, then audio, and each
- * active one replaces the whole buffer, so the last one wins.
+ * The ambient home screen. Audio wins over charging, then the selected background.
+ * Covered backgrounds are suspended so their animation and automatic cycle can resume cleanly.
  */
 class AmbientScreen : GlyphScreen {
     override val id = "ambient"
-    override val interactive = false
+    override val interactive = true
 
     private var ctx: ScreenContext? = null
-    private val backgrounds = HashMap<Int, AmbientBackground>()
+    private val backgrounds = HashMap<String, AmbientBackground>()
+    private val carousel = AmbientCarousel()
+    private var visibleId: String? = null
+    private var visibleContext: ScreenContext? = null
+    private var weatherActive = false
 
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
@@ -22,59 +30,93 @@ class AmbientScreen : GlyphScreen {
     }
 
     override fun onDeactivate() {
+        hideBackground()
+        carousel.pause()
+        if (weatherActive) ctx?.ports?.weather?.setActive(false)
+        weatherActive = false
         ctx = null
         backgrounds.clear()
     }
 
-    override fun onEvent(event: String) = Unit
+    override fun onEvent(event: String) {
+        if (event != Events.CHANGE) return
+        val c = ctx ?: return
+        configureCarousel(c)
+        carousel.advance(c.ports.clock.elapsedMillis())
+        tick()
+    }
 
     private fun tick() {
         val c = ctx ?: return
+        updateWeatherActivity(c)
         c.pushFrame(composite(c))
     }
 
     fun composite(c: ScreenContext): IntArray {
         val nowMs = c.ports.clock.nowMillis()
-        var frame: IntArray? = null
-
-        if (c.prefs.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF) &&
-            backgroundVisible(c)
-        ) {
-            val idx = c.prefs.getInt(PrefKeys.AMBIENT_BACKGROUND, PrefKeys.AMBIENT_BACKGROUND_DEF)
-                .coerceIn(0, BackgroundRenderers.COUNT - 1)
-            val renderer = backgrounds.getOrPut(idx) { BackgroundRenderers.create(idx) }
-            frame = renderer.render(c, nowMs)
-        }
-
-        if (c.prefs.getBoolean(PrefKeys.AMBIENT_USE_CHARGING, PrefKeys.AMBIENT_USE_CHARGING_DEF) &&
+        val elapsedMs = c.ports.clock.elapsedMillis()
+        configureCarousel(c)
+        val bands = c.ports.spectrum.bands(c.size)
+        val audioVisible = bands != null && (bands.maxOrNull() ?: 0f) > VisualizerScreen.SILENCE_THRESHOLD
+        val chargingVisible = c.prefs.getBoolean(PrefKeys.AMBIENT_USE_CHARGING, PrefKeys.AMBIENT_USE_CHARGING_DEF) &&
             c.ports.battery.isCharging() &&
             c.ports.battery.levelPercent() != PERCENT_FULL
-        ) {
-            val style = c.prefs.getInt(
-                PrefKeys.AMBIENT_CHARGING_STYLE,
-                PrefKeys.AMBIENT_CHARGING_STYLE_DEF,
-            )
-            frame = ChargingRenderer.render(
-                c.size,
-                style,
-                c.ports.battery.levelPercent(),
-                nowMs,
-                // Only for the style that draws it: the port hits the battery service
-                // and this runs every tick.
-                if (style == ChargingRenderer.STYLE_WATTS) c.ports.battery.chargeWatts() else null,
-            )
-        }
+        val showBackground = !audioVisible && !chargingVisible &&
+            c.prefs.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF) &&
+            backgroundVisible(c)
+        val selected = carousel.update(showBackground, elapsedMs)
+        if (!showBackground || selected == null) hideBackground()
 
-        val bands = c.ports.spectrum.bands(c.size)
-        if (bands != null && (bands.maxOrNull() ?: 0f) > VisualizerScreen.SILENCE_THRESHOLD) {
-            frame = VisualizerScreen.renderFrame(
+        if (audioVisible) {
+            return VisualizerScreen.renderFrame(
                 c.size,
-                bands,
+                checkNotNull(bands),
                 c.prefs.getInt(PrefKeys.VISUALIZER_THEME, PrefKeys.VISUALIZER_THEME_DEF),
             )
         }
 
-        return frame ?: IntArray(c.size * c.size)
+        if (chargingVisible) {
+            return BatteryScreen.renderFrame(c, nowMs)
+        }
+
+        if (showBackground && selected != null) {
+            val renderer = backgrounds.getOrPut(selected) { BackgroundRenderers.create(selected) }
+            if (visibleId != selected || visibleContext !== c) {
+                hideBackground()
+                visibleId = selected
+                visibleContext = c
+                renderer.onShow(c, elapsedMs)
+            }
+            return renderer.render(c, nowMs)
+        }
+
+        return IntArray(c.size * c.size)
+    }
+
+    private fun configureCarousel(c: ScreenContext) {
+        carousel.configure(
+            AmbientBackgrounds.readSelection(c.prefs),
+            c.prefs.getBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, PrefKeys.AMBIENT_AUTO_CYCLE_DEF),
+            c.ports.clock.elapsedMillis(),
+        )
+    }
+
+    private fun hideBackground() {
+        val c = visibleContext
+        val renderer = visibleId?.let { backgrounds[it] }
+        if (c != null) renderer?.onHide(c)
+        visibleId = null
+        visibleContext = null
+    }
+
+    private fun updateWeatherActivity(c: ScreenContext) {
+        // A cycle entry needs a ready snapshot when it returns. Keep one weather lease
+        // for the Ambient lifetime instead of starting location/network every 15 seconds.
+        val needed = c.prefs.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF) &&
+            AmbientBackgrounds.WEATHER in AmbientBackgrounds.readSelection(c.prefs)
+        if (needed == weatherActive) return
+        weatherActive = needed
+        c.ports.weather.setActive(needed)
     }
 
     private fun backgroundVisible(c: ScreenContext): Boolean {

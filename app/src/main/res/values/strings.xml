@@ -4,7 +4,7 @@
 
     <!-- Accessibility service -->
     <string name="accessibility_service_label">GlyphWorks</string>
-    <string name="accessibility_service_description">Enables GlyphWorks to detect presses of the Essential Key so you can control Glyph Toys: press once for a Glyph Touch action, twice to switch to the next toy, three times to return to the background toy. The service observes hardware key presses and consumes the ones it recognises, so Essential Space does not open on top of the toy; it also watches Essential Space window events to dismiss it when the system still reacts to a captured press. It never reads screen content, and nothing it observes is stored or transmitted.</string>
+    <string name="accessibility_service_description">Enables GlyphWorks to detect presses of the Essential Key so you can control Glyph Toys: press once for a toy action, including changing the Ambient background, twice to switch to the next toy, three times to return to the first toy. The service observes hardware key events and consumes recognised Essential Key presses; it also watches Essential Space window events to dismiss it when the system still reacts to a captured press. It cannot retrieve screen content. Local Android diagnostic logs include key codes and toy actions; accessibility data is never transmitted.</string>
 
     <!-- Glyph toy registration -->
     <string name="toy_name">GlyphWorks</string>
@@ -12,7 +12,7 @@
 
     <!-- Disclosure -->
     <string name="disclosure_title">Accessibility permission needed</string>
-    <string name="disclosure_body">GlyphWorks uses Android’s AccessibilityService API to detect presses of your phone’s Essential Key, including on the lock screen and Always-On Display. This is the only way a normal app can react to that key.\n\nWhat the service accesses:\n• Presses of the Essential Key, and nothing else — no other key and no other input\n• Window-opened events from Essential Space and Essential Recorder only\n\nWhat it does with them:\n• Single press: Glyph Touch action on the current toy\n• Double press: switch to the next toy\n• Triple press: return to the background toy\n• It consumes the press so Essential Space does not open over your toy, and if Essential Space opens anyway it closes it once, straight after\n\nWhat the service does NOT do:\n• It cannot and does not read your screen content\n• It does not store or transmit anything it observes — key presses are counted in memory, turned into a toy action, and discarded\n• It is not used for advertising, analytics or profiling, and this build has no internet permission at all\n\nYou can decline. The Essential Key then keeps its stock behaviour and the rest of the app works normally.\n\nTap “Continue to Settings” to enable “GlyphWorks” under Downloaded apps.</string>
+    <string name="disclosure_body">GlyphWorks uses Android’s AccessibilityService API to detect presses of your phone’s Essential Key, including on the lock screen and Always-On Display.\n\nWhat the service accesses:\n• Hardware key events, used to recognise Essential Key presses\n• Window-opened events from Essential Space and Essential Recorder only\n\nWhat it does with them:\n• Single press: the current toy’s action, including changing the Ambient background\n• Double press: switch to the next toy, or open the picker in Menu mode\n• Triple press: return to the first toy in your list\n• It consumes Essential Key presses so Essential Space does not open over your toy; if Essential Space opens anyway, it closes it once, straight after\n\nYour data:\n• The service cannot retrieve your screen content\n• Press counts are held in memory to choose toy actions. Local Android diagnostic logs include key codes, click counts and service events\n• Accessibility information is never transmitted or used for advertising, analytics or profiling\n• Optional Weather uses separate location access and sends approximate coordinates to Open-Meteo, which also receives your IP address. Notification counting uses separate notification access and keeps its metadata on the phone\n\nYou can decline. The Essential Key then keeps its stock behaviour and the rest of the app works normally.\n\nTap “Continue to Settings” to enable “GlyphWorks” under Downloaded apps.</string>
     <!-- Shown in place of nothing when the user taps the decline button in
          onboarding: declining has to be visibly acknowledged, and reversible. -->
     <string name="disclosure_declined_note">Not enabled. The Essential Key keeps its stock behaviour and every other part of GlyphWorks still works. You can turn this on here, or later from Settings → Initial setup.</string>
@@ -43,13 +43,13 @@
     <string name="onb_toy_hint">Pick “GlyphWorks” in the list that opens, then come back here.</string>
 
     <string name="onb_perms_title">A few small favours</string>
-    <string name="onb_perms_body">Each permission powers exactly one thing, and all of them are optional — skip any and the related toy just sits things out.</string>
-    <string name="onb_perm_notif">Notifications</string>
-    <string name="onb_perm_notif_why">The Timer chimes when it runs out, and you’ll hear about new GlyphWorks releases.</string>
+    <string name="onb_perms_body">These permissions are optional. Each row explains the toys it supports; you can skip it and change your choice later. Posting notifications and counting existing notifications need separate permissions.</string>
+    <string name="onb_perm_notif">Post notifications</string>
+    <string name="onb_perm_notif_why">Lets the Timer show its finished notification and GlyphWorks announce new releases. Counting other notifications uses separate notification access.</string>
     <string name="onb_perm_mic">Microphone</string>
     <string name="onb_perm_mic_why">The Music Visualizer dances to what’s playing. Audio is analysed on-device, never stored, never sent anywhere.</string>
-    <string name="onb_perm_loc">Location</string>
-    <string name="onb_perm_loc_why">Corrects the Compass for magnetic declination and anchors the Solar Path to your sky.</string>
+    <string name="onb_perm_loc">Approximate location</string>
+    <string name="onb_perm_loc_why">Corrects the Compass, anchors Solar Path, and finds local weather when you enable Weather. Weather sends approximate coordinates to Open-Meteo; its settings explain optional location access while locked.</string>
     <string name="onb_perm_alarm">Exact alarms</string>
     <string name="onb_perm_alarm_why">Guarantees the Timer chime lands on the second, even when the phone is dozing.</string>
 
@@ -100,9 +100,9 @@
          the app genuinely cannot tell whether it has been selected. -->
     <string name="checklist_toy_pending">Select “GlyphWorks” in Glyph settings (tap to open) — this can’t be confirmed until the app restarts</string>
     <string name="checklist_toy_on">Selected — verified by a system toy binding (tap to change)</string>
-    <string name="checklist_notifications">Notifications (Timer chime)</string>
+    <string name="checklist_notifications">Post notifications (Timer)</string>
     <string name="checklist_mic">Microphone (music visualizer)</string>
-    <string name="checklist_location">Location (compass declination, optional)</string>
+    <string name="checklist_location">Approximate location (Compass, Solar Path, Weather)</string>
     <string name="checklist_exact_alarm">Exact alarms (Timer backstop)</string>
     <string name="checklist_walkthrough">Run through setup again</string>
     <string name="checklist_walkthrough_hint">Reopens the first-run walkthrough. Nothing is reset — your toys, designs and settings stay exactly as they are.</string>
@@ -219,7 +219,7 @@
     <string name="tut_handover_note">This stops the system from reacting to the key directly. If a pop-up still slips through on some firmware, GlyphWorks dismisses it automatically.</string>
 
     <string name="tut_c1_title">Single press — Glyph Touch</string>
-    <string name="tut_c1_body">Fires the current toy’s action: roll the dice, flip the coin, +1 the counter, start or pause the timer. Toys without an action simply ignore it.</string>
+    <string name="tut_c1_body">Fires the current toy’s action: change to the next enabled Ambient background, roll the dice, flip the coin, +1 the counter, or start the timer. Toys without an action simply ignore it.</string>
     <string name="tut_c2_title">Double press — next toy</string>
     <string name="tut_c2_body">Switches to the next enabled toy in your configured order, wrapping around at the end of the list.</string>
     <string name="tut_c3_title">Triple press — background toy</string>
@@ -270,11 +270,12 @@
     <string name="pref_battery_watts">Show charging wattage while charging</string>
     <string name="pref_breathing_pace">Breathing pace (higher = slower)</string>
     <string name="pref_timer_duration">Timer duration (minutes)</string>
-    <string name="pref_ambient_background">Background toy</string>
+    <string name="pref_ambient_background">Background toys</string>
     <string name="pref_ambient_night">Show background at night (23:00–06:00)</string>
     <string name="pref_ambient_shake">Only show background for 30 s after a shake</string>
     <string name="pref_ambient_charging">Charging indicator</string>
-    <string name="pref_ambient_charging_style">Charging style</string>
+    <string name="pref_ambient_shared_settings">Individual toy settings also apply in Ambient. The charging display and Battery gauge background use your Battery settings. Configure Notifications, Weather, Clock (themed), and Visualizer through their own settings.</string>
+    <string name="pref_ambient_battery_settings">Battery settings</string>
     <string name="pref_visualizer_theme">Visualizer theme</string>
     <string name="pref_visualizer_tuning">Response speed (1 = calmest, 6 = snappiest)</string>
     <string name="pref_custom_design">Design to play</string>

@@ -22,7 +22,7 @@ object PrefKeys {
     const val PREFS_VERSION_DEF = 1
 
     // AndroidPrefs stamps PREFS_VERSION on a first launch, so the default 1 means "maybe legacy".
-    const val PREFS_VERSION_CURRENT = 2
+    const val PREFS_VERSION_CURRENT = 4
 
     const val MASTER_TOGGLE = "master_toggle"
     const val MASTER_TOGGLE_DEF = true
@@ -44,7 +44,7 @@ object PrefKeys {
     // `rps` stays listed while Rock Paper Scissors is off. Readers drop ids they cannot
     // resolve, so the toy keeps its place for when it returns.
     const val SCREEN_ORDER_DEF =
-        "ambient,clock,eyes,speed,battery,solar,moon,dice,coin,dino,bottle,rps,counter,breathing," +
+        "ambient,clock,eyes,speed,battery,notifications,weather,solar,moon,dice,coin,dino,bottle,rps,counter,breathing," +
             "timer,compass,level,visualizer,custom"
 
     fun screenEnabled(id: String) = "screen_enabled_$id"
@@ -99,8 +99,15 @@ object PrefKeys {
     const val CREATOR_NAME = "creatorName"
     const val CREATOR_NAME_DEF = ""
 
+    // Read only during migration from the original, single numeric background selection.
     const val AMBIENT_BACKGROUND = "ambientBackground"
     const val AMBIENT_BACKGROUND_DEF = 0
+
+    const val AMBIENT_BACKGROUNDS = "ambientBackgrounds"
+    const val AMBIENT_BACKGROUNDS_DEF = "text_clock"
+
+    const val AMBIENT_AUTO_CYCLE = "ambientAutoCycle"
+    const val AMBIENT_AUTO_CYCLE_DEF = false
 
     const val AMBIENT_USE_BACKGROUND = "ambientUseBackground"
     const val AMBIENT_USE_BACKGROUND_DEF = true
@@ -113,9 +120,6 @@ object PrefKeys {
 
     const val AMBIENT_USE_CHARGING = "ambientShowCharging"
     const val AMBIENT_USE_CHARGING_DEF = true
-
-    const val AMBIENT_CHARGING_STYLE = "ambientChargingStyle"
-    const val AMBIENT_CHARGING_STYLE_DEF = 0
 
     const val VISUALIZER_THEME = "visualizerTheme"
     const val VISUALIZER_THEME_DEF = 0
