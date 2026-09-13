@@ -143,6 +143,7 @@ internal fun WeatherSettings() {
     val tick = rememberInformationRefresh()
     val enabled by rememberPref(WeatherPrefs.ENABLED) { it.getBoolean(WeatherPrefs.ENABLED, false) }
     val unit by rememberPref(WeatherPrefs.UNIT) { it.getString(WeatherPrefs.UNIT, WeatherPrefs.CELSIUS) }
+    val iconStyle by rememberPref(WeatherPrefs.ICON_STYLE) { WeatherPrefs.iconStyle(it) }
     val coarse = remember(tick) { locationGranted(context) }
     val background = remember(tick) { backgroundLocationGranted(context) }
     val snapshot = remember(tick) { Core.ports.weather.snapshot() }
@@ -191,6 +192,14 @@ internal fun WeatherSettings() {
         ChoiceRow(stringResource(R.string.information_weather_fahrenheit), unit == WeatherPrefs.FAHRENHEIT) {
             Core.prefs.putString(WeatherPrefs.UNIT, WeatherPrefs.FAHRENHEIT)
         }
+        Text(stringResource(R.string.information_weather_icon_design), style = MaterialTheme.typography.labelLarge)
+        ChoiceRow(stringResource(R.string.information_weather_icon_original), iconStyle == WeatherPrefs.ORIGINAL) {
+            Core.prefs.putString(WeatherPrefs.ICON_STYLE, WeatherPrefs.ORIGINAL)
+        }
+        ChoiceRow(stringResource(R.string.information_weather_icon_nothing_inspired), iconStyle == WeatherPrefs.NOTHING_INSPIRED) {
+            Core.prefs.putString(WeatherPrefs.ICON_STYLE, WeatherPrefs.NOTHING_INSPIRED)
+        }
+        InformationExplanation(stringResource(R.string.information_weather_icon_design_hint))
         InformationExplanation(stringResource(weatherStatusText(snapshot.status)))
         TextButton(onClick = { Core.weather.refresh() }, enabled = coarse) {
             Text(stringResource(R.string.information_weather_refresh))

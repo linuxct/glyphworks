@@ -1,5 +1,6 @@
 package space.linuxct.glyphworks.screens
 
+import space.linuxct.glyphworks.core.WeatherPrefs
 import space.linuxct.glyphworks.core.weather.WeatherCondition
 import space.linuxct.glyphworks.core.weather.WeatherSnapshot
 import space.linuxct.glyphworks.core.weather.WeatherStatus
@@ -14,28 +15,35 @@ object WeatherRenderer {
     const val SLIDE_MS = 1_000L
     const val LOOP_MS = 2 * (HOLD_MS + SLIDE_MS)
 
-    fun renderFrame(size: Int, snapshot: WeatherSnapshot, elapsedMs: Long, fahrenheit: Boolean = false): IntArray {
+    fun renderFrame(
+        size: Int,
+        snapshot: WeatherSnapshot,
+        elapsedMs: Long,
+        fahrenheit: Boolean = false,
+        iconStyle: String = WeatherPrefs.ORIGINAL,
+    ): IntArray {
         val c = MatrixCanvas(size)
         val usable = snapshot.status == WeatherStatus.READY || snapshot.status == WeatherStatus.STALE
         if (!usable || snapshot.condition == null || snapshot.temperatureC?.isFinite() != true) {
-            cloud(c, 0)
+            if (iconStyle == WeatherPrefs.NOTHING_INSPIRED) WeatherGlyphs.drawStatusCloud(c)
+            else cloud(c, 0)
             val mark = if (snapshot.status == WeatherStatus.LOADING) "..." else "?"
             InformationDrawing.text(c, mark, if (size >= 25) 14 else 8, if (size >= 25) 2 else 1)
             return InformationDrawing.mask(c)
         }
         val phase = elapsedMs.coerceAtLeast(0) % LOOP_MS
         when {
-            phase < HOLD_MS -> icon(c, snapshot, 0)
+            phase < HOLD_MS -> icon(c, snapshot, 0, iconStyle)
             phase < HOLD_MS + SLIDE_MS -> {
                 val shift = ((phase - HOLD_MS) * size / SLIDE_MS).toInt()
-                icon(c, snapshot, -shift)
+                icon(c, snapshot, -shift, iconStyle)
                 temperature(c, snapshot.temperatureC, fahrenheit, size - shift)
             }
             phase < 2 * HOLD_MS + SLIDE_MS -> temperature(c, snapshot.temperatureC, fahrenheit, 0)
             else -> {
                 val shift = ((phase - 2 * HOLD_MS - SLIDE_MS) * size / SLIDE_MS).toInt()
                 temperature(c, snapshot.temperatureC, fahrenheit, -shift)
-                icon(c, snapshot, size - shift)
+                icon(c, snapshot, size - shift, iconStyle)
             }
         }
         if (snapshot.status == WeatherStatus.STALE) c.set(size / 2, size - 1, 1800)
@@ -79,6 +87,8 @@ object WeatherRenderer {
     ), 2, 2, shift)
 
     private fun moon(c: MatrixCanvas, shift: Int) {
+        // Four dots form the same star as Nothing's clear-night artwork, inside the crescent.
+        sprite(c, listOf(" # ", "# #", " # "), 8, 2, shift)
         if (c.size < 25) {
             // Hand-tuned horns and a rounded bowl keep the broad crescent legible on 13×13.
             sprite(c, listOf(
@@ -113,7 +123,11 @@ object WeatherRenderer {
         }
     }
 
-    private fun icon(c: MatrixCanvas, snapshot: WeatherSnapshot, shift: Int) {
+    private fun icon(c: MatrixCanvas, snapshot: WeatherSnapshot, shift: Int, iconStyle: String) {
+        if (iconStyle == WeatherPrefs.NOTHING_INSPIRED) {
+            snapshot.condition?.let { WeatherGlyphs.draw(c, it, snapshot.isDay, shift) }
+            return
+        }
         when (snapshot.condition) {
             WeatherCondition.CLEAR -> if (snapshot.isDay) sun(c, shift) else moon(c, shift)
             WeatherCondition.CLOUDY -> cloud(c, shift, top = 4)
@@ -140,15 +154,14 @@ object WeatherRenderer {
                         for (x in 2..8) dot(c, x, 8, shift, 2200)
                         for (x in 4..10) dot(c, x, 10, shift)
                     }
-                    WeatherCondition.DRIZZLE -> for (x in listOf(3, 6, 9)) {
-                        dot(c, x, 8, shift)
-                        dot(c, x - 1, 9, shift)
+                    WeatherCondition.DRIZZLE -> for (x in listOf(5, 8)) {
+                        dot(c, x, 8, shift, 2200)
+                        dot(c, x - 1, 9, shift, 2200)
                     }
                     WeatherCondition.RAIN -> sprite(c, listOf(
-                        " + # . + ",
-                        "+ # . #  ",
-                        " . + + . ",
-                        "  + # .  ",
+                        "  + # + #",
+                        " + # + # ",
+                        "+ # + #  ",
                     ), 2, 8, shift)
                     WeatherCondition.SNOW -> sprite(c, listOf("# # #", " ### ", "# # #"), 4, 8, shift)
                     // One physical row separates the cloud and bolt on either panel.

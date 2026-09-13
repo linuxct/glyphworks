@@ -19,6 +19,7 @@ import space.linuxct.glyphworks.core.weather.WeatherStatus
 import space.linuxct.glyphworks.screens.NotificationsScreen
 import space.linuxct.glyphworks.screens.NotificationsRenderer
 import space.linuxct.glyphworks.screens.WeatherRenderer
+import space.linuxct.glyphworks.screens.WeatherScreen
 
 class InformationAmbientBackgroundsTest {
     private class WeatherProbe : WeatherPort {
@@ -154,6 +155,53 @@ class InformationAmbientBackgroundsTest {
             screen.composite(c)
             weather.value = WeatherSnapshot(WeatherStatus.STALE, -12.0, WeatherCondition.SNOW)
             assertTrue(screen.composite(c).contentEquals(WeatherRenderer.renderFrame(size, weather.value, 0, true)))
+        }
+    }
+
+    @Test
+    fun `weather toy and Ambient share persisted icon designs and safe fallback throughout the marquee`() {
+        val preferences = listOf(
+            null to WeatherPrefs.ORIGINAL,
+            WeatherPrefs.ORIGINAL to WeatherPrefs.ORIGINAL,
+            WeatherPrefs.NOTHING_INSPIRED to WeatherPrefs.NOTHING_INSPIRED,
+            "unknown" to WeatherPrefs.ORIGINAL,
+        )
+        for (size in listOf(13, 25)) for ((storedStyle, expectedStyle) in preferences) {
+            val h = TestHarness(size)
+            val weather = WeatherProbe().apply {
+                // Cloudy differs between designs; the shared sunny glyph cannot detect ignored preferences.
+                value = WeatherSnapshot(WeatherStatus.READY, 21.0, WeatherCondition.CLOUDY)
+            }
+            val c = context(h, weather)
+            h.prefs.putString(PrefKeys.AMBIENT_BACKGROUNDS, "weather")
+            h.prefs.putString(WeatherPrefs.UNIT, WeatherPrefs.FAHRENHEIT)
+            if (storedStyle != null) h.prefs.putString(WeatherPrefs.ICON_STYLE, storedStyle)
+            assertEquals(expectedStyle, WeatherPrefs.iconStyle(h.prefs))
+            val standalone = WeatherScreen()
+            val ambient = AmbientScreen()
+            val started = h.clock.elapsed
+            standalone.onActivate(c)
+
+            fun assertSharedFrame(style: String) {
+                val expected = WeatherRenderer.renderFrame(size, weather.value,
+                    h.clock.elapsed - started, fahrenheit = true, iconStyle = style)
+                assertArrayEquals("$size standalone style $style", expected, h.lastFrame())
+                assertArrayEquals("$size Ambient style $style", expected, ambient.composite(c))
+            }
+            assertSharedFrame(expectedStyle)
+            for (phase in listOf(3500L, 4000L, 7500L, 8000L)) {
+                h.clock.advance(phase - (h.clock.elapsed - started) - 50L)
+                h.scheduler.tick()
+                assertSharedFrame(expectedStyle)
+            }
+
+            // A settings change must reach both already-active presentations without reactivation.
+            val changedStyle = if (expectedStyle == WeatherPrefs.ORIGINAL)
+                WeatherPrefs.NOTHING_INSPIRED else WeatherPrefs.ORIGINAL
+            h.prefs.putString(WeatherPrefs.ICON_STYLE, changedStyle)
+            h.scheduler.tick()
+            assertSharedFrame(changedStyle)
+            standalone.onDeactivate()
         }
     }
 

@@ -48,6 +48,10 @@
     <string name="information_weather_units">Temperature unit</string>
     <string name="information_weather_celsius">Celsius (°C)</string>
     <string name="information_weather_fahrenheit">Fahrenheit (°F)</string>
+    <string name="information_weather_icon_design">Icon design</string>
+    <string name="information_weather_icon_original">Original</string>
+    <string name="information_weather_icon_nothing_inspired">Nothing inspired</string>
+    <string name="information_weather_icon_design_hint">This design also applies when Weather appears in Ambient.</string>
     <string name="information_weather_refresh">Refresh weather</string>
     <string name="information_weather_attribution">Weather data by Open-Meteo</string>
     <string name="information_weather_status_disabled">Weather is off. Open settings to enable it.</string>

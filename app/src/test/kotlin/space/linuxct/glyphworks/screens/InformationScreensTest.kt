@@ -4,6 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import space.linuxct.glyphworks.GoldenAscii
 import space.linuxct.glyphworks.core.NotificationPrefs
+import space.linuxct.glyphworks.core.WeatherPrefs
 import space.linuxct.glyphworks.core.weather.*
 import space.linuxct.glyphworks.matrix.Font3x5
 import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
@@ -27,24 +28,35 @@ class InformationScreensTest {
             add("notifications_${size}_bell_phase_$time" to
                 NotificationsRenderer.renderFrame(size, 9, NotificationPrefs.BELL, time))
         }
+        addAll(weatherFrames(size, WeatherPrefs.ORIGINAL))
+        addAll(weatherFrames(size, WeatherPrefs.NOTHING_INSPIRED))
+    }
+
+    private fun weatherPrefix(size: Int, style: String) =
+        if (style == WeatherPrefs.ORIGINAL) "weather_$size" else "weather_${style}_$size"
+
+    private fun weatherFrames(size: Int, style: String): List<Pair<String, IntArray>> = buildList {
+        val prefix = weatherPrefix(size, style)
+        fun render(snapshot: WeatherSnapshot, time: Long, fahrenheit: Boolean = false) =
+            WeatherRenderer.renderFrame(size, snapshot, time, fahrenheit, style)
         WeatherCondition.entries.forEach { condition ->
-            add("weather_${size}_${condition.name.lowercase()}" to WeatherRenderer.renderFrame(size, weather(condition), 0))
+            add("${prefix}_${condition.name.lowercase()}" to render(weather(condition), 0))
         }
-        add("weather_${size}_night" to WeatherRenderer.renderFrame(size, weather(day = false), 0))
-        add("weather_${size}_partly_cloudy_night" to
-            WeatherRenderer.renderFrame(size, weather(WeatherCondition.PARTLY_CLOUDY, day = false), 0))
+        add("${prefix}_night" to render(weather(day = false), 0))
+        add("${prefix}_partly_cloudy_night" to
+            render(weather(WeatherCondition.PARTLY_CLOUDY, day = false), 0))
         for (temp in listOf(-89.0, -12.0, -1.0, 0.0, 24.0, 40.0)) {
             for (fahrenheit in listOf(false, true)) {
-                add("weather_${size}_temp_${temp.toInt()}_${if (fahrenheit) "f" else "c"}" to
-                    WeatherRenderer.renderFrame(size, weather(temp = temp), 4000, fahrenheit))
+                add("${prefix}_temp_${temp.toInt()}_${if (fahrenheit) "f" else "c"}" to
+                    render(weather(temp = temp), 4000, fahrenheit))
             }
         }
         for (time in listOf(3000L, 3500L, 3950L, 4000L, 7000L, 7500L, 7950L, 8000L)) {
-            add("weather_${size}_phase_$time" to WeatherRenderer.renderFrame(size, weather(), time))
+            add("${prefix}_phase_$time" to render(weather(), time))
         }
-        add("weather_${size}_loading" to WeatherRenderer.renderFrame(size, WeatherSnapshot(WeatherStatus.LOADING), 0))
-        add("weather_${size}_unavailable" to WeatherRenderer.renderFrame(size, WeatherSnapshot(WeatherStatus.UNAVAILABLE), 0))
-        add("weather_${size}_stale" to WeatherRenderer.renderFrame(size, weather().copy(status = WeatherStatus.STALE), 4000))
+        add("${prefix}_loading" to render(WeatherSnapshot(WeatherStatus.LOADING), 0))
+        add("${prefix}_unavailable" to render(WeatherSnapshot(WeatherStatus.UNAVAILABLE), 0))
+        add("${prefix}_stale" to render(weather().copy(status = WeatherStatus.STALE), 4000))
     }
 
     @Test fun `Phone 4a Pro designs and animation goldens`() = checkAndExport(13)
@@ -105,9 +117,11 @@ class InformationScreensTest {
             "Unavailable / no access" to "unavailable", "Stale data · bottom dot" to "stale",
             "Temperature · −12°C" to "temp_-12_c", "Temperature · 75°F" to "temp_24_f",
         )
-        sheet("weather_icons_$size.svg", weatherExamples.map { (label, suffix) ->
-            label to cases.first { it.first == "weather_${size}_$suffix" }.second
-        }, columns = 5)
+        for (style in listOf(WeatherPrefs.ORIGINAL, WeatherPrefs.NOTHING_INSPIRED)) {
+            sheet("weather_icons_${style}_$size.svg", weatherExamples.map { (label, suffix) ->
+                label to cases.first { it.first == "${weatherPrefix(size, style)}_$suffix" }.second
+            }, columns = 5)
+        }
         val examples = listOf("envelope_9", "envelope_10", "9", "10", "dot_9", "dot_10",
             "bell_phase_0", "bell_phase_3500", "bell_9", "bell_10", "bell_phase_7500", "bell_phase_8000")
         sheet("notification_styles_$size.svg", examples.map { suffix ->
@@ -127,16 +141,20 @@ class InformationScreensTest {
             }
             File(dir, filename).writeText(svg)
         }
-        animation("weather_$size.svg") { WeatherRenderer.renderFrame(size, weather(), it) }
+        for (style in listOf(WeatherPrefs.ORIGINAL, WeatherPrefs.NOTHING_INSPIRED)) {
+            animation("weather_${style}_$size.svg") {
+                WeatherRenderer.renderFrame(size, weather(), it, iconStyle = style)
+            }
+        }
         animation("notifications_$size.svg") {
             NotificationsRenderer.renderFrame(size, 9, NotificationPrefs.BELL, it)
         }
     }
 
     @Test fun `both panels hold and travel left at exact boundaries`() {
-        for (size in listOf(13, 25)) {
+        for (size in listOf(13, 25)) for (style in listOf(WeatherPrefs.ORIGINAL, WeatherPrefs.NOTHING_INSPIRED)) {
             val state = weather()
-            fun frame(t: Long) = WeatherRenderer.renderFrame(size, state, t)
+            fun frame(t: Long) = WeatherRenderer.renderFrame(size, state, t, iconStyle = style)
             assertArrayEquals(frame(0), frame(2999))
             assertArrayEquals(frame(0), frame(3000))
             assertArrayEquals(frame(4000), frame(6999))
@@ -167,7 +185,22 @@ class InformationScreensTest {
         }
     }
 
-    @Test fun `cloud and lightning have exactly one empty pixel row between them`() {
+    @Test fun `Nothing status cloud stays filled and leaves every status mark pixel visible`() {
+        for (size in listOf(13, 25)) for (status in listOf(WeatherStatus.LOADING, WeatherStatus.UNAVAILABLE)) {
+            val snapshot = WeatherSnapshot(status)
+            val original = WeatherRenderer.renderFrame(size, snapshot, 0)
+            val inspired = WeatherRenderer.renderFrame(size, snapshot, 0, iconStyle = WeatherPrefs.NOTHING_INSPIRED)
+            val scale = if (size == 25) 2 else 1
+            val gapRow = if (size == 25) 13 else 7
+            val cloud = inspired.take(gapRow * size).filter { it > 0 }
+            assertEquals(34 * scale * scale, cloud.size)
+            assertTrue(cloud.all { it == MAX_BRIGHTNESS })
+            assertTrue(inspired.drop(gapRow * size).take(size).all { it == 0 })
+            assertEquals(original.drop((gapRow + 1) * size), inspired.drop((gapRow + 1) * size))
+        }
+    }
+
+    @Test fun `Original cloud and lightning keep one empty pixel row between them`() {
         for (size in listOf(13, 25)) {
             val frame = WeatherRenderer.renderFrame(size, weather(WeatherCondition.THUNDERSTORM), 0)
             val occupiedRows = frame.toList().chunked(size).map { row -> row.any { it > 0 } }
@@ -177,7 +210,7 @@ class InformationScreensTest {
         }
     }
 
-    @Test fun `partly cloudy foreground covers the brighter sun and moon pixels`() {
+    @Test fun `Original partly cloudy foreground covers the brighter sun and moon pixels`() {
         for (size in listOf(13, 25)) {
             val cloud = WeatherRenderer.renderFrame(size, weather(WeatherCondition.CLOUDY), 0)
             for (day in listOf(true, false)) {
@@ -186,6 +219,50 @@ class InformationScreensTest {
                 cloud.forEachIndexed { index, value ->
                     if (value > 0) assertEquals("$size cloud cell $index (day=$day)",
                         value, partlyCloudy[index + lowerRows * size])
+                }
+            }
+        }
+    }
+
+    @Test fun `Nothing weather icons preserve every source dot inside both circular panels`() {
+        // Independent counts of unique dots in Nothing's static widget vectors. Fog contains
+        // one duplicate path; drizzle uses the same rainy resource as rain.
+        val cases = listOf(
+            Triple(WeatherCondition.CLEAR, true, 29),
+            Triple(WeatherCondition.CLEAR, false, 41),
+            Triple(WeatherCondition.PARTLY_CLOUDY, true, 46),
+            Triple(WeatherCondition.PARTLY_CLOUDY, false, 48),
+            Triple(WeatherCondition.CLOUDY, true, 58),
+            Triple(WeatherCondition.FOG, true, 27),
+            Triple(WeatherCondition.DRIZZLE, true, 57),
+            Triple(WeatherCondition.RAIN, true, 57),
+            Triple(WeatherCondition.SNOW, true, 29),
+            Triple(WeatherCondition.THUNDERSTORM, true, 27),
+        )
+        for (size in listOf(13, 25)) {
+            val scale = if (size == 25) 2 else 1
+            for ((condition, day, sourceDots) in cases) {
+                val label = "$size $condition (day=$day)"
+                val frame = WeatherRenderer.renderFrame(size, weather(condition, day = day), 0,
+                    iconStyle = WeatherPrefs.NOTHING_INSPIRED)
+                GoldenAscii.assertFrameValid(frame, size)
+                assertEquals("$label must retain all source dots at scale $scale",
+                    sourceDots * scale * scale, frame.count { it > 0 })
+                frame.forEachIndexed { index, value ->
+                    if (value > 0) assertTrue("$label cell $index must fit the circular mask",
+                        PanelMask.contains(index % size, index / size, size))
+                }
+                // Each source dot must expand to a complete square, including fog's
+                // half-row offset on the larger panel. Exact layouts are checked by goldens.
+                val top = if (size == 25 && condition == WeatherCondition.FOG) 0 else 1
+                for (y in 0 until 11) for (x in 0 until 11) {
+                    val left = 1 + x * scale
+                    val row = top + y * scale
+                    val value = frame[row * size + left]
+                    for (dy in 0 until scale) for (dx in 0 until scale) {
+                        assertEquals("$label source dot ($x,$y) must scale uniformly",
+                            value, frame[(row + dy) * size + left + dx])
+                    }
                 }
             }
         }

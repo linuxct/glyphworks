@@ -22,7 +22,8 @@ class WeatherScreen : GlyphScreen {
             if (ready && !wasReady) startedAt = ctx.ports.clock.elapsedMillis()
             wasReady = ready
             ctx.pushFrame(WeatherRenderer.renderFrame(ctx.size, snapshot,
-                ctx.ports.clock.elapsedMillis() - startedAt, WeatherPrefs.fahrenheit(ctx.prefs)))
+                ctx.ports.clock.elapsedMillis() - startedAt, WeatherPrefs.fahrenheit(ctx.prefs),
+                WeatherPrefs.iconStyle(ctx.prefs)))
         }
     }
 

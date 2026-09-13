@@ -37,5 +37,13 @@ object WeatherPrefs {
     const val UNIT = "weatherUnit"
     const val CELSIUS = "celsius"
     const val FAHRENHEIT = "fahrenheit"
+    const val ICON_STYLE = "weatherIconStyle"
+    const val ORIGINAL = "original"
+    const val NOTHING_INSPIRED = "nothing_inspired"
+
     fun fahrenheit(prefs: Prefs) = prefs.getString(UNIT, CELSIUS) == FAHRENHEIT
+    fun iconStyle(prefs: Prefs) = when (prefs.getString(ICON_STYLE, ORIGINAL)) {
+        NOTHING_INSPIRED -> NOTHING_INSPIRED
+        else -> ORIGINAL
+    }
 }

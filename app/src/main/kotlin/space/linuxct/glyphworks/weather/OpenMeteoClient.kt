@@ -45,7 +45,7 @@ class OpenMeteoClient(
                 conn.instanceFollowRedirects = false
                 conn.useCaches = false
                 conn.setRequestProperty("Accept", "application/json")
-                conn.setRequestProperty("User-Agent", "GlyphWorks/3.3.0 (+https://github.com/linuxct/glyphworks)")
+                conn.setRequestProperty("User-Agent", "GlyphWorks/3.3.1 (+https://github.com/linuxct/glyphworks)")
                 if (cancelled) return WeatherFetchResult.Failure()
                 val status = conn.responseCode
                 if (status != 200) {

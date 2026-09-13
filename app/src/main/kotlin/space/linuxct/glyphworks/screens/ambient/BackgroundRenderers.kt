@@ -288,6 +288,7 @@ private class WeatherBackground : AmbientBackground {
         // Loading may outlast the icon hold. Give the first usable condition its full hold.
         if (usable && !wasUsable) startedAt = elapsedMs
         wasUsable = usable
-        return WeatherRenderer.renderFrame(c.size, snapshot, elapsedMs - startedAt, WeatherPrefs.fahrenheit(c.prefs))
+        return WeatherRenderer.renderFrame(c.size, snapshot, elapsedMs - startedAt,
+            WeatherPrefs.fahrenheit(c.prefs), WeatherPrefs.iconStyle(c.prefs))
     }
 }
