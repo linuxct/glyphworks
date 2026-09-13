@@ -1207,9 +1207,9 @@ private fun AppSettingsSection(refreshTick: Int) {
         }
         item { BrightnessRow() }
         item { CreatorNameRow() }
-        // Adds its own `item`, and none at all in the Play build, so [SectionCard] never
-        // gives the rounded bottom corner to a row it does not show.
+        // Adds its own item only in the GitHub build. About remains last in both variants.
         updateSettingsItem()
+        item { AboutRow() }
     }
 }
 

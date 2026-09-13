@@ -2,6 +2,7 @@ package space.linuxct.glyphworks.weather
 
 import org.junit.Assert.*
 import org.junit.Test
+import space.linuxct.glyphworks.BuildConfig
 import space.linuxct.glyphworks.core.weather.WeatherLocation
 import space.linuxct.glyphworks.core.weather.WeatherPolicy
 import java.io.ByteArrayInputStream
@@ -52,6 +53,8 @@ class OpenMeteoClientTest {
         assertEquals(10_000, connection.connectTimeout)
         assertEquals(10_000, connection.readTimeout)
         assertEquals("application/json", connection.getRequestProperty("Accept"))
+        assertEquals("GlyphWorks/${BuildConfig.VERSION_NAME} (+https://github.com/linuxct/glyphworks)",
+            connection.getRequestProperty("User-Agent"))
         assertFalse(connection.instanceFollowRedirects)
         assertFalse(connection.useCaches)
     }

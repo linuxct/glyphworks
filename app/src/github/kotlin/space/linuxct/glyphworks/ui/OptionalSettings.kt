@@ -89,6 +89,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -165,6 +166,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import space.linuxct.glyphworks.Core
+import space.linuxct.glyphworks.BuildConfig
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.DebugLog
 import space.linuxct.glyphworks.core.PrefKeys
@@ -393,13 +395,7 @@ private sealed interface UpdateUiState {
 private fun UpdateRow() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val installed = remember {
-        try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
-        } catch (e: Exception) {
-            "?"
-        }
-    }
+    val installed = BuildConfig.VERSION_NAME
     var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
 
     SetupRow(

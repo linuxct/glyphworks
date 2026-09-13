@@ -15,12 +15,7 @@ abstract class BaseApp : Application() {
         createNotificationChannels()
         Core.init(this)
         registerWeatherVisibility()
-        val version = try {
-            packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (_: Exception) {
-            "?"
-        }
-        space.linuxct.glyphworks.core.DebugLog.i("App", "process started, version $version")
+        space.linuxct.glyphworks.core.DebugLog.i("App", "process started, version ${BuildConfig.VERSION_NAME}")
     }
 
     protected open fun optionalChannels(nm: NotificationManager) = Unit

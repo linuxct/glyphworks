@@ -16,6 +16,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.WorkManager
 import space.linuxct.glyphworks.App
+import space.linuxct.glyphworks.BuildConfig
 import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.DebugLog
@@ -26,11 +27,7 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : Worker(con
 
     override fun doWork(): Result {
         Core.init(applicationContext)
-        val installed = try {
-            applicationContext.packageManager.getPackageInfo(applicationContext.packageName, 0).versionName
-        } catch (e: Exception) {
-            null
-        } ?: return Result.success()
+        val installed = BuildConfig.VERSION_NAME
 
         return when (val r = UpdateChecker.check(installed)) {
             is UpdateChecker.Result.UpdateAvailable -> {

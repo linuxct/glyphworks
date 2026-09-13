@@ -1,5 +1,6 @@
 package space.linuxct.glyphworks.weather
 
+import space.linuxct.glyphworks.BuildConfig
 import space.linuxct.glyphworks.core.weather.OpenMeteoResponse
 import space.linuxct.glyphworks.core.weather.WeatherLocation
 import space.linuxct.glyphworks.core.weather.WeatherObservation
@@ -45,7 +46,7 @@ class OpenMeteoClient(
                 conn.instanceFollowRedirects = false
                 conn.useCaches = false
                 conn.setRequestProperty("Accept", "application/json")
-                conn.setRequestProperty("User-Agent", "GlyphWorks/3.3.1 (+https://github.com/linuxct/glyphworks)")
+                conn.setRequestProperty("User-Agent", "GlyphWorks/${BuildConfig.VERSION_NAME} (+https://github.com/linuxct/glyphworks)")
                 if (cancelled) return WeatherFetchResult.Failure()
                 val status = conn.responseCode
                 if (status != 200) {

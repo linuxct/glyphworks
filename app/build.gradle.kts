@@ -23,8 +23,8 @@ android {
         applicationId = "space.linuxct.glyphworks"
         minSdk = 33
         targetSdk = 37
-        versionCode = 22
-        versionName = "3.3.1"
+        versionCode = 23
+        versionName = "3.3.2"
     }
 
     signingConfigs {
@@ -84,6 +84,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 
@@ -107,21 +108,21 @@ kotlin {
 
 dependencies {
     implementation(files("libs/glyph-matrix-sdk-2.0.aar"))
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("com.google.android.material:material:1.14.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
     // 1.5.0-alpha23 is the first release exposing MotionScheme / MaterialTheme's
     // motionScheme parameter as public API (both were internal in 1.4.0), which
     // is what lets the app use MD3's real expressive springs instead of copying
     // token values. It pulls Compose 1.12.0-alpha03 transitively.
-    implementation("androidx.compose.material3:material3:1.5.0-alpha23")
+    implementation("androidx.compose.material3:material3:1.5.0-alpha28")
     // AnimatedContent lives in the non-core animation artifact, which material3
     // does NOT depend on (verified in the POMs of both 1.4.0 and 1.5.0-alpha23).
-    implementation("androidx.compose.animation:animation:1.12.0-alpha03")
+    implementation("androidx.compose.animation:animation:1.12.1")
     implementation("androidx.compose.material:material-icons-core:1.7.8")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     // WorkManager exists for ONE thing: the update checker's daily job. The Play
     // build has no update checker, so it does not get the library either —
     // `implementation` would leave it in that APK doing nothing, and `App`'s
@@ -134,7 +135,7 @@ dependencies {
     // would mean hand-rolling validation for every field of an attacker-controlled
     // file. 1.9.x is the line built against Kotlin 2.2; the serialization compiler
     // plugin above must stay pinned to the Kotlin version, this runtime need not.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     testImplementation("junit:junit:4.13.2")
 }
 

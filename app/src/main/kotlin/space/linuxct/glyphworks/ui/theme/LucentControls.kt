@@ -26,9 +26,11 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SingleChoiceSegmentedButtonRowScope
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -202,13 +204,16 @@ internal fun GlyphSlider(
     modifier: Modifier = Modifier,
     steps: Int = 0,
 ) {
+    val state = remember(steps, valueRange) {
+        SliderState(value = value, steps = steps, trackRange = valueRange)
+    }
+    // Keep the caller's preference authoritative, including changes outside a drag.
+    state.value = value
     // Ticks on the empty half of the track only, the way Nothing's volume panel draws them.
     if (!MaterialTheme.lucent) {
         Slider(
-            value = value,
+            state = state,
             onValueChange = onValueChange,
-            valueRange = valueRange,
-            steps = steps,
             colors = SliderDefaults.colors(
                 activeTickColor = Color.Transparent,
                 disabledActiveTickColor = Color.Transparent,
@@ -225,10 +230,8 @@ internal fun GlyphSlider(
     val knob = scheme.surface.copy(alpha = 1f)
     val tick = ink.copy(alpha = SLIDER_TICK_ALPHA)
     Slider(
-        value = value,
+        state = state,
         onValueChange = onValueChange,
-        valueRange = valueRange,
-        steps = steps,
         modifier = modifier,
         colors = SliderDefaults.colors(
             thumbColor = knob,

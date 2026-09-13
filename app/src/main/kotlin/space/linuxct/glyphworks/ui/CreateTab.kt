@@ -98,6 +98,7 @@ import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
 import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
 import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
 import space.linuxct.glyphworks.Core
+import space.linuxct.glyphworks.BuildConfig
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.SessionArbiter
@@ -503,7 +504,7 @@ internal class CreateState {
                 .take(DesignCodec.MAX_AUTHOR_LENGTH),
             createdAt = now,
             modifiedAt = now,
-            createdWith = createdWith(context),
+            createdWith = createdWith(),
             kind = kind,
             levels = DEFAULT_LEVELS,
             variants = variants,
@@ -617,14 +618,8 @@ internal fun showOnMatrixMessage(afterEditor: Boolean): (ShowOnMatrix) -> String
     }
 }
 
-private fun createdWith(context: Context): String {
-    val version = try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
-    } catch (e: Exception) {
-        "?"
-    }
-    return "GlyphWorks $version".take(DesignCodec.MAX_CREATED_WITH_LENGTH)
-}
+private fun createdWith(): String =
+    "GlyphWorks ${BuildConfig.VERSION_NAME}".take(DesignCodec.MAX_CREATED_WITH_LENGTH)
 
 private fun designCellPadding(column: Int, columns: Int): PaddingValues = PaddingValues(
     start = if (column == 0) DESIGN_GRID_OUTER_MARGIN else DESIGN_GRID_GUTTER / 2,

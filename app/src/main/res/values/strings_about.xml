@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_title">About</string>
+    <string name="about_row_hint">Learn more about who\'s behind GlyphWorks</string>
+    <string name="about_version">v%1$s</string>
+    <string name="about_wordmark" translatable="false">GLYPHWORKS</string>
+    <string name="about_headline">Small lights.\nBig possibilities.</string>
+    <string name="about_portrait_action">Send a ripple through the lights</string>
+    <string name="about_portrait_description">Portrait of linuxct. Tap to light up the matrix.</string>
+    <string name="about_touch_hint">Tap the image to spark a little light.</string>
+    <string name="about_touch_thanks">Bringing a little more light into the world.</string>
+    <string name="about_created_by">CREATED BY</string>
+    <string name="about_creator" translatable="false">linuxct</string>
+    <string name="about_bio">Android tools, custom ROMs, and new possibilities for familiar hardware. Made by an open-source tinkerer.</string>
+    <string name="about_collaboration">DEVELOPED WITH HELP FROM</string>
+    <string name="about_claude" translatable="false">Claude</string>
+    <string name="about_codex" translatable="false">Codex</string>
+    <string name="about_open_source">Independent. Open source. Made to be yours.</string>
+    <string name="about_license" translatable="false">AGPL-3.0</string>
+    <string name="about_profile">Meet linuxct</string>
+    <string name="about_source">Source code</string>
+    <string name="about_close">Close About</string>
+    <string name="about_link_unavailable">No app is available to open this link.</string>
+</resources>
