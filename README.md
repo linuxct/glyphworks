@@ -11,7 +11,7 @@
 ![Compatibility](https://img.shields.io/badge/compatible-Nothing%20Phone%203-white)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-black.svg)](LICENSE)
 
-> **Vibe-coded project notice:** This app was designed by humans but its code was written from scratch by Claude.
+> **Vibe-coded project notice:** This app was designed by humans but its code was written from scratch by Claude & Codex.
 
 ---
 
