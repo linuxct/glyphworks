@@ -149,8 +149,6 @@
     <string name="auto_brightness_on">Automatic brightness on — the Glyph follows the room light. Tap to turn off.</string>
     <string name="auto_brightness_off">Automatic brightness off. Tap to let the Glyph follow the room light.</string>
     <string name="screens_title">Glyph Toys</string>
-    <string name="screens_reorder_hint">Drag the handle to change the cycle order</string>
-    <string name="set_active">Set as active toy</string>
     <string name="settings">Settings</string>
 
     <!-- Floating navigation pill captions (kept short: they sit beside the icon

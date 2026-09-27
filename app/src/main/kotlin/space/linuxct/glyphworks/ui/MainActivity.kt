@@ -24,7 +24,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -38,7 +37,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,9 +54,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
@@ -78,33 +73,22 @@ import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Casino
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Slideshow
-import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
@@ -114,31 +98,25 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -157,18 +135,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.IntSize
@@ -177,15 +152,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import space.linuxct.glyphworks.ui.theme.DialogBackdropBlur
 import space.linuxct.glyphworks.ui.theme.dialogSurface
-import space.linuxct.glyphworks.ui.theme.glyphCorner
 import space.linuxct.glyphworks.ui.theme.fullContrastListItemColors
 import space.linuxct.glyphworks.ui.theme.fullContrastToggleColors
 import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
@@ -205,7 +177,6 @@ import space.linuxct.glyphworks.ui.theme.GlyphRadioButton
 import space.linuxct.glyphworks.ui.theme.GlyphSlider
 import space.linuxct.glyphworks.ui.theme.GlyphSwitch
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
-import space.linuxct.glyphworks.ui.theme.NavPillColors
 import space.linuxct.glyphworks.ui.theme.Backdrop
 import space.linuxct.glyphworks.ui.theme.ThinBrush
 import space.linuxct.glyphworks.ui.theme.ThinCap
@@ -270,14 +241,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val CONFIGURABLE =
+internal val CONFIGURABLE =
     setOf("ambient", "clock", "dice", "coin", "battery", "breathing", "timer", "visualizer", "custom", "notifications", "weather")
-
-private fun loadOrder(): List<String> {
-    val stored = Core.prefs.getString(PrefKeys.SCREEN_ORDER, PrefKeys.SCREEN_ORDER_DEF)
-        .split(',').map { it.trim() }.filter { it.isNotEmpty() && SCREEN_DISPLAY_NAMES.containsKey(it) }
-    return stored + SCREEN_DISPLAY_NAMES.keys.filter { it !in stored }
-}
 
 internal val NAV_PILL_CLEARANCE = 40.dp
 
@@ -347,6 +312,7 @@ private const val PAGE_STIFFNESS = 800f
 private fun MainScreen(startTab: Int = 0) {
     val pagerState = rememberPagerState(initialPage = startTab, pageCount = { Tab.entries.size })
     val scope = rememberCoroutineScope()
+    var toyDeckGesture by remember { mutableStateOf(false) }
 
     var untestedAck by rememberSaveable {
         mutableStateOf(
@@ -507,13 +473,19 @@ private fun MainScreen(startTab: Int = 0) {
             }
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = !toyDeckGesture,
                 modifier = Modifier.fillMaxSize(),
                 flingBehavior = fling,
                 beyondViewportPageCount = Tab.entries.size - 1,
                 overscrollEffect = null,
             ) { page ->
                 when (Tab.entries[page]) {
-                    Tab.TOYS -> ToysTab(pagePadding, toysListState)
+                    Tab.TOYS -> ToysTab(
+                        pagePadding,
+                        toysListState,
+                        visible = pagerState.settledPage == Tab.TOYS.ordinal && !pagerState.isScrollInProgress,
+                        onDeckGesture = { toyDeckGesture = it },
+                    )
                     Tab.CREATE -> CreateTab(pagePadding, createListState, createState)
                     Tab.SETTINGS -> SettingsTab(
                         pagePadding,
@@ -858,56 +830,6 @@ internal fun selectToy(id: String) {
     DebugLog.i("Ui", "set active toy '$id'")
     Core.arbiter.revive()
     Core.scheduler.run { Core.screenManager.selectScreen(id) }
-}
-
-@Composable
-private fun ToysTab(innerPadding: PaddingValues, listState: LazyListState) {
-    var dialogId by remember { mutableStateOf<String?>(null) }
-
-    val currentToy by rememberPref(PrefKeys.CURRENT_SCREEN) {
-        it.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF)
-    }
-
-    val order = remember { mutableStateListOf<String>().apply { addAll(loadOrder()) } }
-    fun persistOrder() = Core.prefs.putString(PrefKeys.SCREEN_ORDER, order.joinToString(","))
-    val drag = remember { DragState() }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        state = listState,
-        contentPadding = PaddingValues(
-            top = innerPadding.calculateTopPadding(),
-            bottom = innerPadding.calculateBottomPadding() + NAV_PILL_CLEARANCE,
-        ),
-    ) {
-        item { HintText(stringResource(R.string.screens_reorder_hint)) }
-
-        itemsIndexed(order, key = { _, id -> id }) { index, id ->
-            DisplayRow(
-                id = id,
-                index = index,
-                drag = drag,
-                order = order,
-                shown = currentToy == id,
-                placement = if (drag.draggingIndex == index) {
-                    Modifier
-                } else {
-                    Modifier.animateItem(
-                        fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-                        placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                        fadeOutSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-                    )
-                },
-                onPersist = ::persistOrder,
-                onSelect = { selectToy(id) },
-                onSettings = { dialogId = id },
-            )
-        }
-    }
-
-    dialogId?.let { id ->
-        ScreenSettingsDialog(id = id, onDismiss = { dialogId = null })
-    }
 }
 
 private val SETUP_NOTIFICATION_PERMISSIONS = arrayOf(Manifest.permission.POST_NOTIFICATIONS)
@@ -1373,216 +1295,6 @@ private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
     }
     if (showAmbientSettings) {
         ScreenSettingsDialog("ambient") { showAmbientSettings = false }
-    }
-}
-
-private const val NOT_DRAGGING = -1
-private const val REORDER_THRESHOLD_FRACTION = 0.6f
-
-private class DragState {
-    var draggingIndex by mutableIntStateOf(NOT_DRAGGING)
-    var offsetY by mutableFloatStateOf(0f)
-    var rowHeightPx by mutableIntStateOf(0)
-    var settlingIndex by mutableIntStateOf(NOT_DRAGGING)
-    val settleOffset = Animatable(0f)
-
-    fun dragAndReorder(order: MutableList<String>, dragAmountY: Float) {
-        offsetY += dragAmountY
-        val rowHeight = rowHeightPx
-        if (rowHeight <= 0) return
-        val threshold = rowHeight * REORDER_THRESHOLD_FRACTION
-        val index = draggingIndex
-        if (offsetY > threshold && index < order.lastIndex) {
-            order.add(index + 1, order.removeAt(index))
-            draggingIndex = index + 1
-            offsetY -= rowHeight
-        } else if (offsetY < -threshold && index > 0) {
-            order.add(index - 1, order.removeAt(index))
-            draggingIndex = index - 1
-            offsetY += rowHeight
-        }
-    }
-}
-
-@Composable
-private fun DisplayRow(
-    id: String,
-    index: Int,
-    drag: DragState,
-    order: MutableList<String>,
-    shown: Boolean,
-    placement: Modifier,
-    onPersist: () -> Unit,
-    onSelect: () -> Unit,
-    onSettings: (() -> Unit),
-) {
-    val dragging = drag.draggingIndex == index
-    val settling = drag.settlingIndex == index
-    val scope = rememberCoroutineScope()
-    val settleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-
-    fun release() {
-        val released = drag.draggingIndex
-        val from = drag.offsetY
-        drag.draggingIndex = NOT_DRAGGING
-        drag.offsetY = 0f
-        onPersist()
-        scope.launch {
-            drag.settlingIndex = released
-            try {
-                drag.settleOffset.snapTo(from)
-                drag.settleOffset.animateTo(0f, settleSpec)
-            } finally {
-                drag.settlingIndex = NOT_DRAGGING
-            }
-        }
-    }
-
-    val color by animateColorAsState(
-        targetValue = when {
-            shown -> MaterialTheme.colorScheme.secondaryContainer
-            // The same token the section Cards use, so a toy row reads as a card like the rest.
-            MaterialTheme.lucent -> MaterialTheme.colorScheme.surfaceContainerHighest
-            else -> MaterialTheme.colorScheme.surface
-        },
-        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-        label = "toyRowContainer",
-    )
-    // A tonal overlay on a translucent colour just pulls the row back toward the page.
-    val restingTonal = if (MaterialTheme.lucent) 0.dp else 1.dp
-    val tonal by animateDpAsState(
-        targetValue = if (dragging) 8.dp else restingTonal,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "toyRowTonalElevation",
-    )
-    val shadow by animateDpAsState(
-        targetValue = if (dragging) 6.dp else 0.dp,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "toyRowShadowElevation",
-    )
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(placement)
-            .zIndex(if (dragging || settling) 1f else 0f)
-            .graphicsLayer {
-                translationY = when {
-                    dragging -> drag.offsetY
-                    settling -> drag.settleOffset.value
-                    else -> 0f
-                }
-            }
-            .onSizeChanged { drag.rowHeightPx = it.height }
-            .padding(horizontal = 16.dp, vertical = 3.dp),
-        shape = glyphCorner(TOY_ROW_CORNER, 28.dp),
-        color = color,
-        tonalElevation = tonal.coerceAtLeast(0.dp),
-        shadowElevation = shadow.coerceAtLeast(0.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 8.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ReorderHandle(id = id, drag = drag, order = order, onRelease = ::release)
-            ActiveToyDot(shown)
-            Text(
-                stringResource(SCREEN_DISPLAY_NAMES[id] ?: R.string.app_name),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
-            )
-            FilledIconToggleButton(
-                colors = fullContrastToggleColors(),
-                checked = shown,
-                onCheckedChange = { onSelect() },
-                shapes = IconButtonDefaults.toggleableShapes(),
-            ) {
-                Icon(Icons.Outlined.PlayArrow, contentDescription = stringResource(R.string.set_active))
-            }
-            if (id in CONFIGURABLE) {
-                IconButton(onClick = onSettings) {
-                    Icon(
-                        Icons.Outlined.Settings,
-                        contentDescription = stringResource(R.string.settings),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-            ToyEnabledSwitch(id)
-        }
-    }
-}
-
-private val TOY_ROW_CORNER = 20.dp
-
-@Composable
-private fun ReorderHandle(
-    id: String,
-    drag: DragState,
-    order: MutableList<String>,
-    onRelease: () -> Unit,
-) {
-    Icon(
-        Icons.Outlined.DragIndicator,
-        contentDescription = "Drag to reorder",
-        tint = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier
-            .padding(8.dp)
-            .pointerInput(id) {
-                detectDragGestures(
-                    onDragStart = {
-                        drag.draggingIndex = order.indexOf(id)
-                        drag.offsetY = 0f
-                    },
-                    onDrag = { change, amount ->
-                        change.consume()
-                        drag.dragAndReorder(order, amount.y)
-                    },
-                    onDragEnd = onRelease,
-                    onDragCancel = onRelease,
-                )
-            },
-    )
-}
-
-private val TOY_DOT_SLOT = 14.dp
-private val TOY_DOT_SIZE = 8.dp
-
-@Composable
-private fun ActiveToyDot(shown: Boolean) {
-    val dotScale by animateFloatAsState(
-        targetValue = if (shown) 1f else 0f,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "shownDotScale",
-    )
-    val dotAlpha by animateFloatAsState(
-        targetValue = if (shown) 1f else 0f,
-        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-        label = "shownDotAlpha",
-    )
-    Box(Modifier.size(TOY_DOT_SLOT), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(TOY_DOT_SIZE)
-                .graphicsLayer {
-                    scaleX = dotScale.coerceAtLeast(0f)
-                    scaleY = dotScale.coerceAtLeast(0f)
-                    alpha = dotAlpha.coerceIn(0f, 1f)
-                }
-                .background(MaterialTheme.colorScheme.primary, CircleShape),
-        )
-    }
-}
-
-@Composable
-private fun ToyEnabledSwitch(id: String) {
-    var enabled by remember(id) {
-        mutableStateOf(Core.prefs.getBoolean(PrefKeys.screenEnabled(id), true))
-    }
-    NoRipple {
-        GlyphSwitch(checked = enabled, onCheckedChange = {
-            enabled = it
-            Core.prefs.putBoolean(PrefKeys.screenEnabled(id), it)
-        })
     }
 }
 

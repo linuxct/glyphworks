@@ -5,7 +5,7 @@ import space.linuxct.glyphworks.screens.ambient.AmbientScreen
 
 /**
  * Every screen, in the default cycle order. The Toys tab reads a second roster,
- * DISPLAY_NAMES in ui/MainActivity.kt, keyed by the same ids: add or remove a toy in
+ * SCREEN_DISPLAY_NAMES in ui/ScreenNames.kt, keyed by the same ids: add or remove a toy in
  * both lists, or in neither.
  */
 object ScreenRegistry {

@@ -25,7 +25,7 @@ What each toy in GlyphWorks does. ✅ means a single press of the Essential Key 
 | Music Visualizer | – | An FFT spectrum with log-spaced bands, three themes, an adjustable response speed, and a noise floor while audio plays. |
 | Custom Design | ✅ | Plays a design you drew in the Create tab. Its cog picks which one; a press plays, pauses or replays it depending on the design's key mode. |
 
-Every toy can be switched off, reordered and configured in the app. Drag order is the cycle order.
+Swipe through the card stack in Glyph Toys to preview each toy with sample data. The check at the top right of the centered card includes or removes it from your rotation; keep at least one toy enabled. Hold the centered card and drag left or right to reorder it, or hold it near either side to keep moving. The first card is your home toy. Play on Glyph and Toy settings sit below the preview, above the cards. Browsing previews does not change the active toy.
 
 ## Ambient backgrounds
 

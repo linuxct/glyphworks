@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="toys_play">Play on Glyph</string>
+    <string name="toys_active">Active on Glyph</string>
+    <string name="toys_settings">Toy settings</string>
+    <string name="toys_enabled">Enabled in your rotation</string>
+    <string name="toys_disabled">Not in your rotation</string>
+    <string name="toys_enable">Enable %1$s</string>
+    <string name="toys_disable">Disable %1$s</string>
+    <string name="toys_position">%1$d / %2$d</string>
+    <string name="toys_previous">Previous toy</string>
+    <string name="toys_next">Next toy</string>
+    <string name="toys_move_earlier">Move earlier in the rotation</string>
+    <string name="toys_move_later">Move later in the rotation</string>
+    <string name="toys_keep_one">Keep at least one toy enabled.</string>
+    <string name="toys_deck_hint">Swipe to explore. Tap the check to enable.\nHold the center card and drag to reorder.</string>
+    <string name="toys_drag_hint">Drag left or right to move. Hold at either side to keep moving.</string>
+    <string name="toys_desc_ambient">Your essentials, always in view.</string>
+    <string name="toys_desc_clock">Time at a glance. Digital or analog.</string>
+    <string name="toys_desc_eyes">A playful pair of animated eyes.</string>
+    <string name="toys_desc_speed">Your download speed, in real time.</string>
+    <string name="toys_desc_battery">Charge level. Charging power.</string>
+    <string name="toys_desc_notifications">Unread notifications, at a glance.</string>
+    <string name="toys_desc_weather">Know the weather before you head out.</string>
+    <string name="toys_desc_solar">Follow the sun, from rise to set.</string>
+    <string name="toys_desc_moon">The moon, as it is tonight.</string>
+    <string name="toys_desc_dice">Pick your die. Give it a roll.</string>
+    <string name="toys_desc_coin">Heads or tails. Leave it to chance.</string>
+    <string name="toys_desc_dino">Run. Jump. Keep going.</string>
+    <string name="toys_desc_bottle">One spin. A random direction.</string>
+    <string name="toys_desc_counter">Keep count with a press.</string>
+    <string name="toys_desc_breathing">Breathe in. Breathe out. Set your pace.</string>
+    <string name="toys_desc_timer">Set the time. Watch it count down.</string>
+    <string name="toys_desc_compass">Find north. Get your bearings.</string>
+    <string name="toys_desc_level">Check the angle. Find your level.</string>
+    <string name="toys_desc_visualizer">See your sound.</string>
+    <string name="toys_desc_custom">Your design. Your display.</string>
+</resources>
