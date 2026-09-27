@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="review_title">Share your experience</string>
+    <string name="review_body">If you have a moment, please leave an honest review on Google Play. It helps me improve GlyphWorks and helps others discover it.</string>
+    <string name="review_leave">Leave a review</string>
+    <string name="review_not_now">Not now</string>
+    <string name="review_never">Never show again</string>
+    <string name="review_store_unavailable">Google Play could not be opened. Please try again from the Play Store.</string>
+</resources>

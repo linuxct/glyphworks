@@ -4,6 +4,7 @@ import android.content.Context
 import com.nothing.ketchum.Common
 import space.linuxct.glyphworks.audio.AudioVisualizerEngine
 import space.linuxct.glyphworks.ui.installOptionalHooks
+import space.linuxct.glyphworks.review.createReviewUsageRecorder
 import space.linuxct.glyphworks.core.AndroidRenderScheduler
 import space.linuxct.glyphworks.core.AutoBrightness
 import space.linuxct.glyphworks.core.DebugLog
@@ -93,7 +94,7 @@ object Core {
         armToyProbe()
         designStore = DesignStore(app)
         installOptionalHooks(app, designStore)
-        glyphLink = GlyphLink(app)
+        glyphLink = GlyphLink(app, onFrameDisplayed = createReviewUsageRecorder(app, prefs))
         scheduler = AndroidRenderScheduler()
         shake = ShakeDetector(app)
         audio = AudioVisualizerEngine(app, prefs)

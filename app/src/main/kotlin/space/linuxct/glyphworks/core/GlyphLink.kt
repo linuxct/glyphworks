@@ -14,7 +14,10 @@ import com.nothing.ketchum.GlyphMatrixManager
  * with [Lease.release]. Every SDK call is a blocking binder round-trip, so they all run on the
  * private "glyph-io" thread, and that thread owns every mutable field below.
  */
-class GlyphLink(private val app: Context) {
+class GlyphLink(
+    private val app: Context,
+    private var onFrameDisplayed: ((IntArray) -> Boolean)? = null,
+) {
 
     private val ioThread = HandlerThread("glyph-io").apply { start() }
 
@@ -115,6 +118,13 @@ class GlyphLink(private val app: Context) {
                     if (!firstFrameLogged) {
                         firstFrameLogged = true
                         DebugLog.i(C, "first frame delivered to the matrix")
+                    }
+                    onFrameDisplayed?.let { observer ->
+                        // Optional bookkeeping must never interrupt the hardware connection.
+                        // Returning false detaches it permanently for this process.
+                        runCatching { if (!observer(frame)) onFrameDisplayed = null }.onFailure {
+                            DebugLog.w(C, "frame observer failed: $it")
+                        }
                     }
                 } catch (e: Exception) {
                     DebugLog.w(C, "setMatrixFrame failed: $e — scheduling recovery")

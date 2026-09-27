@@ -60,6 +60,7 @@ import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.core.design.Design
 import space.linuxct.glyphworks.core.preview.ToyPreview
 import space.linuxct.glyphworks.screens.ScreenRegistry
+import space.linuxct.glyphworks.review.reviewPromptWhenIdle
 
 private val INTERACTIVE_PREVIEWS = ScreenRegistry.create().filter { it.interactive }.map { it.id }.toSet()
 
@@ -161,7 +162,12 @@ internal fun ToysTab(
             Core.scheduler.run { Core.screenManager.selectScreen(next) }
         }
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val reviewIdle = Modifier.reviewPromptWhenIdle(
+        available = visible && resumed && dialogId == null && !listState.isScrollInProgress &&
+            deck.heldId == null && deck.releasedId == null,
+        activityKey = deck.position,
+    )
+    BoxWithConstraints(Modifier.fillMaxSize().then(reviewIdle)) {
         val available = maxHeight - innerPadding.calculateTopPadding() - innerPadding.calculateBottomPadding()
         val stageHeight = (available * 0.43f).coerceIn(190.dp, 310.dp)
         LazyColumn(
