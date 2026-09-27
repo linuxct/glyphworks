@@ -2,9 +2,7 @@ package space.linuxct.glyphworks.screens
 
 import space.linuxct.glyphworks.core.GlyphScreen
 import space.linuxct.glyphworks.core.ScreenContext
-import space.linuxct.glyphworks.core.SpeedPort
 import space.linuxct.glyphworks.matrix.Font3x5
-import space.linuxct.glyphworks.matrix.MAX_BRIGHTNESS
 import space.linuxct.glyphworks.matrix.MatrixCanvas
 
 /** Download speed, from the delta of the cumulative RX byte counter each second. */
@@ -45,35 +43,38 @@ class SpeedScreen : GlyphScreen {
         private const val MAX_DECIMAL_MB_BYTES = 10_000_000L
         private const val MAX_MB = 99L
 
-        /** Kept to three or four glyphs, the most that fits 13 columns. */
+        /** Compact decimal SI units: K = kB/s and M = MB/s. */
         fun formatSpeed(bytesPerSec: Long): String {
-            val kb = bytesPerSec / BYTES_PER_KB
+            val speed = bytesPerSec.coerceAtLeast(0)
+            val kb = speed / BYTES_PER_KB
             return when {
                 kb < MAX_KB -> "${kb}K"
-                bytesPerSec < MAX_DECIMAL_MB_BYTES -> {
-                    val tenths = bytesPerSec / BYTES_PER_TENTH_MB
+                speed < MAX_DECIMAL_MB_BYTES -> {
+                    val tenths = speed / BYTES_PER_TENTH_MB
                     "${tenths / TENTHS_PER_UNIT}.${tenths % TENTHS_PER_UNIT}M"
                 }
-                else -> "${(bytesPerSec / BYTES_PER_MB).coerceAtMost(MAX_MB)}M"
+                else -> "${(speed / BYTES_PER_MB).coerceAtMost(MAX_MB)}M"
             }
         }
 
         fun renderFrame(size: Int, bytesPerSec: Long): IntArray {
             val canvas = MatrixCanvas(size)
-            val center = size / 2
-            val arrowTop = if (size >= 25) 3 else 0
-            val arrowLen = if (size >= 25) 5 else 3
-            for (y in arrowTop until arrowTop + arrowLen - 1) canvas.light(center, y, ARROW)
-            val tipY = arrowTop + arrowLen - 1
-            canvas.light(center - 1, tipY - 1, ARROW)
-            canvas.light(center + 1, tipY - 1, ARROW)
-            canvas.light(center, tipY, ARROW)
+            val large = size >= 25
+            val text = formatSpeed(bytesPerSec)
+            // The full "2.3M" is 13 columns wide, but the circle narrows at the bottom
+            // of the text. Separate the number and unit so every glyph stays complete.
+            InformationDrawing.text(canvas, text.dropLast(1), if (large) 4 else 1, if (large) 2 else 1)
 
-            val textY = if (size >= 25) 12 else 6
-            Font3x5.drawStringCentered(canvas, formatSpeed(bytesPerSec), textY, MAX_BRIGHTNESS)
+            val footerTop = if (large) 17 else 7
+            val gap = if (large) 3 else 1
+            val footerLeft = (size - (3 + gap + Font3x5.width(text.last()))) / 2
+            // Two stem pixels above a filled, three-wide arrowhead and its tip.
+            canvas.blit(listOf(".#.", ".#.", "###", ".#."), footerLeft, footerTop, ARROW)
+            Font3x5.draw(canvas, text.last(), footerLeft + 3 + gap, footerTop, UNIT)
             return canvas.copyOut()
         }
 
         private const val ARROW = 2200
+        private const val UNIT = 2600
     }
 }

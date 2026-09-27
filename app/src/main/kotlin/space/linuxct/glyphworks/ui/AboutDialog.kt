@@ -7,6 +7,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -50,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -195,7 +197,7 @@ private fun ObservatoryHero() {
             animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing)), label = "aboutOrbitPhase",
         )
     } else rememberUpdatedState(0.12f)
-    val ripple = remember { Animatable(1f) }
+    val ripples = remember { mutableStateListOf<Animatable<Float, AnimationVector1D>>() }
     val scope = rememberCoroutineScope()
     var touched by rememberSaveable { mutableStateOf(false) }
     val portraitDescription = stringResource(R.string.about_portrait_description)
@@ -205,7 +207,7 @@ private fun ObservatoryHero() {
             Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) {
                 // Read animation state in the draw phase, without recomposing the text or portrait.
                 val turn = orbit.value * (2 * PI).toFloat()
-                val progress = ripple.value
+                val rippleProgress = ripples.map { it.value }
                 val radius = min(size.width, size.height) * 0.465f
                 drawCircle(brush = Brush.radialGradient(
                     listOf(Color(0xFF535C7D).copy(alpha = 0.32f), Color.Transparent), center, radius * 1.1f),
@@ -219,9 +221,10 @@ private fun ObservatoryHero() {
                     val dy = (y - 12) * pitch
                     val distance = sqrt(dx * dx + dy * dy) / radius
                     val sweep = ((cos(atan2(dy, dx) - turn) + 1) / 2).pow(16)
-                    val wave = if (progress < 1f) {
-                        exp(-((distance - progress * 1.5f) / 0.14f).pow(2)) * (1 - progress) * 0.85f
-                    } else 0f
+                    var wave = 0f
+                    for (progress in rippleProgress) {
+                        wave += exp(-((distance - progress * 1.5f) / 0.14f).pow(2)) * (1 - progress) * 0.85f
+                    }
                     val alpha = (0.12f + sweep * 0.38f + wave).coerceIn(0f, 1f)
                     drawCircle(Color.White.copy(alpha = alpha), radius = pitch * 0.16f,
                         center = center + Offset(dx, dy))
@@ -237,9 +240,17 @@ private fun ObservatoryHero() {
                     .clip(CircleShape).clickable(role = Role.Button,
                         onClickLabel = stringResource(R.string.about_portrait_action)) {
                         touched = true
-                        if (animationsEnabled) scope.launch {
-                            ripple.snapTo(0f)
-                            ripple.animateTo(1f, tween(1_500, easing = LinearEasing))
+                        if (animationsEnabled) {
+                            // Each tap owns its animation; a new ripple never cancels an older one.
+                            val ripple = Animatable(0f)
+                            ripples.add(ripple)
+                            scope.launch {
+                                try {
+                                    ripple.animateTo(1f, tween(1_500, easing = LinearEasing))
+                                } finally {
+                                    ripples.remove(ripple)
+                                }
+                            }
                         }
                     },
                 shape = CircleShape,

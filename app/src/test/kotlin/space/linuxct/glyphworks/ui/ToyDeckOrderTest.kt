@@ -38,8 +38,10 @@ class ToyDeckOrderTest {
         deck.select(Int.MIN_VALUE)
         assertEquals("ambient", deck.selectedId)
         deck.select(Int.MAX_VALUE)
+        assertEquals(ToyRequest.ID, deck.selectedId)
+        assertEquals(4, deck.selectedIndex)
+        deck.select(3)
         assertEquals("weather", deck.selectedId)
-        assertEquals(3, deck.selectedIndex)
     }
 
     @Test
@@ -47,6 +49,50 @@ class ToyDeckOrderTest {
         val deck = ToyDeckOrder(roster, "removed")
         assertEquals("ambient", deck.selectedId)
         assertEquals(0, deck.selectedIndex)
+    }
+
+    @Test
+    fun `request card is appended exactly once and never enters persisted order`() {
+        val deck = ToyDeckOrder(
+            listOf(ToyRequest.ID, "weather", "clock", ToyRequest.ID, "weather", "ambient"),
+            "clock",
+        )
+        val realOrder = listOf("weather", "clock", "ambient")
+        assertEquals(realOrder, deck.order)
+        assertEquals(realOrder + ToyRequest.ID, deck.cards)
+        assertEquals(realOrder, deck.finishReorder(commit = true))
+        assertEquals(realOrder, deck.finishReorder(commit = false))
+        assertEquals(realOrder, normalizeToyOrder("${ToyRequest.ID},weather,clock,ambient", realOrder))
+    }
+
+    @Test
+    fun `request card can retain focus but cannot be dragged or moved by accessibility`() {
+        val deck = ToyDeckOrder(roster, ToyRequest.ID)
+        assertEquals(ToyRequest.ID, deck.selectedId)
+        assertEquals(roster.size, deck.selectedIndex)
+        assertFalse(deck.beginReorder(ToyRequest.ID))
+        assertFalse(deck.reordering)
+        assertFalse(deck.moveHeld(-1))
+        assertFalse(deck.moveSelected(-1))
+        assertFalse(deck.moveSelected(1))
+        assertEquals(roster, deck.order)
+        assertEquals(roster + ToyRequest.ID, deck.cards)
+        deck.select(0)
+        assertEquals("ambient", deck.selectedId)
+    }
+
+    @Test
+    fun `last real toy cannot move into or past the request slot`() {
+        val deck = ToyDeckOrder(roster, "weather")
+        assertFalse(deck.moveSelected(1))
+        assertTrue(deck.beginReorder("weather"))
+        assertFalse(deck.moveHeld(1))
+        assertTrue(deck.moveHeld(-1))
+        assertEquals(listOf("ambient", "clock", "weather", "notifications", ToyRequest.ID), deck.cards)
+        assertTrue(deck.moveHeld(1))
+        assertFalse(deck.moveHeld(Int.MAX_VALUE))
+        assertEquals(roster, deck.finishReorder(commit = true))
+        assertEquals(roster + ToyRequest.ID, deck.cards)
     }
 
     @Test
@@ -75,6 +121,7 @@ class ToyDeckOrderTest {
         val result = deck.finishReorder(commit = true)
         assertEquals(listOf("ambient", "notifications", "weather", "clock"), result)
         assertEquals(result, deck.order)
+        assertEquals(result + ToyRequest.ID, deck.cards)
         assertEquals("clock", deck.selectedId)
         assertFalse(deck.reordering)
     }
@@ -88,6 +135,7 @@ class ToyDeckOrderTest {
         assertFalse(deck.moveHeld(-1))
         assertTrue(deck.moveHeld(1))
         assertEquals(roster, deck.finishReorder(commit = false))
+        assertEquals(roster + ToyRequest.ID, deck.cards)
         assertEquals("notifications", deck.selectedId)
         assertEquals(2, deck.selectedIndex)
         assertFalse(deck.reordering)
@@ -97,7 +145,7 @@ class ToyDeckOrderTest {
     fun `selection and accessibility actions cannot steal the held toy`() {
         val deck = ToyDeckOrder(roster, "clock")
         assertTrue(deck.beginReorder("clock"))
-        deck.select(3)
+        deck.select(roster.size)
         assertEquals("clock", deck.selectedId)
         assertFalse(deck.moveSelected(1))
         assertTrue(deck.moveHeld(1))
@@ -138,10 +186,12 @@ class ToyDeckOrderTest {
         val input = roster.toMutableList()
         val deck = ToyDeckOrder(input, "clock")
         val snapshot = deck.order
+        val cardSnapshot = deck.cards
         input.clear()
         assertEquals(roster, deck.order)
         deck.moveSelected(1)
         assertEquals(roster, snapshot)
+        assertEquals(roster + ToyRequest.ID, cardSnapshot)
         val result = deck.finishReorder(commit = true)
         deck.moveSelected(1)
         assertEquals(listOf("ambient", "notifications", "clock", "weather"), result)
@@ -151,11 +201,20 @@ class ToyDeckOrderTest {
     fun `empty and single item decks safely reject moves`() {
         val empty = ToyDeckOrder(emptyList(), "removed")
         empty.select(7)
-        assertEquals("", empty.selectedId)
-        assertEquals(-1, empty.selectedIndex)
-        assertFalse(empty.beginReorder(""))
+        assertEquals(ToyRequest.ID, empty.selectedId)
+        assertEquals(0, empty.selectedIndex)
+        assertEquals(listOf(ToyRequest.ID), empty.cards)
+        assertFalse(empty.beginReorder(ToyRequest.ID))
         assertFalse(empty.moveSelected(1))
+        assertFalse(empty.moveSelected(-1))
+        empty.select(Int.MIN_VALUE)
+        assertEquals(ToyRequest.ID, empty.selectedId)
         assertEquals(emptyList<String>(), empty.finishReorder(commit = false))
+
+        val requestOnly = ToyDeckOrder(listOf(ToyRequest.ID, ToyRequest.ID), "removed")
+        assertEquals(emptyList<String>(), requestOnly.order)
+        assertEquals(listOf(ToyRequest.ID), requestOnly.cards)
+        assertEquals(ToyRequest.ID, requestOnly.selectedId)
 
         val single = ToyDeckOrder(listOf("ambient"), "ambient")
         assertTrue(single.beginReorder("ambient"))
@@ -163,48 +222,127 @@ class ToyDeckOrderTest {
         assertFalse(single.moveHeld(-1))
         assertFalse(single.moveHeld(0))
         assertEquals(listOf("ambient"), single.finishReorder(commit = true))
+        single.select(1)
+        assertEquals(ToyRequest.ID, single.selectedId)
+        assertFalse(single.beginReorder(ToyRequest.ID))
     }
 
     @Test
     fun `slow drags snap to the nearest page`() {
-        assertEquals(0, toyDeckSnapTarget(0.3f, 0f, 8))
-        assertEquals(1, toyDeckSnapTarget(0.7f, 0.5f, 8))
-        assertEquals(3, toyDeckSnapTarget(2.5f, -1.19f, 8))
-        assertEquals(3, toyDeckSnapTarget(3.2f, 1.19f, 8))
+        assertEquals(0, toyDeckSnapTarget(0.3f, 0f, 8, swipeStartPosition = 0.3f))
+        assertEquals(1, toyDeckSnapTarget(0.7f, 0.5f, 8, swipeStartPosition = 0.7f))
+        assertEquals(3, toyDeckSnapTarget(2.5f, -1.19f, 8, swipeStartPosition = 2.5f))
+        assertEquals(3, toyDeckSnapTarget(3.2f, 1.19f, 8, swipeStartPosition = 3.2f))
     }
 
     @Test
     fun `fast flick advances at least one page in its direction`() {
-        assertEquals(4, toyDeckSnapTarget(3.1f, 1.2f, 8))
-        assertEquals(2, toyDeckSnapTarget(3.1f, -1.2f, 8))
-        assertEquals(1, toyDeckSnapTarget(0f, 2f, 8))
-        assertEquals(6, toyDeckSnapTarget(7f, -2f, 8))
+        assertEquals(4, toyDeckSnapTarget(3.1f, 1.2f, 8, swipeStartPosition = 3.1f))
+        assertEquals(2, toyDeckSnapTarget(3.1f, -1.2f, 8, swipeStartPosition = 3.1f))
+        assertEquals(1, toyDeckSnapTarget(0f, 2f, 8, swipeStartPosition = 0f))
+        assertEquals(6, toyDeckSnapTarget(7f, -2f, 8, swipeStartPosition = 7f))
     }
 
     @Test
     fun `strong flick travels at most two pages from the nearest anchor`() {
-        assertEquals(5, toyDeckSnapTarget(3.1f, 4f, 8))
-        assertEquals(1, toyDeckSnapTarget(3.1f, -4f, 8))
-        assertEquals(5, toyDeckSnapTarget(3.1f, 1000f, 8))
-        assertEquals(1, toyDeckSnapTarget(3.1f, -1000f, 8))
+        assertEquals(5, toyDeckSnapTarget(3.1f, 4f, 8, swipeStartPosition = 3.1f))
+        assertEquals(1, toyDeckSnapTarget(3.1f, -4f, 8, swipeStartPosition = 3.1f))
+        assertEquals(5, toyDeckSnapTarget(3.1f, 1000f, 8, swipeStartPosition = 3.1f))
+        assertEquals(1, toyDeckSnapTarget(3.1f, -1000f, 8, swipeStartPosition = 3.1f))
+    }
+
+    @Test
+    fun `fast flick counts finger travel toward its three card limit`() {
+        assertEquals(3, toyDeckSnapTarget(2.6f, 1000f, 20, swipeStartPosition = 0f))
+        assertEquals(3, toyDeckSnapTarget(2.6f, 2f, 20, swipeStartPosition = 0f))
+        assertEquals(14, toyDeckSnapTarget(14.4f, -1000f, 20, swipeStartPosition = 17f))
+        assertEquals(14, toyDeckSnapTarget(14.4f, -2f, 20, swipeStartPosition = 17f))
+        assertEquals(7, toyDeckSnapTarget(6.2f, 1000f, 20, swipeStartPosition = 4.4f))
+    }
+
+    @Test
+    fun `long direct drags settle in place without extra travel or snapping backward`() {
+        for (speed in listOf(0f, 2f, 1000f)) {
+            assertEquals(6, toyDeckSnapTarget(6.2f, speed, 20, swipeStartPosition = 0f))
+            assertEquals(12, toyDeckSnapTarget(12.2f, -speed, 20, swipeStartPosition = 18f))
+        }
+    }
+
+    @Test
+    fun `reversing direction at release still moves toward the final swipe direction`() {
+        assertEquals(6, toyDeckSnapTarget(8.2f, -10f, 20, swipeStartPosition = 7f))
+        assertEquals(9, toyDeckSnapTarget(7.2f, 10f, 20, swipeStartPosition = 8f))
+    }
+
+    @Test
+    fun `release speed ignores a final movement spike after a slow drag`() {
+        val velocity = ToyDeckVelocity()
+        velocity.reset(0, 0f)
+        for (time in 16L..160L step 16) velocity.add(time, time * 0.1f)
+        velocity.add(170, 100f)
+        assertEquals(100f, velocity.atRelease(176), 0.001f)
+        // With a 300 px stride this remains a slow drag, despite the lift-off jump.
+        assertEquals(5, toyDeckSnapTarget(5.3f, velocity.atRelease(176) / 300f, 20, 5f))
+    }
+
+    @Test
+    fun `sustained fast motion and short deliberate flicks retain their speed`() {
+        for (direction in listOf(-1, 1)) {
+            val velocity = ToyDeckVelocity()
+            velocity.reset(0, 500f)
+            for (time in 16L..160L step 16) velocity.add(time, 500f + time * 2f * direction)
+            assertEquals(2000f * direction, velocity.atRelease(176), 0.001f)
+            velocity.reset(0, 0f)
+            velocity.add(16, 100f * direction)
+            velocity.add(32, 200f * direction)
+            velocity.add(48, 300f * direction)
+            assertEquals(6250f * direction, velocity.atRelease(50), 0.001f)
+        }
+    }
+
+    @Test
+    fun `pause or insufficient movement before release produces no fling`() {
+        val velocity = ToyDeckVelocity()
+        assertEquals(0f, velocity.atRelease(100), 0f)
+        velocity.reset(0, 0f)
+        velocity.add(16, 100f)
+        assertEquals(0f, velocity.atRelease(20), 0f)
+        velocity.add(32, 200f)
+        velocity.add(48, 300f)
+        assertEquals(0f, velocity.atRelease(150), 0f)
+    }
+
+    @Test
+    fun `new gesture discards old velocity and duplicate samples cannot distort it`() {
+        val velocity = ToyDeckVelocity()
+        velocity.reset(0, 0f)
+        velocity.add(16, 100f)
+        velocity.reset(1000, 500f)
+        for (time in 1016L..1128L step 16) {
+            velocity.add(time, 500f)
+            velocity.add(time, 9000f)
+            velocity.add(time - 1, -9000f)
+        }
+        velocity.add(1130, Float.NaN)
+        assertEquals(0f, velocity.atRelease(1144), 0f)
     }
 
     @Test
     fun `snap targets stay inside boundaries for overscroll and small decks`() {
-        assertEquals(0, toyDeckSnapTarget(-3f, -10f, 8))
-        assertEquals(7, toyDeckSnapTarget(20f, 10f, 8))
-        assertEquals(0, toyDeckSnapTarget(0f, -2f, 2))
-        assertEquals(1, toyDeckSnapTarget(0f, 50f, 2))
-        assertEquals(0, toyDeckSnapTarget(20f, 50f, 1))
-        assertEquals(0, toyDeckSnapTarget(20f, 50f, 0))
+        assertEquals(0, toyDeckSnapTarget(-3f, -10f, 8, swipeStartPosition = -3f))
+        assertEquals(7, toyDeckSnapTarget(20f, 10f, 8, swipeStartPosition = 20f))
+        assertEquals(0, toyDeckSnapTarget(0f, -2f, 2, swipeStartPosition = 0f))
+        assertEquals(1, toyDeckSnapTarget(0f, 50f, 2, swipeStartPosition = 0f))
+        assertEquals(0, toyDeckSnapTarget(20f, 50f, 1, swipeStartPosition = 20f))
+        assertEquals(0, toyDeckSnapTarget(20f, 50f, 0, swipeStartPosition = 20f))
     }
 
     @Test
     fun `invalid motion samples have deterministic safe targets`() {
-        assertEquals(0, toyDeckSnapTarget(Float.NaN, 0f, 8))
-        assertEquals(7, toyDeckSnapTarget(Float.POSITIVE_INFINITY, 0f, 8))
-        assertEquals(0, toyDeckSnapTarget(Float.NEGATIVE_INFINITY, 0f, 8))
-        assertEquals(3, toyDeckSnapTarget(3.2f, Float.NaN, 8))
-        assertEquals(3, toyDeckSnapTarget(3.2f, Float.POSITIVE_INFINITY, 8))
+        assertEquals(0, toyDeckSnapTarget(Float.NaN, 0f, 8, swipeStartPosition = Float.NaN))
+        assertEquals(7, toyDeckSnapTarget(Float.POSITIVE_INFINITY, 0f, 8, swipeStartPosition = Float.POSITIVE_INFINITY))
+        assertEquals(0, toyDeckSnapTarget(Float.NEGATIVE_INFINITY, 0f, 8, swipeStartPosition = Float.NEGATIVE_INFINITY))
+        assertEquals(3, toyDeckSnapTarget(3.2f, Float.NaN, 8, swipeStartPosition = 3.2f))
+        assertEquals(3, toyDeckSnapTarget(3.2f, Float.POSITIVE_INFINITY, 8, swipeStartPosition = 3.2f))
     }
 }

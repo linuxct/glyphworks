@@ -53,7 +53,6 @@ import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -108,15 +107,22 @@ internal class ToyDeckState(order: List<String>, initialId: String) {
     private var repeatMove: Job? = null
     private var edge = 0
     private var repeatDirection = 0
-    val selectedIndex: Int get() = order.indexOf(selectedId)
+    private var swipeStartPosition = position
+    val cards: List<String> get() = order + ToyRequest.ID
+    val selectedIndex: Int get() = cards.indexOf(selectedId)
 
     fun beginSwipe() {
-        if (heldId == null) { settle?.cancel(); releasedId = null }
+        if (heldId == null) {
+            settle?.cancel()
+            releasedId = null
+            // A new touch can interrupt settling: anchor to the visible card, not its target.
+            swipeStartPosition = position
+        }
     }
 
     fun swipe(pages: Float) {
         if (heldId != null) return
-        position = (position + pages).coerceIn(0f, order.lastIndex.toFloat())
+        position = (position + pages).coerceIn(0f, cards.lastIndex.toFloat())
         model.select(position.roundToInt())
         selectedId = model.selectedId
     }
@@ -125,19 +131,21 @@ internal class ToyDeckState(order: List<String>, initialId: String) {
         if (heldId != null) return
         settle?.cancel()
         releasedId = null
-        val target = index.coerceIn(order.indices)
+        val target = index.coerceIn(cards.indices)
         // Select now for accessibility; position tracks it during a touch swipe instead.
         model.select(target)
         selectedId = model.selectedId
         settle = scope.launch {
             animate(position, target.toFloat(), animationSpec = spring(
                 dampingRatio = 1f, stiffness = 650f, visibilityThreshold = 0.002f,
-            )) { value, _ -> position = value.coerceIn(0f, order.lastIndex.toFloat()) }
+            )) { value, _ -> position = value.coerceIn(0f, cards.lastIndex.toFloat()) }
         }
     }
 
     fun finishSwipe(velocity: Float, scope: CoroutineScope) {
-        if (heldId == null) focus(toyDeckSnapTarget(position, velocity, order.size), scope)
+        if (heldId == null) {
+            focus(toyDeckSnapTarget(position, velocity, cards.size, swipeStartPosition), scope)
+        }
     }
 
     fun beginHold(id: String): Boolean {
@@ -253,7 +261,7 @@ internal fun ToyDeck(
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
-    val velocity = remember { VelocityTracker() }
+    val velocity = remember { ToyDeckVelocity() }
     val moveBefore = stringResource(R.string.toys_move_earlier)
     val moveAfter = stringResource(R.string.toys_move_later)
     val reportGesture by rememberUpdatedState(onGesture)
@@ -281,36 +289,40 @@ internal fun ToyDeck(
                 detectDragGestures(
                     orientationLock = Orientation.Horizontal,
                     onDragStart = { down, _, _ ->
-                        velocity.resetTracking()
-                        velocity.addPosition(down.uptimeMillis, down.position)
+                        velocity.reset(down.uptimeMillis, down.position.x)
                         state.beginSwipe()
                     },
                     onDragEnd = { up ->
-                        velocity.addPosition(up.uptimeMillis, up.position)
-                        state.finishSwipe(-velocity.calculateVelocity().x * sign / stride, scope)
+                        // Lift-off coordinates can jump as contact with the glass shrinks.
+                        // Use sustained drag motion before release, never the UP position.
+                        state.finishSwipe(-velocity.atRelease(up.uptimeMillis) * sign / stride, scope)
                     },
                     onDragCancel = { state.finishSwipe(0f, scope) },
                 ) { change, amount ->
                     change.consume()
-                    change.historical.forEach { velocity.addPosition(it.uptimeMillis, it.position) }
-                    velocity.addPosition(change.uptimeMillis, change.position)
+                    change.historical.forEach { velocity.add(it.uptimeMillis, it.position.x) }
+                    velocity.add(change.uptimeMillis, change.position.x)
                     state.swipe(-amount.x * sign / stride)
                 }
             },
             contentAlignment = Alignment.Center,
         ) {
-            state.order.forEachIndexed { index, id -> key(id) {
+            state.cards.forEachIndexed { index, id -> key(id) {
                 // Only five cards plus the next entering pair are composed.
                 // The key must wrap the visibility group, so moving an ID preserves its
                 // in-flight gesture instead of disposing it and canceling the reorder.
                 if (abs(index - state.position) <= 3.2f || state.heldId == id) {
                     val centered = id == state.selectedId
                     val held = state.heldId == id
-                    val enabled by rememberPref(PrefKeys.screenEnabled(id)) {
-                        it.getBoolean(PrefKeys.screenEnabled(id), true)
+                    val request = id == ToyRequest.ID
+                    val enabled = if (request) false else {
+                        val checked by rememberPref(PrefKeys.screenEnabled(id)) {
+                            it.getBoolean(PrefKeys.screenEnabled(id), true)
+                        }
+                        checked
                     }
-                    val name = stringResource(SCREEN_DISPLAY_NAMES.getValue(id))
-                    val status = stringResource(if (enabled) R.string.toys_enabled else R.string.toys_disabled)
+                    val name = stringResource(if (request) R.string.toys_request_title else SCREEN_DISPLAY_NAMES.getValue(id))
+                    val status = if (request) null else stringResource(if (enabled) R.string.toys_enabled else R.string.toys_disabled)
                     val movingSlot by animateFloatAsState(
                         targetValue = index - state.position,
                         animationSpec = if (state.heldId != null) spring(stiffness = 550f) else spring(stiffness = 10000f),
@@ -321,7 +333,7 @@ internal fun ToyDeck(
                         BlurEffect(px, px, TileMode.Decal)
                     }
                     var holdModifier: Modifier = Modifier
-                    if (centered || held) {
+                    if (!request && (centered || held)) {
                         holdModifier = Modifier.pointerInput(id, state, stride, sign) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = {
@@ -372,8 +384,8 @@ internal fun ToyDeck(
                             .then(holdModifier)
                             .semantics {
                                 selected = centered
-                                stateDescription = status
-                                if (centered) customActions = listOf(
+                                if (status != null) stateDescription = status
+                                if (centered && !request) customActions = listOf(
                                     CustomAccessibilityAction(moveBefore) {
                                         state.moveSelected(-1).also { if (it) onPersistOrder(state.order) }
                                     },
@@ -427,7 +439,7 @@ internal fun ToyDeck(
                             }
                             // Side cards can be focused by tap, but only the center exposes a toggle.
                             // This keeps overlapping hit targets from enabling an unseen toy.
-                            if (centered && state.heldId == null) {
+                            if (!request && centered && state.heldId == null) {
                                 IconToggleButton(
                                     checked = enabled,
                                     onCheckedChange = { onToggle(id, it) },
@@ -437,7 +449,7 @@ internal fun ToyDeck(
                                         if (enabled) R.string.toys_disable else R.string.toys_enable, name,
                                     ))
                                 }
-                            } else {
+                            } else if (!request) {
                                 Box(
                                     Modifier.align(Alignment.TopEnd).padding(2.dp).size(48.dp),
                                     contentAlignment = Alignment.Center,

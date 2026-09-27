@@ -15,6 +15,54 @@ import org.junit.Test
 class ToyDeckStateTest {
     private val toys = listOf("clock", "dino", "weather", "battery")
 
+    @Test fun `request card is reachable but never draggable and persists no extra toy`() = runTest {
+        val state = ToyDeckState(toys, "battery")
+        state.beginSwipe()
+        state.swipe(1f)
+        assertEquals(ToyRequest.ID, state.selectedId)
+        assertEquals(toys.size, state.selectedIndex)
+        assertEquals(toys + ToyRequest.ID, state.cards)
+        assertFalse(state.beginHold(ToyRequest.ID))
+        assertFalse(state.moveSelected(-1))
+        assertNull(state.heldId)
+        assertNull(state.finishHold(true))
+        state.beginSwipe()
+        state.swipe(-1f)
+        assertEquals("battery", state.selectedId)
+        assertTrue(state.beginHold("battery"))
+        state.dragHeld(130f, 100f, this) { fail("Cannot move a toy past the fixed request card") }
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(toys, state.finishHold(true))
+        assertEquals(ToyRequest.ID, state.cards.last())
+    }
+
+    @Test fun `request focus can be restored without changing the saved order`() {
+        val state = ToyDeckState(toys, ToyRequest.ID)
+        assertEquals(ToyRequest.ID, state.selectedId)
+        state.stop()
+        assertEquals(toys.size.toFloat(), state.position, 0f)
+        assertEquals(toys, state.order)
+    }
+
+    @Test fun `flick uses gesture start and a new touch reanchors to visible position`() = runTest {
+        val roster = (0..19).map { "toy$it" }
+        for (direction in listOf(-1, 1)) {
+            val state = ToyDeckState(roster, "toy10")
+            state.beginSwipe()
+            state.swipe(1.8f * direction)
+            state.finishSwipe(100f * direction, this)
+            assertEquals(10 + 3 * direction, state.selectedIndex)
+            // Interrupt before settling. The next gesture starts at the current drawing,
+            // not the old gesture origin or the pending animation's target card.
+            state.beginSwipe()
+            state.swipe(1.8f * direction)
+            state.finishSwipe(100f * direction, this)
+            assertEquals(10 + 5 * direction, state.selectedIndex)
+            state.stop()
+        }
+    }
+
     @Test fun `only a settled centered card can begin a reorder`() {
         val state = ToyDeckState(toys, "dino")
         assertFalse(state.beginHold("clock"))

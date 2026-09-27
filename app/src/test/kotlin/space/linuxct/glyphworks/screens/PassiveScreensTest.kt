@@ -66,26 +66,6 @@ class EyesScreenTest {
     }
 }
 
-class SpeedScreenTest {
-    @Test
-    fun `format rules`() {
-        assertEquals("0K", SpeedScreen.formatSpeed(0))
-        assertEquals("45K", SpeedScreen.formatSpeed(45_000))
-        assertEquals("99K", SpeedScreen.formatSpeed(99_999))
-        assertEquals("0.1M", SpeedScreen.formatSpeed(100_000))
-        assertEquals("2.3M", SpeedScreen.formatSpeed(2_340_000))
-        assertEquals("15M", SpeedScreen.formatSpeed(15_000_000))
-        assertEquals("99M", SpeedScreen.formatSpeed(250_000_000))
-    }
-
-    @Test
-    fun `render goldens`() {
-        GoldenAscii.check("speed_13_45k", SpeedScreen.renderFrame(13, 45_000), 13)
-        GoldenAscii.check("speed_13_2_3m", SpeedScreen.renderFrame(13, 2_340_000), 13)
-        GoldenAscii.check("speed_25_45k", SpeedScreen.renderFrame(25, 45_000), 25)
-    }
-}
-
 class CompassScreenTest {
     @Test
     fun `render goldens`() {

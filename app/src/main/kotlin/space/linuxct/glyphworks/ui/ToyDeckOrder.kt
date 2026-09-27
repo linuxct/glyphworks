@@ -17,33 +17,39 @@ internal fun normalizeToyOrder(stored: String, known: List<String>): List<String
 }
 
 /**
- * Selection follows a toy ID while its position changes. Reordering is a transaction:
+ * Selection follows a card ID while its position changes. [cards] includes a fixed trailing
+ * request card; [order] contains only real toys suitable for persistence. Reordering is a transaction:
  * [order] exposes temporary moves, and [finishReorder] either keeps them or restores the
  * original order. The caller decides when to persist a completed change.
  */
 internal class ToyDeckOrder(initial: List<String>, selectedId: String) {
-    private val items = initial.distinct().toMutableList()
+    private val items = initial.filter { it != ToyRequest.ID }.distinct().toMutableList()
     private var beforeReorder: List<String>? = null
 
     /** Detached snapshot: retaining or mutating a returned list cannot change this model. */
     val order: List<String> get() = items.toList()
 
-    var selectedId: String = selectedId.takeIf { it in items } ?: items.firstOrNull().orEmpty()
+    /** Browsable cards, with the request card pinned after every real toy. */
+    val cards: List<String> get() = items + ToyRequest.ID
+
+    var selectedId: String = selectedId.takeIf { it == ToyRequest.ID || it in items }
+        ?: items.firstOrNull() ?: ToyRequest.ID
         private set
 
-    /** An empty deck has no selected index. */
-    val selectedIndex: Int get() = items.indexOf(selectedId)
+    /** Even an empty toy roster has the request card at index zero. */
+    val selectedIndex: Int get() = if (selectedId == ToyRequest.ID) items.size else items.indexOf(selectedId)
 
     val reordering: Boolean get() = beforeReorder != null
 
     /** Ignore selection changes while holding a card so it remains the same toy on drop. */
     fun select(index: Int) {
-        if (reordering || items.isEmpty()) return
-        selectedId = items[index.coerceIn(0, items.lastIndex)]
+        if (reordering) return
+        val target = index.coerceIn(0, items.size)
+        selectedId = if (target == items.size) ToyRequest.ID else items[target]
     }
 
     fun beginReorder(id: String): Boolean {
-        if (reordering || id != selectedId || selectedIndex < 0) return false
+        if (reordering || id != selectedId || id !in items) return false
         beforeReorder = order
         return true
     }
@@ -69,7 +75,7 @@ internal class ToyDeckOrder(initial: List<String>, selectedId: String) {
             direction < 0 -> -1
             else -> return false
         }
-        val from = selectedIndex
+        val from = items.indexOf(selectedId)
         if (from < 0) return false
         val to = from + step
         if (to !in items.indices) return false
@@ -79,11 +85,17 @@ internal class ToyDeckOrder(initial: List<String>, selectedId: String) {
 }
 
 /**
- * Slow drags settle on the nearest page. A fling advances one page from that nearest
- * anchor, or two at 4 pages/second; stronger velocities cannot skip further. Positive
- * velocity moves toward increasing indices. An empty deck returns the neutral target 0.
+ * Slow drags settle on the nearest page. A fling adds one page, or two at 4 pages/second,
+ * within three slots of the card visible at gesture start. A longer direct drag still
+ * follows the finger but gets no extra travel beyond that limit. Positive velocity moves
+ * toward increasing indices. An empty deck returns the neutral target 0.
  */
-internal fun toyDeckSnapTarget(position: Float, velocityPagesPerSecond: Float, count: Int): Int {
+internal fun toyDeckSnapTarget(
+    position: Float,
+    velocityPagesPerSecond: Float,
+    count: Int,
+    swipeStartPosition: Float,
+): Int {
     if (count <= 1) return 0
     val last = count - 1
     val boundedPosition = if (position.isNaN()) 0f else position.coerceIn(0f, last.toFloat())
@@ -93,5 +105,44 @@ internal fun toyDeckSnapTarget(position: Float, velocityPagesPerSecond: Float, c
     if (speed < 1.2f) return nearest
     val pages = if (speed >= 4f) 2 else 1
     val direction = if (velocity > 0f) 1 else -1
-    return (nearest.toLong() + direction * pages).coerceIn(0L, last.toLong()).toInt()
+    val start = if (swipeStartPosition.isNaN()) nearest else
+        swipeStartPosition.coerceIn(0f, last.toFloat()).roundToInt().coerceIn(0, last)
+    val proposed = nearest.toLong() + direction * pages
+    val limited = if (direction > 0) {
+        minOf(proposed, maxOf(nearest.toLong(), start.toLong() + 3))
+    } else {
+        maxOf(proposed, minOf(nearest.toLong(), start.toLong() - 3))
+    }
+    return limited.coerceIn(0L, last.toLong()).toInt()
+}
+
+/**
+ * Release speed comes from recent drag motion, excluding the final 24 ms where losing
+ * finger contact can produce a spurious jump. Averaging over 120 ms preserves deliberate
+ * flicks without amplifying a single lift-off sample. A pause before release cancels momentum.
+ */
+internal class ToyDeckVelocity {
+    private data class Sample(val time: Long, val x: Float)
+    private val samples = ArrayDeque<Sample>()
+
+    fun reset(time: Long, x: Float) {
+        samples.clear()
+        add(time, x)
+    }
+
+    fun add(time: Long, x: Float) {
+        if (!x.isFinite() || samples.lastOrNull()?.let { time <= it.time } == true) return
+        samples.addLast(Sample(time, x))
+        while (samples.isNotEmpty() && samples.first().time < time - 200) samples.removeFirst()
+    }
+
+    fun atRelease(time: Long): Float {
+        val end = time - 24
+        val recent = samples.filter { it.time in (end - 120)..end }
+        val first = recent.firstOrNull() ?: return 0f
+        val last = recent.last()
+        val duration = last.time - first.time
+        if (duration < 16 || time - last.time > 80) return 0f
+        return (last.x - first.x) * 1000f / duration
+    }
 }
