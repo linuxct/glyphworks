@@ -55,7 +55,7 @@ class SpeedScreenTest {
             val numberPixels = text.dropLast(1).sumOf(::glyphPixels) * scale * scale
             assertEquals("$size $text loses number pixels", numberPixels, frame.count { it == MAX_BRIGHTNESS })
             assertEquals("$size $text loses unit pixels", glyphPixels(text.last()), frame.count { it == 2600 })
-            assertEquals("$size $text needs a six-pixel arrow", 6, frame.count { it == 2200 })
+            assertEquals("$size $text needs an eleven-pixel arrow", 11, frame.count { it == 2200 })
         }
     }
 
@@ -65,7 +65,8 @@ class SpeedScreenTest {
             val pixels = frame.indices.filter { frame[it] == 2200 }.map { it % size to it / size }
             val left = pixels.minOf { it.first }
             val top = pixels.minOf { it.second }
-            assertEquals(setOf(1 to 0, 1 to 1, 0 to 2, 1 to 2, 2 to 2, 1 to 3),
+            assertEquals(setOf(2 to 0, 2 to 1, 0 to 2, 1 to 2, 2 to 2, 3 to 2, 4 to 2,
+                1 to 3, 2 to 3, 3 to 3, 2 to 4),
                 pixels.map { (x, y) -> x - left to y - top }.toSet())
         }
     }

@@ -67,10 +67,10 @@ class SpeedScreen : GlyphScreen {
 
             val footerTop = if (large) 17 else 7
             val gap = if (large) 3 else 1
-            val footerLeft = (size - (3 + gap + Font3x5.width(text.last()))) / 2
-            // Two stem pixels above a filled, three-wide arrowhead and its tip.
-            canvas.blit(listOf(".#.", ".#.", "###", ".#."), footerLeft, footerTop, ARROW)
-            Font3x5.draw(canvas, text.last(), footerLeft + 3 + gap, footerTop, UNIT)
+            val footerLeft = (size - (5 + gap + Font3x5.width(text.last()))) / 2
+            // Two stem pixels above a filled, five-wide arrowhead tapering to its tip.
+            canvas.blit(listOf("..#..", "..#..", "#####", ".###.", "..#.."), footerLeft, footerTop, ARROW)
+            Font3x5.draw(canvas, text.last(), footerLeft + 5 + gap, footerTop, UNIT)
             return canvas.copyOut()
         }
 
