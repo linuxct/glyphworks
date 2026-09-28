@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
@@ -108,7 +107,7 @@ kotlin {
 
 dependencies {
     implementation(files("libs/glyph-matrix-sdk-2.0.aar"))
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.activity:activity-compose:1.13.0")
@@ -116,7 +115,7 @@ dependencies {
     // motionScheme parameter as public API (both were internal in 1.4.0), which
     // is what lets the app use MD3's real expressive springs instead of copying
     // token values. It pulls Compose 1.12.0-alpha03 transitively.
-    implementation("androidx.compose.material3:material3:1.5.0-alpha28")
+    implementation("androidx.compose.material3:material3:1.5.0-alpha29")
     // AnimatedContent lives in the non-core animation artifact, which material3
     // does NOT depend on (verified in the POMs of both 1.4.0 and 1.5.0-alpha23).
     implementation("androidx.compose.animation:animation:1.12.1")
@@ -137,7 +136,7 @@ dependencies {
     // plugin above must stay pinned to the Kotlin version, this runtime need not.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
 
 tasks.withType<Test>().configureEach {
