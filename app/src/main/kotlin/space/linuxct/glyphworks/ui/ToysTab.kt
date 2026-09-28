@@ -182,7 +182,7 @@ internal fun ToysTab(
             item("stage") {
                 ToyStage(
                     if (requestSelected) requestFrame else player.frame, panelSize,
-                    Modifier.fillMaxWidth().height(stageHeight).padding(horizontal = 16.dp),
+                    Modifier.fillMaxWidth().height(stageHeight),
                     onInteract = if (deck.selectedId in INTERACTIVE_PREVIEWS) ({ player.interact() }) else null,
                 )
             }

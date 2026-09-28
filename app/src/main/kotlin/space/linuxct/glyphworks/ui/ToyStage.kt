@@ -20,7 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -42,7 +42,6 @@ import space.linuxct.glyphworks.ui.design.MATRIX_DISC_COLOR
 import space.linuxct.glyphworks.ui.design.MatrixDisc
 import space.linuxct.glyphworks.ui.design.drawDeviceBack
 import space.linuxct.glyphworks.ui.design.drawMatrix
-import space.linuxct.glyphworks.ui.theme.glyphCorner
 
 /**
  * A close crop keeps the matrix readable at normal selector heights. The preview engine
@@ -56,7 +55,6 @@ internal fun ToyStage(
     onInteract: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    val backdrop = colors.surfaceContainerLow
     val deviceName = stringResource(
         if (panelSize == 25) R.string.device_arbok else R.string.device_bellsprout,
     )
@@ -73,26 +71,17 @@ internal fun ToyStage(
     Box(
         modifier
             .fillMaxWidth()
-            .clip(glyphCorner(28.dp, 32.dp))
-            .background(backdrop),
+            .clipToBounds(),
     ) {
         // Only the artwork handles preview actions. The informational badge is a separate,
         // non-clickable surface above it. Preview actions never show an indication.
         Canvas(Modifier.fillMaxSize().then(interaction).semantics { contentDescription = description }) {
             if (size.width <= 0f || size.height <= 0f) return@Canvas
-            // At 220–290 dp high, the lit grid is approximately 134–176 dp across.
-            // Keep it face-on: perspective is a poor trade for the small LED glyphs.
-            val radius = minOf(size.height * 0.315f, size.width * 0.28f)
-            val center = Offset(size.width * 0.64f, size.height * 0.53f)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(colors.primary.copy(alpha = 0.13f), Color.Transparent),
-                    center = center,
-                    radius = radius * 1.65f,
-                ),
-                radius = radius * 1.65f,
-                center = center,
-            )
+            // A full-width, face-on crop keeps the pixels clear and lets the phone extend
+            // past the viewport, without a separate card or horizontal fading at its edges.
+            val framing = toyStageMatrix(size, panelSize)
+            val radius = framing.radius
+            val center = framing.center
 
             val disc = if (panelSize == 25) {
                 drawPhoneThreeDetail(center, radius, colors.onSurface)
@@ -116,6 +105,19 @@ internal fun ToyStage(
                 }
             }
 
+            // Only the phone fades into the activity. Draw the matrix afterwards so the
+            // live glyph remains fully legible, including pixels at the bottom of the disc.
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.60f to Color.Transparent,
+                    0.82f to colors.background.copy(alpha = 0.55f),
+                    1f to colors.background,
+                    startY = 0f,
+                    endY = size.height,
+                ),
+            )
+
             drawCircle(Color.Black.copy(alpha = 0.55f), disc.radius + 2.dp.toPx(), disc.center)
             drawCircle(MATRIX_DISC_COLOR, disc.radius, disc.center)
             drawCircle(
@@ -125,15 +127,6 @@ internal fun ToyStage(
                 style = Stroke(1.dp.toPx()),
             )
             drawMatrix(disc.center, disc.radius * 0.965f, panelSize, frame.value, unlitAlpha = 0.055f)
-
-            // The phone continues beyond the crop; the caption sits on a quiet surface.
-            drawRect(
-                Brush.verticalGradient(
-                    listOf(Color.Transparent, backdrop),
-                    startY = size.height * 0.84f,
-                    endY = size.height,
-                ),
-            )
         }
 
         Surface(
@@ -179,10 +172,24 @@ internal fun ToyStage(
     }
 }
 
+/** Keep the entire disc visible, while the phone reaches the left edge even on wide layouts. */
+internal fun toyStageMatrix(viewport: Size, panelSize: Int): MatrixDisc {
+    val radius = minOf(viewport.height * 0.355f, viewport.width * 0.30f)
+    val phoneWidth = radius / if (panelSize == 25) PHONE_THREE_MATRIX_RADIUS else DeviceBack.matrix.radius
+    val matrixX = if (panelSize == 25) PHONE_THREE_MATRIX_X else DeviceBack.matrix.center.x
+    return MatrixDisc(
+        center = Offset(minOf(viewport.width * 0.66f, phoneWidth * matrixX), viewport.height * 0.46f),
+        radius = radius,
+    )
+}
+
+private const val PHONE_THREE_MATRIX_RADIUS = 0.215f
+private const val PHONE_THREE_MATRIX_X = 0.74f
+
 /** A stylized glass-back crop, deliberately separate from the 4a Pro camera-island model. */
 private fun DrawScope.drawPhoneThreeDetail(center: Offset, radius: Float, ink: Color): MatrixDisc {
-    val width = radius / 0.215f
-    val left = center.x - width * 0.74f
+    val width = radius / PHONE_THREE_MATRIX_RADIUS
+    val left = center.x - width * PHONE_THREE_MATRIX_X
     val top = center.y - width * 0.28f
     val bodySize = Size(width, width * 2.08f)
     val corner = CornerRadius(width * 0.14f)
