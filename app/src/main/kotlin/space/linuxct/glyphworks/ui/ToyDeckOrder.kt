@@ -1,6 +1,8 @@
 package space.linuxct.glyphworks.ui
 
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /** Retain saved IDs in their chosen order, followed by newly available toys. */
@@ -85,10 +87,14 @@ internal class ToyDeckOrder(initial: List<String>, selectedId: String) {
 }
 
 /**
- * Slow drags settle on the nearest page. A fling adds one page, or two at 4 pages/second,
- * within three slots of the card visible at gesture start. A longer direct drag still
- * follows the finger but gets no extra travel beyond that limit. Positive velocity moves
- * toward increasing indices. An empty deck returns the neutral target 0.
+ * Distance determines travel; speed never adds cards. Slow drags settle on the nearest
+ * card, while a flick finishes the partial slot in its direction. A gesture shorter than
+ * one slot cannot move beyond the neighbor of the card visible when the finger went down,
+ * even if rounding the current position would otherwise skip that neighbor.
+ *
+ * Longer swipes can cross more cards by moving the finger farther. After three slots of
+ * direct travel there is no extra momentum. Positive velocity moves toward increasing
+ * indices. An empty deck returns the neutral target 0.
  */
 internal fun toyDeckSnapTarget(
     position: Float,
@@ -103,15 +109,18 @@ internal fun toyDeckSnapTarget(
     val velocity = velocityPagesPerSecond.takeIf { it.isFinite() } ?: 0f
     val speed = abs(velocity)
     if (speed < 1.2f) return nearest
-    val pages = if (speed >= 4f) 2 else 1
     val direction = if (velocity > 0f) 1 else -1
-    val start = if (swipeStartPosition.isNaN()) nearest else
-        swipeStartPosition.coerceIn(0f, last.toFloat()).roundToInt().coerceIn(0, last)
-    val proposed = nearest.toLong() + direction * pages
+    val startPosition = if (swipeStartPosition.isNaN()) boundedPosition else
+        swipeStartPosition.coerceIn(0f, last.toFloat())
+    val start = startPosition.roundToInt().coerceIn(0, last)
+    val slots = ceil(abs(boundedPosition - startPosition)).toLong().coerceAtMost(3L)
+    // Finish only the slot under the finger, rather than adding momentum to its rounded
+    // index. The distance budget also covers gestures that interrupt a partial snap.
+    val proposed = if (direction > 0) ceil(boundedPosition).toLong() else floor(boundedPosition).toLong()
     val limited = if (direction > 0) {
-        minOf(proposed, maxOf(nearest.toLong(), start.toLong() + 3))
+        minOf(proposed, maxOf(nearest.toLong(), start.toLong() + slots))
     } else {
-        maxOf(proposed, minOf(nearest.toLong(), start.toLong() - 3))
+        maxOf(proposed, minOf(nearest.toLong(), start.toLong() - slots))
     }
     return limited.coerceIn(0L, last.toLong()).toInt()
 }
@@ -119,14 +128,18 @@ internal fun toyDeckSnapTarget(
 /**
  * Release speed comes from recent drag motion, excluding the final 24 ms where losing
  * finger contact can produce a spurious jump. Averaging over 120 ms preserves deliberate
- * flicks without amplifying a single lift-off sample. A pause before release cancels momentum.
+ * flicks without amplifying a single lift-off sample. Very brief gestures use their MOVE
+ * samples so the exclusion window does not swallow the entire flick; UP coordinates are
+ * never recorded. A pause before release cancels momentum.
  */
 internal class ToyDeckVelocity {
     private data class Sample(val time: Long, val x: Float)
     private val samples = ArrayDeque<Sample>()
+    private var startedAt = 0L
 
     fun reset(time: Long, x: Float) {
         samples.clear()
+        startedAt = time
         add(time, x)
     }
 
@@ -137,12 +150,13 @@ internal class ToyDeckVelocity {
     }
 
     fun atRelease(time: Long): Float {
-        val end = time - 24
+        val brief = time - startedAt in 8L..80L
+        val end = if (brief) time else time - 24
         val recent = samples.filter { it.time in (end - 120)..end }
         val first = recent.firstOrNull() ?: return 0f
         val last = recent.last()
         val duration = last.time - first.time
-        if (duration < 16 || time - last.time > 80) return 0f
+        if (duration < (if (brief) 8 else 16) || time - last.time > 80) return 0f
         return (last.x - first.x) * 1000f / duration
     }
 }

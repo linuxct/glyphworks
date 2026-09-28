@@ -22,8 +22,8 @@ android {
         applicationId = "space.linuxct.glyphworks"
         minSdk = 33
         targetSdk = 37
-        versionCode = 27
-        versionName = "3.4.3"
+        versionCode = 28
+        versionName = "3.4.4"
     }
 
     signingConfigs {
@@ -87,6 +87,10 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -137,8 +141,13 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    // Local Compose renders use Android's native graphics without a phone or emulator.
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.12.1")
 }
 
 tasks.withType<Test>().configureEach {
     systemProperty("updateGoldens", System.getProperty("updateGoldens") ?: "false")
+    // Optional, locally extracted device font; it is never bundled with the app or tests.
+    System.getProperty("selectorHeadlineFont")?.let { systemProperty("selectorHeadlineFont", it) }
 }

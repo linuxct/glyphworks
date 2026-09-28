@@ -117,6 +117,8 @@ internal class ToyDeckState(order: List<String>, initialId: String) {
             releasedId = null
             // A new touch can interrupt settling: anchor to the visible card, not its target.
             swipeStartPosition = position
+            model.select(position.roundToInt())
+            selectedId = model.selectedId
         }
     }
 
@@ -262,6 +264,7 @@ internal fun ToyDeck(
     val haptic = LocalHapticFeedback.current
     val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
     val velocity = remember { ToyDeckVelocity() }
+    var swiping by remember { mutableStateOf(false) }
     val moveBefore = stringResource(R.string.toys_move_earlier)
     val moveAfter = stringResource(R.string.toys_move_later)
     val reportGesture by rememberUpdatedState(onGesture)
@@ -270,17 +273,26 @@ internal fun ToyDeck(
         val cardWidth = (maxWidth * 0.39f).coerceIn(132.dp, 170.dp)
         val stride = with(density) { (cardWidth * 0.66f).toPx() }
         Box(
-            Modifier.fillMaxSize().pointerInput(Unit) {
+            Modifier.fillMaxSize().pointerInput(state) {
                 // Reserve touches in the deck before either horizontal gesture reaches its
                 // slop. The enclosing tab pager must not compete for this same swipe.
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // Grabbing a moving deck stops it immediately, before crossing touch
+                    // slop. The next flick is anchored to what the finger actually caught.
+                    swiping = false
+                    state.beginSwipe()
                     reportGesture(true)
                     try {
                         do {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                         } while (event.changes.any { it.pressed })
-                    } finally { reportGesture(false) }
+                    } finally {
+                        // A tap in the empty deck gutter must not leave an interrupted
+                        // animation halfway between cards. Drags finish in their own handler.
+                        if (!swiping) state.finishSwipe(0f, scope)
+                        reportGesture(false)
+                    }
                 }
             }.pointerInput(state, stride, sign, state.heldId != null) {
                 // Long-press reordering owns movement until release; cancel the competing
@@ -289,15 +301,19 @@ internal fun ToyDeck(
                 detectDragGestures(
                     orientationLock = Orientation.Horizontal,
                     onDragStart = { down, _, _ ->
+                        swiping = true
                         velocity.reset(down.uptimeMillis, down.position.x)
-                        state.beginSwipe()
                     },
                     onDragEnd = { up ->
                         // Lift-off coordinates can jump as contact with the glass shrinks.
                         // Use sustained drag motion before release, never the UP position.
                         state.finishSwipe(-velocity.atRelease(up.uptimeMillis) * sign / stride, scope)
+                        swiping = false
                     },
-                    onDragCancel = { state.finishSwipe(0f, scope) },
+                    onDragCancel = {
+                        state.finishSwipe(0f, scope)
+                        swiping = false
+                    },
                 ) { change, amount ->
                     change.consume()
                     change.historical.forEach { velocity.add(it.uptimeMillis, it.position.x) }

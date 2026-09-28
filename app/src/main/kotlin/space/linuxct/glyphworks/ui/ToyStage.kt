@@ -1,8 +1,6 @@
 package space.linuxct.glyphworks.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,11 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
@@ -44,7 +38,7 @@ import space.linuxct.glyphworks.ui.design.drawDeviceBack
 import space.linuxct.glyphworks.ui.design.drawMatrix
 
 /**
- * A close crop keeps the matrix readable at normal selector heights. The preview engine
+ * The phone's top and right edge frame the matrix; its lower body fades into the page. The preview engine
  * owns time and data: reading [frame] only inside Canvas invalidates drawing, not composition.
  */
 @Composable
@@ -73,12 +67,11 @@ internal fun ToyStage(
             .fillMaxWidth()
             .clipToBounds(),
     ) {
-        // Only the artwork handles preview actions. The informational badge is a separate,
-        // non-clickable surface above it. Preview actions never show an indication.
+        // Only the artwork handles preview actions, without a ripple indication.
         Canvas(Modifier.fillMaxSize().then(interaction).semantics { contentDescription = description }) {
             if (size.width <= 0f || size.height <= 0f) return@Canvas
-            // A full-width, face-on crop keeps the pixels clear and lets the phone extend
-            // past the viewport, without a separate card or horizontal fading at its edges.
+            // Crop into the camera side of the phone to enlarge and center the matrix,
+            // while preserving the top outline and breathing room beyond the right edge.
             val framing = toyStageMatrix(size, panelSize)
             val radius = framing.radius
             val center = framing.center
@@ -129,27 +122,6 @@ internal fun ToyStage(
             drawMatrix(disc.center, disc.radius * 0.965f, panelSize, frame.value, unlitAlpha = 0.055f)
         }
 
-        Surface(
-            modifier = Modifier.align(Alignment.TopStart).padding(16.dp).widthIn(max = 210.dp),
-            shape = CircleShape,
-            color = colors.surface.copy(alpha = 0.9f),
-            border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.5f)),
-        ) {
-            Row(
-                Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(5.dp).background(colors.primary, CircleShape))
-                Text(
-                    stringResource(R.string.toy_stage_sample_preview),
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
         Row(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -172,25 +144,34 @@ internal fun ToyStage(
     }
 }
 
-/** Keep the entire disc visible, while the phone reaches the left edge even on wide layouts. */
+/** Zoom into the camera side, keeping the top outline visible rather than zooming around the disc. */
 internal fun toyStageMatrix(viewport: Size, panelSize: Int): MatrixDisc {
-    val radius = minOf(viewport.height * 0.355f, viewport.width * 0.30f)
-    val phoneWidth = radius / if (panelSize == 25) PHONE_THREE_MATRIX_RADIUS else DeviceBack.matrix.radius
-    val matrixX = if (panelSize == 25) PHONE_THREE_MATRIX_X else DeviceBack.matrix.center.x
+    val matrix = if (panelSize == 25) {
+        MatrixDisc(Offset(PHONE_THREE_MATRIX_X, PHONE_THREE_MATRIX_Y), PHONE_THREE_MATRIX_RADIUS)
+    } else {
+        DeviceBack.matrix
+    }
+    val top = viewport.height * 0.045f
+    // The leftmost 22% of the body sits offscreen, partially cropping the camera while
+    // bringing the enlarged matrix toward the center. Height limits still protect the
+    // top outline and bottom metadata in short windows.
+    val phoneWidth = minOf(viewport.width * 1.10f, viewport.height * 0.78f / (matrix.center.y + matrix.radius))
+    val left = -phoneWidth * 0.22f
     return MatrixDisc(
-        center = Offset(minOf(viewport.width * 0.66f, phoneWidth * matrixX), viewport.height * 0.46f),
-        radius = radius,
+        center = Offset(left + matrix.center.x * phoneWidth, top + matrix.center.y * phoneWidth),
+        radius = matrix.radius * phoneWidth,
     )
 }
 
 private const val PHONE_THREE_MATRIX_RADIUS = 0.215f
 private const val PHONE_THREE_MATRIX_X = 0.74f
+private const val PHONE_THREE_MATRIX_Y = 0.28f
 
 /** A stylized glass-back crop, deliberately separate from the 4a Pro camera-island model. */
 private fun DrawScope.drawPhoneThreeDetail(center: Offset, radius: Float, ink: Color): MatrixDisc {
     val width = radius / PHONE_THREE_MATRIX_RADIUS
     val left = center.x - width * PHONE_THREE_MATRIX_X
-    val top = center.y - width * 0.28f
+    val top = center.y - width * PHONE_THREE_MATRIX_Y
     val bodySize = Size(width, width * 2.08f)
     val corner = CornerRadius(width * 0.14f)
     drawRoundRect(ink.copy(alpha = 0.18f), Offset(left, top), bodySize, corner)
