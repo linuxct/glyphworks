@@ -78,7 +78,12 @@ internal fun Modifier.reviewPromptWhenIdle(available: Boolean, activityKey: Any?
         ReviewDialog(
             onDismiss = { showing = false },
             onNever = { policy.neverAskAgain(); showing = false },
-            onReview = { showing = false; openStoreListing(context) },
+            onReview = {
+                // The tap itself permanently suppresses reminders, before leaving the app.
+                policy.neverAskAgain()
+                showing = false
+                openStoreListing(context)
+            },
         )
     }
 
