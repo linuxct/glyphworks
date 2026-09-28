@@ -22,8 +22,8 @@ android {
         applicationId = "space.linuxct.glyphworks"
         minSdk = 33
         targetSdk = 37
-        versionCode = 26
-        versionName = "3.4.2"
+        versionCode = 27
+        versionName = "3.4.3"
     }
 
     signingConfigs {
