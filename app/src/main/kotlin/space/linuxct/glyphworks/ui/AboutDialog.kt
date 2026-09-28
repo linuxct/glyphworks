@@ -126,7 +126,8 @@ private fun SignatureDots(modifier: Modifier = Modifier, ink: Color = MaterialTh
     Canvas(modifier.clearAndSetSemantics { }) {
         val pitch = size.minDimension / 3
         for (y in 0..2) for (x in 0..2) {
-            drawCircle(if (x == 2 && y == 2) NothingRed else ink,
+            val dimmed = (x == 1 && y == 1) || (x == 2 && y == 2)
+            drawCircle(if (dimmed) Color.Gray else ink,
                 radius = pitch * 0.21f, center = Offset((x + 0.5f) * pitch, (y + 0.5f) * pitch))
         }
     }
