@@ -17,6 +17,8 @@ class SolarScreen : GlyphScreen {
     private var cachedTimes: SolarMath.SunTimes? = null
     private var cachedAt = 0L
 
+    override fun behaviorState(): Map<String, Any> = cachedTimes?.let { mapOf("sunrise" to it.riseMin, "sunset" to it.setMin, "kind" to it.kind.name.lowercase()) }.orEmpty()
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         cachedTimes = null
@@ -80,11 +82,11 @@ class SolarScreen : GlyphScreen {
 
         private const val NIGHT_SUN_RADIUS = 1.0f
 
-        fun renderFrame(size: Int, minutesLocal: Int, riseMin: Int, setMin: Int): IntArray {
+        fun renderFrame(size: Int, minutesLocal: Int, riseMin: Int, setMin: Int, horizonOffset: Int = 0, arcScale: Float = 1f): IntArray {
             val canvas = MatrixCanvas(size)
-            val horizonY = if (size >= 25) 16 else 8
+            val horizonY = ((if (size >= 25) 16 else 8) + horizonOffset).coerceIn(2, size - 2)
             val cx = size / 2
-            val r = min(horizonY - 2, size / 2 - 1).toFloat()
+            val r = min(horizonY - 2, size / 2 - 1).toFloat() * arcScale.coerceIn(0.1f, 2f)
 
             canvas.fillRect(0, horizonY + 1, size, size - horizonY - 1, GROUND)
             for (x in 0 until size) canvas.light(x, horizonY, HORIZON)

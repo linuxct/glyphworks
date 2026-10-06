@@ -258,6 +258,7 @@ internal fun ToyDeck(
     onPersistOrder: (List<String>) -> Unit,
     onGesture: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    names: Map<String, String> = emptyMap(),
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -337,7 +338,7 @@ internal fun ToyDeck(
                         }
                         checked
                     }
-                    val name = stringResource(if (request) R.string.toys_request_title else SCREEN_DISPLAY_NAMES.getValue(id))
+                    val name = if (request) stringResource(R.string.toys_request_title) else names[id] ?: stringResource(SCREEN_DISPLAY_NAMES[id] ?: R.string.screen_custom)
                     val status = if (request) null else stringResource(if (enabled) R.string.toys_enabled else R.string.toys_disabled)
                     val movingSlot by animateFloatAsState(
                         targetValue = index - state.position,

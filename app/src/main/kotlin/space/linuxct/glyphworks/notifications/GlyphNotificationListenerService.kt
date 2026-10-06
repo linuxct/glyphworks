@@ -69,6 +69,7 @@ class GlyphNotificationListenerService : NotificationListenerService() {
     private fun StatusBarNotification.countMetadata(): NotificationMetadata {
         val posted = notification
         return NotificationMetadata(
+            packageName = packageName,
             key = key,
             groupKey = if (isGroup) groupKey else null,
             isGroupSummary = posted.flags and Notification.FLAG_GROUP_SUMMARY != 0,

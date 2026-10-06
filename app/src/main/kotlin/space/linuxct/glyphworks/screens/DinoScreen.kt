@@ -138,7 +138,7 @@ class DinoScreen : GlyphScreen {
             }
         }
 
-        fun renderIdle(size: Int): IntArray {
+        fun renderIdle(size: Int, drawCharacter: Boolean = true): IntArray {
             val canvas = MatrixCanvas(size)
             val ground = groundRow(size)
             for (x in 0 until size) canvas.light(x, ground, GROUND_IDLE)
@@ -149,7 +149,7 @@ class DinoScreen : GlyphScreen {
                 canvas.light(x, trackRow, TRACK)
                 x += TRACK_DOT_SPACING_UNITS * u
             }
-            blitChar(canvas, size, LEG_PHASE_STANDING, 0)
+            if (drawCharacter) blitChar(canvas, size, LEG_PHASE_STANDING, 0)
             return canvas.copyOut()
         }
 
@@ -164,6 +164,9 @@ class DinoScreen : GlyphScreen {
             legPhase: Int,
             groundPhase: Int,
             obstacles: List<Obst>,
+            drawCharacter: Boolean = true,
+            drawObstacles: Boolean = true,
+            drawGround: Boolean = true,
         ): IntArray {
             val canvas = MatrixCanvas(size)
             val ground = groundRow(size)
@@ -172,12 +175,12 @@ class DinoScreen : GlyphScreen {
             val dashLength = GROUND_DASH_UNITS * u
             for (x in 0 until size) {
                 val phase = ((x + groundPhase) % period + period) % period
-                canvas.light(x, ground, if (phase < dashLength) GROUND_DASH else GROUND_GAP)
+                if (drawGround) canvas.light(x, ground, if (phase < dashLength) GROUND_DASH else GROUND_GAP)
             }
-            obstacles.forEach { o ->
+            if (drawObstacles) obstacles.forEach { o ->
                 canvas.fillRect(o.x, standRow(size) - o.h + 1, o.w, o.h, OBSTACLE)
             }
-            blitChar(canvas, size, legPhase, jumpCells)
+            if (drawCharacter) blitChar(canvas, size, legPhase, jumpCells)
             return canvas.copyOut()
         }
 
@@ -213,7 +216,26 @@ class DinoScreen : GlyphScreen {
  * Positions and heights are in cells, time is in ticks of [DinoScreen.TICK_MS], and
  * the tuning constants are written in units: 1 unit is 1 cell at 13x13 and 2 at 25x25.
  */
-class DinoGame(val size: Int, private val random: RandomPort) {
+class DinoGame(
+    val size: Int,
+    private val random: RandomPort,
+    val tuning: Tuning = Tuning(),
+    /** Optional explicit sprite hitbox, in panel cells relative to the foot anchor. */
+    private val hitbox: (() -> Hitbox?)? = null,
+) {
+    data class Tuning(
+        val jumpVelocity: Float = JUMP_V0,
+        val gravity: Float = GRAVITY,
+        val startSpeed: Float = START_SPEED,
+        val maxSpeed: Float = MAX_SPEED,
+        val speedRamp: Float = SPEED_RAMP,
+        val minimumGap: Int = MIN_GAP_UNITS,
+        val gapSpread: Int = GAP_SPREAD_UNITS,
+    )
+    data class Hitbox(val x: Float, val y: Float, val width: Float, val height: Float)
+    fun height(): Float = heightCells
+    fun verticalVelocity(): Float = verticalSpeed
+
 
     enum class State { RUNNING, OVER }
 
@@ -250,7 +272,7 @@ class DinoGame(val size: Int, private val random: RandomPort) {
 
     fun jump() {
         if (state != State.RUNNING || isAirborne) return
-        verticalSpeed = JUMP_V0 * u
+        verticalSpeed = tuning.jumpVelocity * u
         isAirborne = true
     }
 
@@ -260,7 +282,7 @@ class DinoGame(val size: Int, private val random: RandomPort) {
 
         if (isAirborne) {
             heightCells += verticalSpeed
-            verticalSpeed -= GRAVITY * u
+            verticalSpeed -= tuning.gravity * u
             if (heightCells <= 0f) {
                 heightCells = 0f
                 verticalSpeed = 0f
@@ -287,7 +309,7 @@ class DinoGame(val size: Int, private val random: RandomPort) {
     }
 
     fun speed(): Float =
-        ((START_SPEED + score * SPEED_RAMP).coerceAtMost(MAX_SPEED)) * u
+        ((tuning.startSpeed + score * tuning.speedRamp).coerceAtMost(tuning.maxSpeed)) * u
 
     fun jumpCells(): Int = heightCells.roundToInt()
 
@@ -304,6 +326,16 @@ class DinoGame(val size: Int, private val random: RandomPort) {
         obstacles.map { DinoScreen.Companion.Obst(it.x.roundToInt(), it.w, it.h) }
 
     fun collides(): Boolean {
+        val explicit = hitbox?.invoke()
+        if (explicit != null && explicit.width > 0 && explicit.height > 0) {
+            val left = DinoScreen.charX(size) + explicit.x
+            val top = DinoScreen.standRow(size) - jumpCells() + explicit.y
+            return obstacles.any { o ->
+                val obstacleTop = DinoScreen.standRow(size) - o.h + 1
+                left < o.x.roundToInt() + o.w && left + explicit.width > o.x.roundToInt() &&
+                    top < obstacleTop + o.h && top + explicit.height > obstacleTop
+            }
+        }
         val charLeft = DinoScreen.charX(size)
         val charRight = charLeft + DinoScreen.charW(size) - 1
         val charBottomRow = DinoScreen.standRow(size) - jumpCells()
@@ -321,7 +353,7 @@ class DinoGame(val size: Int, private val random: RandomPort) {
     }
 
     private fun spawnGap(): Float =
-        (MIN_GAP_UNITS + random.nextInt(GAP_SPREAD_UNITS + 1)) * u
+        (tuning.minimumGap + random.nextInt(tuning.gapSpread + 1)) * u
 
     private val cellsPerUnit: Int get() = DinoScreen.unit(size)
 

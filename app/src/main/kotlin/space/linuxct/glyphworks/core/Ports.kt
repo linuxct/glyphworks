@@ -23,6 +23,10 @@ interface BatteryPort {
     /** True only for BATTERY_STATUS_CHARGING, not merely plugged in. */
     fun isCharging(): Boolean
     fun chargeWatts(): Float?
+    fun isPlugged(): Boolean? = null
+    fun isFull(): Boolean? = null
+    /** One shared app-owned lease; native blocks never acquire this directly. */
+    fun setActive(active: Boolean) {}
 }
 
 interface SpeedPort {
@@ -31,9 +35,13 @@ interface SpeedPort {
 
 interface SpectrumPort {
     fun bands(n: Int): FloatArray?
+    /** Explicit per-instance sensitivity; simple/simulated sources may return the same data. */
+    fun bands(n: Int, tuning: Int): FloatArray? = bands(n)
+    fun setActive(active: Boolean) {}
 }
 
 interface AzimuthPort {
+    fun setActive(active: Boolean) {}
     fun azimuthDegrees(): Float?
 }
 
@@ -42,6 +50,7 @@ interface ShakePort {
 }
 
 interface TiltPort {
+    fun setActive(active: Boolean) {}
     fun tiltX(): Float
     fun tiltY(): Float
 }
@@ -52,6 +61,7 @@ interface TiltPort {
  * of the matrix is low, [pitchDegrees] when the TOP edge is.
  */
 interface InclinePort {
+    fun setActive(active: Boolean) {}
     fun pitchDegrees(): Float?
     fun rollDegrees(): Float?
 }

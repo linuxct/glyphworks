@@ -77,6 +77,9 @@
             android:name=".ui.design.DesignDemoActivity"
             android:exported="false" />
 
+        <activity android:name=".ui.pipeline.PipelineEditorActivity" android:exported="false" />
+        <activity android:name=".ui.pipeline.tutorial.PipelineTutorialActivity" android:exported="false" />
+
         <service
             android:name=".notifications.GlyphNotificationListenerService"
             android:exported="false"

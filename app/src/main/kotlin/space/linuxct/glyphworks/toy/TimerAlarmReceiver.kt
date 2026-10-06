@@ -15,6 +15,10 @@ class TimerAlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Core.init(context)
+        intent.getStringExtra(space.linuxct.glyphworks.pipeline.runtime.PipelineTimerAlarms.EXTRA_KEY)?.let { key ->
+            Core.pipeline.onAlarm(key, intent.getLongExtra(space.linuxct.glyphworks.pipeline.runtime.PipelineTimerAlarms.EXTRA_DEADLINE, 0))
+            return
+        }
         val start = Core.prefs.getLong(PrefKeys.TIMER_START, PrefKeys.TIMER_START_DEF)
         val tickerAlreadyFinishedIt = start == 0L
         if (tickerAlreadyFinishedIt) return

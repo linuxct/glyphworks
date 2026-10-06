@@ -1,5 +1,11 @@
 package space.linuxct.glyphworks.ui
 
+import space.linuxct.glyphworks.pipeline.runtime.PipelinePrefs
+import space.linuxct.glyphworks.ui.pipeline.*
+import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialActivity
+import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialChapters
+import space.linuxct.pipeline.PipelineRuntime
+
 import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
@@ -88,6 +94,7 @@ import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LargeTopAppBar
@@ -228,8 +235,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestedStartTab(): Int =
-        intent?.getIntExtra(EXTRA_TAB, 0)?.coerceIn(Tab.entries.indices) ?: 0
+    private fun requestedStartTab(): Int {
+        val requested = intent?.getIntExtra(EXTRA_TAB, 0)?.coerceIn(Tab.entries.indices) ?: 0
+        return if (requested == Tab.TOYS.ordinal && Core.pipeline.controllerMode) Tab.SETTINGS.ordinal else requested
+    }
 
     companion object {
         const val EXTRA_RESTART_ONBOARDING = "restart_onboarding"
@@ -242,7 +251,7 @@ class MainActivity : ComponentActivity() {
 }
 
 internal val CONFIGURABLE =
-    setOf("ambient", "clock", "dice", "coin", "battery", "breathing", "timer", "visualizer", "custom", "notifications", "weather")
+    SCREEN_DISPLAY_NAMES.keys
 
 internal val NAV_PILL_CLEARANCE = 40.dp
 
@@ -313,6 +322,8 @@ private fun MainScreen(startTab: Int = 0) {
     val pagerState = rememberPagerState(initialPage = startTab, pageCount = { Tab.entries.size })
     val scope = rememberCoroutineScope()
     var toyDeckGesture by remember { mutableStateOf(false) }
+    val customControls by rememberPref(PipelinePrefs.CONTROLLER_ENABLED) { it.getBoolean(PipelinePrefs.CONTROLLER_ENABLED, false) }
+    var pipelineLibrary by rememberSaveable { mutableStateOf(false) }
 
     var untestedAck by rememberSaveable {
         mutableStateOf(
@@ -345,7 +356,9 @@ private fun MainScreen(startTab: Int = 0) {
         it.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF)
     }
     val selectedToy by rememberPref(PrefKeys.CURRENT_SCREEN) { it.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF) }
-    val setup = remember(setupTick, setupContext, configuredWeather, configuredBackgrounds, useBackground, selectedToy) {
+    val pipelineRevision by rememberPref(PipelinePrefs.LIBRARY_REVISION) { it.getLong(PipelinePrefs.LIBRARY_REVISION, 0) }
+    val triggerProjects by rememberPref(PipelinePrefs.TRIGGERS) { it.getString(PipelinePrefs.TRIGGERS, "") }
+    val setup = remember(setupTick, setupContext, configuredWeather, pipelineRevision, triggerProjects, customControls, selectedToy) {
         probeSetup(setupContext)
     }
     LifecycleResumeEffect(Unit) {
@@ -480,13 +493,27 @@ private fun MainScreen(startTab: Int = 0) {
                 overscrollEffect = null,
             ) { page ->
                 when (Tab.entries[page]) {
-                    Tab.TOYS -> ToysTab(
+                    Tab.TOYS -> if (customControls) {
+                        CustomControlsLockedToys(
+                            onEdit = { setupContext.startActivity(PipelineEditorActivity.intent(setupContext, Core.pipeline.controllerId)) },
+                            onSettings = { scope.launch { pagerState.animateScrollToPage(Tab.SETTINGS.ordinal) } },
+                            modifier = Modifier.padding(pagePadding),
+                        )
+                    } else ToysTab(
                         pagePadding,
                         toysListState,
                         visible = pagerState.settledPage == Tab.TOYS.ordinal && !pagerState.isScrollInProgress,
                         onDeckGesture = { toyDeckGesture = it },
                     )
-                    Tab.CREATE -> CreateTab(pagePadding, createListState, createState)
+                    Tab.CREATE -> Column(Modifier.fillMaxSize().padding(top = pagePadding.calculateTopPadding())) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            FilterChip(selected = !pipelineLibrary, onClick = { pipelineLibrary = false }, label = { Text(stringResource(R.string.create_designs_section)) })
+                            FilterChip(selected = pipelineLibrary, onClick = { pipelineLibrary = true }, label = { Text(stringResource(R.string.create_pipelines_section)) })
+                        }
+                        val createPadding = PaddingValues(bottom = pagePadding.calculateBottomPadding())
+                        if (pipelineLibrary) PipelineLibraryScreen(contentPadding = createPadding)
+                        else CreateTab(createPadding, createListState, createState)
+                    }
                     Tab.SETTINGS -> SettingsTab(
                         pagePadding,
                         settingsScrollState,
@@ -500,7 +527,7 @@ private fun MainScreen(startTab: Int = 0) {
         FloatingNavBar(
             selected = pagerState.targetPage,
             position = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
-            fabVisible = pagerState.targetPage == Tab.CREATE.ordinal,
+            fabVisible = pagerState.targetPage == Tab.CREATE.ordinal && !pipelineLibrary,
             setupNeedsAttention = setup.needsAttention,
             backdrop = backdrop,
             backdropVersion = { backdropTick },
@@ -827,6 +854,7 @@ private fun AttentionBadge(modifier: Modifier = Modifier) {
 }
 
 internal fun selectToy(id: String) {
+    if (Core.pipeline.controllerMode) return
     DebugLog.i("Ui", "set active toy '$id'")
     Core.arbiter.revive()
     Core.scheduler.run { Core.screenManager.selectScreen(id) }
@@ -844,6 +872,12 @@ private fun glyphToyEverBound(): Boolean =
     Core.arbiter.owner == SessionArbiter.Owner.TOY ||
         Core.prefs.getLong(PrefKeys.TOY_LAST_BOUND, PrefKeys.TOY_LAST_BOUND_DEF) > 0L
 
+private fun pipelineRequiredCapabilities(): Set<String> {
+    val active = if (Core.pipeline.controllerMode) Core.pipeline.controllerId else Core.prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF)
+    val triggerIds = if (Core.pipeline.controllerMode) emptyList() else Core.prefs.getString(PipelinePrefs.TRIGGERS, "").split(',').mapNotNull { it.substringAfter('=', "").takeIf(String::isNotBlank) }
+    return (listOf(active) + triggerIds).mapNotNull(Core.pipeline::document).flatMap { space.linuxct.glyphworks.pipeline.runtime.PipelineController.capabilities(it) }.toSet()
+}
+
 private fun probeSetup(context: Context): SetupStatus {
     fun anyGranted(permissions: Array<String>) =
         permissions.any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
@@ -856,9 +890,7 @@ private fun probeSetup(context: Context): SetupStatus {
         location = anyGranted(SETUP_LOCATION_PERMISSIONS),
         exactAlarms = context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true,
         notificationAccess = NotificationAccess.isGranted(context),
-        notificationAccessNeeded = Core.prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF) == "notifications" ||
-            (Core.prefs.getBoolean(PrefKeys.AMBIENT_USE_BACKGROUND, PrefKeys.AMBIENT_USE_BACKGROUND_DEF) &&
-                AmbientBackgrounds.NOTIFICATIONS in AmbientBackgrounds.readSelection(Core.prefs)),
+        notificationAccessNeeded = "notifications" in pipelineRequiredCapabilities(),
         weatherEnabled = Core.prefs.getBoolean(WeatherPrefs.ENABLED, false),
         backgroundLocation = backgroundLocationGranted(context),
     )
@@ -1129,6 +1161,7 @@ private fun AppSettingsSection(refreshTick: Int) {
         }
         item { BrightnessRow() }
         item { CreatorNameRow() }
+        item { PipelineAdvancedSettings() }
         // Adds its own item only in the GitHub build. About remains last in both variants.
         updateSettingsItem()
         item { AboutRow() }
@@ -1278,6 +1311,8 @@ private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
             restrictedSettingsTutorialItem()
         }
 
+        SectionHeader("Pipeline Builder")
+        PipelineTutorialChapters(onChoose = { chapter -> context.startActivity(PipelineTutorialActivity.intent(context, chapter)) })
         Spacer(Modifier.height(innerPadding.calculateBottomPadding() + NAV_PILL_CLEARANCE))
     }
 
@@ -1767,6 +1802,11 @@ internal fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
                     "notifications" -> NotificationsSettings()
                     "weather" -> WeatherSettings()
                 }
+                if (id in SCREEN_DISPLAY_NAMES && id != "ambient") PipelineToySettings(id)
+                if (id.startsWith("pipeline_")) {
+                    val context = LocalContext.current
+                    TextButton(onClick = { context.startActivity(PipelineEditorActivity.intent(context, id.removePrefix("pipeline_"))) }) { Text(stringResource(R.string.pipeline_editor_open_pipeline_builder)) }
+                }
             }
         },
     )
@@ -1888,61 +1928,7 @@ private fun CustomDesignSettings() {
 }
 
 @Composable
-private fun AmbientSettings() {
-    val selected by rememberPref(PrefKeys.AMBIENT_BACKGROUNDS) { AmbientBackgrounds.readSelection(it) }
-    val automatic by rememberPref(PrefKeys.AMBIENT_AUTO_CYCLE) {
-        it.getBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, PrefKeys.AMBIENT_AUTO_CYCLE_DEF)
-    }
-    var informationSettings by remember { mutableStateOf<String?>(null) }
-    ChoiceGroupLabel(stringResource(R.string.ambient_cycle_backgrounds))
-    Text(
-        stringResource(R.string.ambient_cycle_explanation),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    val labels = listOf(
-        R.string.ambient_cycle_digital_clock, R.string.ambient_cycle_analog_clock,
-        R.string.ambient_cycle_connection, R.string.ambient_cycle_battery_text,
-        R.string.ambient_cycle_speed, R.string.ambient_cycle_tilt_ball,
-        R.string.ambient_cycle_pixel_clock, R.string.ambient_cycle_battery_gauge,
-        R.string.ambient_cycle_solar_path, R.string.ambient_cycle_moon_phase,
-        R.string.screen_notifications, R.string.screen_weather,
-    )
-    AmbientBackgrounds.orderedIds.forEachIndexed { index, id ->
-        InformationSwitch(stringResource(labels[index]), id in selected) { checked ->
-            Core.prefs.putString(
-                PrefKeys.AMBIENT_BACKGROUNDS,
-                AmbientBackgrounds.encode(if (checked) selected + id else selected - id),
-            )
-        }
-    }
-    InformationSwitch(stringResource(R.string.ambient_cycle_automatic), automatic) {
-        Core.prefs.putBoolean(PrefKeys.AMBIENT_AUTO_CYCLE, it)
-    }
-    Text(
-        stringResource(R.string.ambient_cycle_automatic_hint),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    InformationToySetupRows(
-        notifications = AmbientBackgrounds.NOTIFICATIONS in selected,
-        weather = AmbientBackgrounds.WEATHER in selected,
-        onConfigure = { informationSettings = it },
-    )
-    PrefSwitch(stringResource(R.string.pref_ambient_night), PrefKeys.AMBIENT_NIGHT_VISIBLE, PrefKeys.AMBIENT_NIGHT_VISIBLE_DEF)
-    PrefSwitch(stringResource(R.string.pref_ambient_shake), PrefKeys.AMBIENT_SHAKE_ACTIVATE, PrefKeys.AMBIENT_SHAKE_ACTIVATE_DEF)
-    PrefSwitch(stringResource(R.string.pref_ambient_charging), PrefKeys.AMBIENT_USE_CHARGING, PrefKeys.AMBIENT_USE_CHARGING_DEF)
-    Text(
-        stringResource(R.string.pref_ambient_shared_settings),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 12.dp),
-    )
-    TextButton(onClick = { informationSettings = "battery" }) {
-        Text(stringResource(R.string.pref_ambient_battery_settings))
-    }
-    informationSettings?.let { id -> ScreenSettingsDialog(id) { informationSettings = null } }
-}
+private fun AmbientSettings() { AmbientPipelineSettings() }
 
 @Composable
 private fun IntChoiceGroup(optionsInStoredOrder: List<String>, key: String, def: Int) {

@@ -22,6 +22,12 @@ class CoinScreen : GlyphScreen {
     private var heads = true
     private var flipStartedAt = 0L
 
+    override fun behaviorState(): Map<String, Any> = mapOf("phase" to if (flipStartedAt != 0L) "flipping" else if (heads) "heads" else "tails", "heads" to heads, "result" to if (heads) "heads" else "tails")
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        if (name != "flip") return false
+        startFlip(); return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         flipStartedAt = 0L

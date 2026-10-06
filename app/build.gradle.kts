@@ -42,6 +42,12 @@ android {
         debug {
             isMinifyEnabled = false
         }
+        create("dev") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            matchingFallbacks += "debug"
+        }
         release {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
@@ -110,6 +116,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":pipeline-android"))
     implementation(files("libs/glyph-matrix-sdk-2.0.aar"))
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.8.0")

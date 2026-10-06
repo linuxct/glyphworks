@@ -16,6 +16,16 @@ object NotificationSource : NotificationPort {
     private const val ACCESS_CHECK_INTERVAL_MS = 5_000L
     private const val RECONNECT_INTERVAL_MS = 30_000L
     private val counter = NotificationCounter()
+    private val observers = java.util.concurrent.CopyOnWriteArrayList<(space.linuxct.pipeline.PipelineEvent) -> Unit>()
+    private val metadata = mutableMapOf<String, NotificationMetadata>()
+    fun addEventListener(listener: (space.linuxct.pipeline.PipelineEvent) -> Unit) { observers += listener }
+    fun removeEventListener(listener: (space.linuxct.pipeline.PipelineEvent) -> Unit) { observers -= listener }
+    private fun notifyEvent(name: String, notification: NotificationMetadata) {
+        if (!notification.isCountable) return
+        val values = mapOf("package" to space.linuxct.pipeline.text(notification.packageName), "count" to (counter.count()?.let { space.linuxct.pipeline.number(it) } ?: space.linuxct.pipeline.Value.Unavailable()))
+        val event = space.linuxct.pipeline.PipelineEvent(name, values, SystemClock.elapsedRealtime())
+        observers.forEach { listener -> runCatching { listener(event) } }
+    }
     private val nextAccessCheckAt = AtomicLong(0L)
     private val nextReconnectAt = AtomicLong(0L)
     private val handler by lazy { Handler(Looper.getMainLooper()) }
@@ -47,7 +57,7 @@ object NotificationSource : NotificationPort {
         synchronized(this) {
             accessGranted = granted
             if (!granted) {
-                counter.disconnected()
+                disconnected()
                 nextReconnectAt.set(0L)
             }
         }
@@ -64,17 +74,29 @@ object NotificationSource : NotificationPort {
 
     @Synchronized
     internal fun connected(notifications: Iterable<NotificationMetadata>) {
-        if (accessGranted) counter.connected(notifications)
+        if (accessGranted) {
+            val list = notifications.toList()
+            counter.connected(list)
+            metadata.clear(); list.forEach { metadata[it.key] = it }
+        }
     }
 
     @Synchronized
     internal fun posted(notification: NotificationMetadata) {
-        if (accessGranted) counter.posted(notification)
+        if (accessGranted && hasSnapshot()) {
+            val existed = metadata.put(notification.key, notification) != null
+            counter.posted(notification)
+            notifyEvent(if (existed) "notification.updated" else "notification.posted", notification)
+        }
     }
 
-    internal fun removed(key: String) = counter.removed(key)
+    @Synchronized internal fun removed(key: String) {
+        val old = metadata.remove(key)
+        counter.removed(key)
+        if (old != null) notifyEvent("notification.removed", old)
+    }
 
-    internal fun disconnected() = counter.disconnected()
+    @Synchronized internal fun disconnected() { metadata.clear(); counter.disconnected() }
 
     /** Read without scheduling work; used to recover from a failed initial snapshot. */
     internal fun hasSnapshot() = counter.count() != null

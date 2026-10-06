@@ -11,6 +11,7 @@ class NotificationsPresentation {
     private var style: String? = null
 
     fun reset() { style = null }
+    fun elapsed(c: ScreenContext) = (c.ports.clock.elapsedMillis() - startedAt).coerceAtLeast(0)
 
     fun render(c: ScreenContext): IntArray {
         val selected = NotificationPrefs.style(c.prefs)
@@ -34,39 +35,47 @@ object NotificationsRenderer {
         listOf(" # ", "###", " # ", " ##"),
     )
 
-    fun renderFrame(size: Int, count: Int?, style: String = NotificationPrefs.DEFAULT_STYLE, elapsedMs: Long = 0): IntArray {
+    fun renderFrame(size: Int, count: Int?, style: String = NotificationPrefs.DEFAULT_STYLE, elapsedMs: Long = 0,
+                    iconFrame: IntArray? = null, countFrame: IntArray? = null): IntArray {
         val c = MatrixCanvas(size)
         val text = when { count == null -> "?"; count > 9 -> "9+"; else -> count.coerceAtLeast(0).toString() }
+        fun replacement(frame: IntArray?, shift: Int = 0): Boolean {
+            if (frame == null || frame.size != size * size) return false
+            for (y in 0 until size) for (x in 0 until size) if (frame[y * size + x] > 0) c.set(x + shift, y, frame[y * size + x])
+            return true
+        }
+        fun drawBell(shift: Int) { if (!replacement(iconFrame, shift)) bell(c, shift) }
+        fun drawLargeCount(shift: Int) { if (!replacement(countFrame, shift)) largeCount(c, text, shift) }
         when (NotificationPrefs.normalize(style)) {
             NotificationPrefs.ENVELOPE -> {
-                envelope(c)
-                smallCount(c, text, envelopeStyle = true)
+                if (!replacement(iconFrame)) envelope(c)
+                if (!replacement(countFrame)) smallCount(c, text, envelopeStyle = true)
             }
             NotificationPrefs.DOT -> {
-                largeCount(c, text, 0)
-                if (size >= 25) c.blit(listOf(" # ", "###", " # "), 19, 4, MAX_BRIGHTNESS)
+                drawLargeCount(0)
+                if (!replacement(iconFrame)) if (size >= 25) c.blit(listOf(" # ", "###", " # "), 19, 4, MAX_BRIGHTNESS)
                 else c.set(10, 2, MAX_BRIGHTNESS)
             }
             NotificationPrefs.BELL -> {
                 val phase = elapsedMs.coerceAtLeast(0) % LOOP_MS
                 when {
-                    phase < HOLD_MS -> bell(c, 0)
+                    phase < HOLD_MS -> drawBell(0)
                     phase < HOLD_MS + SLIDE_MS -> {
                         val shift = ((phase - HOLD_MS) * size / SLIDE_MS).toInt()
-                        bell(c, -shift)
-                        largeCount(c, text, size - shift)
+                        drawBell(-shift)
+                        drawLargeCount(size - shift)
                     }
-                    phase < 2 * HOLD_MS + SLIDE_MS -> largeCount(c, text, 0)
+                    phase < 2 * HOLD_MS + SLIDE_MS -> drawLargeCount(0)
                     else -> {
                         val shift = ((phase - 2 * HOLD_MS - SLIDE_MS) * size / SLIDE_MS).toInt()
-                        largeCount(c, text, -shift)
-                        bell(c, size - shift)
+                        drawLargeCount(-shift)
+                        drawBell(size - shift)
                     }
                 }
             }
             else -> {
-                label(c)
-                smallCount(c, text)
+                if (!replacement(iconFrame)) label(c)
+                if (!replacement(countFrame)) smallCount(c, text)
             }
         }
         return InformationDrawing.mask(c)

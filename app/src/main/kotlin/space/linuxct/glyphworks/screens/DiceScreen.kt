@@ -21,6 +21,12 @@ class DiceScreen : GlyphScreen {
         c.prefs.getString(PrefKeys.SELECTED_DICE, PrefKeys.SELECTED_DICE_DEF)
             .removePrefix("D").toIntOrNull()?.coerceIn(MIN_SIDES, MAX_SIDES) ?: D6_SIDES
 
+    override fun behaviorState(): Map<String, Any> = mapOf("phase" to if (rollStartedAt != 0L) "rolling" else "result", "result" to face, "sides" to (ctx?.let { sides(it) } ?: 6))
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        if (name != "roll") return false
+        startRoll(); return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         rollStartedAt = 0L
