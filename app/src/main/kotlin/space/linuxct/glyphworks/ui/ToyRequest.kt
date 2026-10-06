@@ -5,7 +5,7 @@ import space.linuxct.glyphworks.matrix.MatrixCanvas
 import java.net.URLEncoder
 
 /** Carousel action only: deliberately absent from the screen registry and saved rotation. */
-internal object qToyRequest {
+internal object ToyRequest {
     const val ID = "request_toy"
     const val EMAIL = "glyphworks@linuxct.space"
     const val SUBJECT = "Design request"
