@@ -24,6 +24,8 @@ import space.linuxct.glyphworks.TestHarness
 import space.linuxct.glyphworks.core.PrefKeys
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.pipeline.*
+import space.linuxct.glyphworks.pipeline.templates.BuiltinPipelines
+import space.linuxct.glyphworks.pipeline.PipelineSimulation
 import java.io.File
 
 /** Production Compose editing and local PNGs; no Core initialization or physical display. */
@@ -47,6 +49,13 @@ class PipelineEditorUiTest {
         ), editor = EditorMetadata(viewport = Viewport(0f, 12f, .9f)))
 
     @Test fun rendersRealWorkspaceLucent() = withEditor(sample(), lucent = true) { _, _ -> save("workspace-lucent") }
+    @Test fun rendersAmbientBackgroundRoutineAndPalette() = withEditor(BuiltinPipelines.ambient()) { controller, current ->
+        compose.runOnIdle { controller.selectedRoutine = current().routines.first().id }
+        compose.waitForIdle()
+        save("ambient-background-routine")
+        compose.onNodeWithText("Blocks", substring = false).performClick()
+        save("block-library")
+    }
     @Test fun rendersRealWorkspaceLegacy() = withEditor(sample(), lucent = false) { _, _ -> save("workspace-legacy") }
     @Test @Config(qualifiers = "w360dp-h720dp-night-xxhdpi") fun rendersCompactDarkWorkspace() = withEditor(sample(), lucent = true) { _, _ -> save("workspace-compact-dark") }
     @Test @Config(qualifiers = "w360dp-h720dp-notnight-xxhdpi") fun largeFontsKeepWorkspaceAndScrolledToolbarReachable() = withEditor(sample(), fontScale = 1.5f) { _, _ ->
@@ -57,12 +66,25 @@ class PipelineEditorUiTest {
         compose.onNodeWithText("New routine").assertIsDisplayed()
     }
 
+    @Test @Config(qualifiers = "w360dp-h720dp-notnight-xxhdpi") fun previewAndPaletteLeaveCanvasSpaceAtLargeFontSizes() = withEditor(sample(), fontScale = 1.5f, withPreview = true) { controller, _ ->
+        compose.onNodeWithTag("pipeline-canvas").assertIsDisplayed()
+        assertTrue(compose.onNodeWithTag("pipeline-canvas").fetchSemanticsNode().boundsInRoot.height > 300f)
+        save("preview-compact-large-font")
+        compose.onNodeWithText("Sample inputs").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Blocks", substring = false).performClick()
+        compose.waitForIdle()
+        assertFalse(controller.previewExpanded)
+        compose.onNodeWithTag("pipeline-palette").assertIsDisplayed()
+        compose.onNodeWithTag("pipeline-canvas").assertIsDisplayed()
+        save("palette-compact-large-font")
+    }
+
     @Test fun addBlockUndoRedoAndOpenRoutineUseProductionCommands() {
         val doc = PipelineDocument(id = "blank_fixture", name = "New toy", entryPoint = "toy", programs = listOf(Program(id = "toy", name = "New toy", scripts = listOf(Script(id = "start")))))
         withEditor(doc) { controller, current ->
             compose.onNodeWithText("Blocks", substring = true).performClick()
             compose.onNodeWithText("Find a block").performTextInput("Wait")
-            compose.onNode(hasText("Wait", substring = false) and !hasSetTextAction()).performClick()
+            compose.onNode(hasText("Wait", substring = false) and !hasSetTextAction() and hasAnyAncestor(hasTestTag("pipeline-palette"))).performClick()
             compose.waitForIdle()
             assertEquals("flow.wait", current().entry()!!.scripts.single().blocks.single().op)
             compose.onNodeWithContentDescription("Undo").performClick()
@@ -80,13 +102,56 @@ class PipelineEditorUiTest {
         }
     }
 
+    @Test fun contextualInsertionUsesTheSelectedEventAndNewEventsHaveTheirOwnSpace() {
+        withEditor(sample()) { controller, current ->
+            val originalStart = current().entry()!!.scripts.first()
+            compose.runOnIdle { controller.focusRequest = current().entry()!!.scripts.last().blocks.single().id }
+            compose.waitForIdle()
+            compose.onNodeWithText("Blocks", substring = false).performClick()
+            compose.onNodeWithText("Find a block").performTextInput("Wait")
+            compose.onNode(hasText("Wait", substring = false) and !hasSetTextAction() and hasAnyAncestor(hasTestTag("pipeline-palette"))).performClick()
+            compose.waitForIdle()
+            assertEquals(originalStart, current().entry()!!.scripts.first())
+            assertEquals(listOf("variable.change", "flow.wait"), current().entry()!!.scripts.last().blocks.map { it.op })
+            compose.onNodeWithText("New event").performClick()
+            compose.waitForIdle()
+            val added = current().entry()!!.scripts.last()
+            assertEquals(added.id, controller.selectedScript)
+            val position = current().editor.positions.getValue(added.id)
+            assertTrue("New event must clear the visible event column", position.x >= 704f)
+            compose.onNodeWithText("Event settings").assertIsDisplayed()
+            save("event-settings")
+        }
+    }
+
+    @Test fun choosingAnotherEventClearsTheOldBlockInsertionContext() = withEditor(sample()) { controller, current ->
+        val originalStart = current().entry()!!.scripts.first()
+        compose.runOnIdle {
+            controller.selectedBlock = "clock"
+            controller.insertion = BlockLocation("start", "forever", index = 0)
+        }
+        compose.onNodeWithContentDescription("Fit all").performClick()
+        compose.onNodeWithTag("pipeline-script:press").performClick()
+        compose.waitForIdle()
+        assertEquals("press", controller.selectedScript)
+        assertNull(controller.selectedBlock)
+        assertNull(controller.insertion)
+        compose.onNodeWithContentDescription("Close settings").performClick()
+        compose.onNodeWithText("Blocks", substring = false).performClick()
+        compose.onNodeWithText("Find a block").performTextInput("Wait")
+        compose.onNode(hasText("Wait", substring = false) and !hasSetTextAction() and hasAnyAncestor(hasTestTag("pipeline-palette"))).performClick()
+        compose.waitForIdle()
+        assertEquals(originalStart, current().entry()!!.scripts.first())
+        assertEquals(listOf("variable.change", "flow.wait"), current().entry()!!.scripts.last().blocks.map { it.op })
+    }
+
     @Test fun nativeDinoArtworkSlotsAndOverridesHaveActualControls() {
         val doc = sample().let { original -> EditorDocument.update(original, EditorDocument.block(original, "clock")!!.copy(arguments = mapOf("toy" to Expression.str("dino")))) }
         withEditor(doc) { controller, _ ->
             compose.runOnIdle { controller.selectedBlock = "clock"; controller.panel = EditorPanel.BLOCK }
             compose.waitForIdle()
             compose.onNodeWithText("Block settings").assertExists()
-            compose.onNodeWithText("Settings", substring = false).assertExists()
+            compose.onNodeWithText("Toy options", substring = false).assertExists()
             save("dino-properties")
         }
     }
@@ -152,13 +217,14 @@ class PipelineEditorUiTest {
     }
 
     @Suppress("DEPRECATION")
-    private fun withEditor(initial: PipelineDocument, lucent: Boolean = true, fontScale: Float = 1f, test: (PipelineEditorController, () -> PipelineDocument) -> Unit) {
+    private fun withEditor(initial: PipelineDocument, lucent: Boolean = true, fontScale: Float = 1f, withPreview: Boolean = false, test: (PipelineEditorController, () -> PipelineDocument) -> Unit) {
         val fixture = TestHarness(13)
         fixture.prefs.putBoolean(PrefKeys.LUCENT_ENABLED, lucent)
         Core::class.java.getDeclaredField("prefs").apply { isAccessible = true }.set(null, fixture.prefs)
         ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType).invoke(null, 0f)
         val activity = Robolectric.buildActivity(ComponentActivity::class.java)
-        val controller = PipelineEditorController()
+        val controller = PipelineEditorController().apply { previewExpanded = withPreview }
+        val simulation = if (withPreview) PipelineSimulation(initial) else null
         var document by mutableStateOf(initial)
         val resources = activity.get().resources
         val originalConfiguration = android.content.res.Configuration(resources.configuration)
@@ -168,13 +234,15 @@ class PipelineEditorUiTest {
             activity.setup()
             activity.get().setContent {
                 GlyphWorksTheme {
-                    PipelineEditor(document, { document = it }, {}, {}, {}, controller = controller)
+                    PipelineEditor(document, { document = it }, {}, {}, {}, controller = controller,
+                        previewContent = simulation?.let { { PipelineSimulationPanel(it, autoRun = false) } })
                 }
             }
             compose.waitForIdle()
             test(controller) { document }
         } finally {
             activity.close()
+            simulation?.close()
             resources.updateConfiguration(originalConfiguration, resources.displayMetrics)
             Core::class.java.getDeclaredField("prefs").apply { isAccessible = true }.set(null, null)
         }

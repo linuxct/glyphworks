@@ -2,6 +2,7 @@ package space.linuxct.glyphworks.ui.pipeline
 
 import space.linuxct.glyphworks.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +24,10 @@ import space.linuxct.glyphworks.core.design.DesignCodec
 import space.linuxct.glyphworks.core.design.DesignFrames
 import space.linuxct.glyphworks.core.design.PokemonCodename
 import space.linuxct.glyphworks.ui.pipeline.tutorial.pipelineDemoTarget
+import space.linuxct.glyphworks.ui.theme.GlyphSwitch
+import space.linuxct.glyphworks.ui.theme.glyphCorner
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 
 @Composable
 internal fun PipelineEditorInspector(
@@ -39,106 +44,155 @@ internal fun PipelineEditorInspector(
 ) {
     fun update(next: PipelineDocument) { if (!readOnly) onChange(next) }
     fun editProgram(next: Program) = update(document.copy(programs = document.programs.map { if (it.id == next.id) next else it }))
+    CompositionLocalProvider(LocalPipelineFieldsEnabled provides !readOnly) {
     Column(modifier.pipelineDemoTarget("inspector"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(when (controller.panel) {
-                EditorPanel.BLOCK -> "Block settings"; EditorPanel.SCRIPT -> "Event settings"; EditorPanel.VARIABLES -> "Variables";
-                EditorPanel.PARAMETERS -> "Parameters"; EditorPanel.ROUTINES -> "Reusable routines"; EditorPanel.ASSETS -> "Artwork";
-                EditorPanel.REFERENCE -> "Block reference"; EditorPanel.SEARCH -> "Find in canvas"; EditorPanel.ISSUES -> "Pipeline checks"; else -> "Project settings"
-            }, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                EditorPanel.BLOCK -> stringResource(R.string.pipeline_field_block_settings)
+                EditorPanel.SCRIPT -> stringResource(R.string.pipeline_field_event_settings)
+                EditorPanel.VARIABLES -> "Variables"; EditorPanel.PARAMETERS -> "Parameters"
+                EditorPanel.ROUTINES -> "Reusable routines"; EditorPanel.ASSETS -> "Artwork"
+                EditorPanel.REFERENCE -> "Block reference"; EditorPanel.SEARCH -> "Find in canvas"
+                EditorPanel.ISSUES -> "Pipeline checks"; else -> "Project settings"
+            }, style = if (controller.panel == EditorPanel.BLOCK) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             IconButton(onClick = { controller.panel = EditorPanel.NONE }) { Icon(Icons.Outlined.Close, stringResource(R.string.pipeline_editor_close_settings)) }
         }
         if (readOnly) Text(stringResource(R.string.pipeline_editor_original_template_make_a_copy_to_change_it), style = MaterialTheme.typography.bodySmall)
         when (controller.panel) {
             EditorPanel.BLOCK -> controller.selectedBlock?.let { EditorDocument.block(document, it) }?.let { block ->
-                val spec = BlockCatalog[block.op]
-                Text(spec?.title ?: block.op, style = MaterialTheme.typography.titleMedium)
-                spec?.let { Text(PipelineBlockReference.purpose(it), style = MaterialTheme.typography.bodySmall) }
-                TextButton(onClick = { controller.referenceOp = block.op; controller.panel = EditorPanel.REFERENCE }) { Text(stringResource(R.string.pipeline_editor_reference_and_runnable_example)) }
-                val owner = EditorDocument.location(document, block.id)?.ownerId
-                val blockRoutine = document.routines.firstOrNull { it.id == owner } ?: routine
-                val blockProgram = document.programs.firstOrNull { p -> p.scripts.any { it.id == owner } } ?: program
-                val arguments = spec?.arguments.orEmpty()
-                arguments.forEach { arg ->
-                    val value = block.arguments[arg.name] ?: arg.default
-                    fun change(expression: Expression) { update(EditorDocument.update(document, block.copy(arguments = block.arguments + (arg.name to expression)))) }
-                    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(arg.label, style = MaterialTheme.typography.titleSmall)
-                            val choices: List<Pair<String, String>>? = when (arg.reference) {
-                                ReferenceKind.ROUTINE -> document.routines.filterNot { it.id == blockRoutine?.id }.map { it.id to it.name }
-                                ReferenceKind.PROGRAM -> document.programs.filterNot { it.id == blockProgram?.id }.map { it.id to it.name }
-                                ReferenceKind.ASSET -> document.designs.map { (id, json) -> id to (json["name"]?.jsonPrimitive?.content ?: id) }
-                                ReferenceKind.BINDING -> document.bindings.keys.map { it to it }
-                                ReferenceKind.VARIABLE -> (blockProgram?.variables.orEmpty() + blockRoutine?.variables.orEmpty()).filter { !block.op.startsWith("list.") || it.type == ValueType.LIST }.map { it.id to it.name }
-                                null -> if (arg.choices.isNotEmpty()) arg.choices.map { it to it.replace('_', ' ') } else when {
-                                    block.op == "display.toy" && arg.name == "toy" -> NativeCatalog.behaviors.map { it.id to it.title }
-                                    block.op == "native.command" && arg.name == "command" -> NativeCatalog.behaviors.flatMap { it.commands }.distinct().map { it to it }
-                                    arg.name == "event" -> EventCatalog.all.map { it.name to it.title }
-                                    arg.name == "resultVariable" -> listOf("" to "Don't store result") + (blockProgram?.variables.orEmpty() + blockRoutine?.variables.orEmpty()).map { it.id to it.name }
-                                    else -> null
-                                }
-                            }
-                            var expressionMode by remember(block.id, arg.name) { mutableStateOf(value.op != "literal") }
-                            if (block.op == "display.toy" && arg.name == "parameters" && value.op == "literal" && !expressionMode) {
-                                NativeSettingsField(block.arguments["toy"]?.value?.text().orEmpty(), (value.value as? Value.Record)?.fields.orEmpty(), readOnly) { change(Expression.literal(Value.Record(it))) }
-                                TextButton(onClick = { expressionMode = true }) { Text(stringResource(R.string.pipeline_editor_use_an_expression)) }
-                            } else if (block.op == "native.command" && arg.name == "arguments" && value.op == "literal" && !expressionMode) {
-                                NativeCommandSettingsField(block, document, (value.value as? Value.Record)?.fields.orEmpty()) { change(Expression.literal(Value.Record(it))) }
-                                TextButton(onClick = { expressionMode = true }) { Text(stringResource(R.string.pipeline_editor_use_an_expression)) }
-                            } else if (choices != null && !expressionMode) {
-                                ChoiceField(arg.label, value.value.text(), choices, { change(Expression.str(it)) })
-                                if (arg.reference == ReferenceKind.ASSET) TextButton(onClick = { onEditAsset(value.value.text().takeIf { it in document.designs }) }, enabled = !readOnly) { Text(if (value.value.text() in document.designs) "Edit design" else "Draw a design") }
-                                if (arg.reference == null) TextButton(onClick = { expressionMode = true }) { Text(stringResource(R.string.pipeline_editor_use_an_expression)) }
-                            } else {
-                                ExpressionField(value, arg.type, document, blockProgram, blockRoutine, ::change)
-                                if (choices != null) TextButton(onClick = { expressionMode = false; change(arg.default) }) { Text(stringResource(R.string.pipeline_editor_choose_from_list)) }
-                            }
+                key(block.id) {
+                    val spec = BlockCatalog[block.op]
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PipelineIconWell(pipelineCategoryIcon(spec?.category.orEmpty()))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(pipelineBlockTitle(block), style = MaterialTheme.typography.titleLarge)
+                            spec?.let { Text(if (block.op == "display.toy") stringResource(R.string.pipeline_field_native_purpose) else PipelineBlockReference.purpose(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     }
-                }
-                if (block.op == "display.toy") NativeCatalog.get(block.arguments["toy"]?.value?.text().orEmpty())?.let { behavior ->
-                    Text(stringResource(R.string.pipeline_editor_artwork_slots), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.pipeline_editor_replace_the_drawing_while_keeping_the_behavior_configure_c), style = MaterialTheme.typography.bodySmall)
-                    behavior.slots.forEach { slot ->
-                        ChoiceField(slot.replace('_', ' ').replaceFirstChar(Char::titlecase), block.arguments["binding:$slot"]?.value?.text().orEmpty(), listOf("" to "Original artwork") + document.bindings.keys.map { it to it }, { id ->
-                            val args = if (id.isBlank()) block.arguments - "binding:$slot" else block.arguments + ("binding:$slot" to Expression.str(id))
-                            update(EditorDocument.update(document, block.copy(arguments = args)))
-                        })
+                    val owner = EditorDocument.location(document, block.id)?.ownerId
+                    val blockRoutine = document.routines.firstOrNull { it.id == owner } ?: routine
+                    val blockProgram = document.programs.firstOrNull { p -> p.scripts.any { it.id == owner } } ?: program
+                    val arguments = spec?.arguments.orEmpty()
+                    @Composable fun argument(arg: ArgumentSpec) {
+                        val value = block.arguments[arg.name] ?: arg.default
+                        fun change(expression: Expression) { update(EditorDocument.update(document, block.copy(arguments = block.arguments + (arg.name to expression)))) }
+                        val choices: List<Pair<String, String>>? = when (arg.reference) {
+                            ReferenceKind.ROUTINE -> document.routines.filterNot { it.id == blockRoutine?.id }.map { it.id to it.name }
+                            ReferenceKind.PROGRAM -> document.programs.filterNot { it.id == blockProgram?.id }.map { it.id to it.name }
+                            ReferenceKind.ASSET -> document.designs.map { (id, json) -> id to (json["name"]?.jsonPrimitive?.content ?: id) }
+                            ReferenceKind.BINDING -> document.bindings.keys.map { it to it }
+                            ReferenceKind.VARIABLE -> scopedEditorVariables(blockProgram, blockRoutine).filter { !block.op.startsWith("list.") || it.type == ValueType.LIST }.map { it.id to it.name }
+                            null -> if (arg.choices.isNotEmpty()) arg.choices.map { it to it.replace('_', ' ') } else when {
+                                block.op == "display.toy" && arg.name == "toy" -> NativeCatalog.behaviors.map { it.id to it.title } + space.linuxct.glyphworks.core.ambient.AmbientBackgrounds.orderedIds.map { id -> "background.$id" to stringResource(R.string.pipeline_field_background_choice, NativeCatalog.get("background.$id")?.title ?: id) }
+                                block.op == "native.command" && arg.name == "command" -> NativeCatalog.behaviors.flatMap { it.commands }.distinct().map { it to it.replace('_', ' ').replaceFirstChar(Char::titlecase) }
+                                arg.name == "event" -> EventCatalog.all.map { it.name to it.title }
+                                arg.name == "resultVariable" -> listOf("" to stringResource(R.string.pipeline_field_ignore_result)) + scopedEditorVariables(blockProgram, blockRoutine).map { it.id to it.name }
+                                else -> null
+                            }
+                        }
+                        var expressionMode by remember(arg.name) { mutableStateOf(value.op != "literal") }
+                        if (choices != null && !expressionMode && value.op == "literal") {
+                            ChoiceField(arg.label, value.value.text(), choices, { change(Expression.str(it)) })
+                            if (arg.reference == ReferenceKind.ASSET) TextButton(onClick = { onEditAsset(value.value.text().takeIf { it in document.designs }) }, enabled = !readOnly) {
+                                Icon(Icons.Outlined.Brush, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                                Text(stringResource(if (value.value.text() in document.designs) R.string.pipeline_field_edit_design else R.string.pipeline_field_draw_design))
+                            }
+                            if (arg.reference == null) TextButton(onClick = { expressionMode = true }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_use_an_expression)) }
+                        } else {
+                            Text(arg.label, style = MaterialTheme.typography.titleSmall)
+                            ExpressionField(value, arg.type, document, blockProgram, blockRoutine, ::change)
+                            if (choices != null) TextButton(onClick = { expressionMode = false; change(arg.default) }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_choose_from_list)) }
+                        }
                     }
-                    TextButton(onClick = { controller.panel = EditorPanel.ASSETS }) { Text(stringResource(R.string.pipeline_editor_manage_artwork)) }
-                }
-                val referencedParams = when (block.op) {
-                    "routine.call" -> document.routines.firstOrNull { it.id == block.arguments["routine"]?.value?.text() }?.parameters
-                    "program.run" -> document.programs.firstOrNull { it.id == block.arguments["program"]?.value?.text() }?.parameters
-                    else -> null
-                }.orEmpty()
-                referencedParams.forEach { parameter ->
-                    Text(parameter.name, style = MaterialTheme.typography.titleSmall)
-                    ExpressionField(block.arguments["arg:${parameter.id}"] ?: Expression.literal(parameter.default), parameter.type, document, blockProgram, blockRoutine, {
-                        update(EditorDocument.update(document, block.copy(arguments = block.arguments + ("arg:${parameter.id}" to it))))
-                    })
-                }
-                // Imported extensions are visible and editable without dropping their data on save.
-                block.arguments.filterKeys { key -> arguments.none { it.name == key } && !key.startsWith("arg:") && !key.startsWith("binding:") }.forEach { (key, value) ->
-                    Text(key, style = MaterialTheme.typography.titleSmall)
-                    ExpressionField(value, ValueType.ANY, document, blockProgram, blockRoutine, { update(EditorDocument.update(document, block.copy(arguments = block.arguments + (key to it)))) })
-                }
-                OutlinedTextField(block.comment, { update(EditorDocument.update(document, block.copy(comment = it))) }, label = { Text(stringResource(R.string.pipeline_editor_comment)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
-                SwitchRow(stringResource(R.string.pipeline_editor_enabled), block.enabled, !readOnly) { update(EditorDocument.update(document, block.copy(enabled = it))) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { controller.movingBlock = block.id; controller.panel = EditorPanel.NONE }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_move_to)) }
-                    TextButton(onClick = { update(EditorDocument.duplicate(document, block.id)); controller.panel = EditorPanel.NONE }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_duplicate)) }
+                    val advancedNames = setOf("slot", "priority", "persistent", "wrap", "resultVariable", "timeout") + if (block.op.startsWith("display.")) setOf("duration") else emptySet()
+                    val mainArguments = arguments.filter { it.name !in advancedNames && !(block.op == "display.toy" && it.name == "parameters") && !(block.op == "native.command" && it.name == "arguments") }
+                    if (mainArguments.isNotEmpty()) PipelineCard(Modifier.fillMaxWidth()) { mainArguments.forEach { arg -> key(arg.name) { argument(arg) } } }
+                    if (block.op == "display.toy") {
+                        val value = block.arguments["parameters"] ?: Expression.literal(Value.Record())
+                        val fields = (value.value as? Value.Record)?.fields.orEmpty()
+                        FieldSection(stringResource(R.string.pipeline_field_toy_options), if (value.op != "literal") value.summary() else if (fields.isEmpty()) stringResource(R.string.pipeline_field_inherit_settings) else pluralStringResource(R.plurals.pipeline_field_override_count, fields.size, fields.size), value.op != "literal" || fields.isNotEmpty()) {
+                            var useExpression by remember { mutableStateOf(value.op != "literal") }
+                            if (!useExpression && value.op == "literal") {
+                                NativeSettingsField(block.arguments["toy"]?.value?.text().orEmpty(), fields, readOnly) { changed -> update(EditorDocument.update(document, block.copy(arguments = block.arguments + ("parameters" to Expression.literal(Value.Record(changed)))))) }
+                                TextButton(onClick = { useExpression = true }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_use_an_expression)) }
+                            } else ExpressionField(value, ValueType.RECORD, document, blockProgram, blockRoutine, { update(EditorDocument.update(document, block.copy(arguments = block.arguments + ("parameters" to it)))) })
+                        }
+                    }
+                    if (block.op == "native.command") {
+                        val value = block.arguments["arguments"] ?: Expression.literal(Value.Record())
+                        val fields = (value.value as? Value.Record)?.fields.orEmpty()
+                        FieldSection(stringResource(R.string.pipeline_field_command_options), if (value.op != "literal") value.summary() else pluralStringResource(R.plurals.pipeline_field_custom_value_count, fields.size, fields.size), value.op != "literal" || fields.isNotEmpty()) {
+                            var useExpression by remember { mutableStateOf(value.op != "literal") }
+                            if (!useExpression && value.op == "literal") {
+                                NativeCommandSettingsField(block, document, fields) { update(EditorDocument.update(document, block.copy(arguments = block.arguments + ("arguments" to Expression.literal(Value.Record(it)))))) }
+                                TextButton(onClick = { useExpression = true }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_use_an_expression)) }
+                            } else ExpressionField(value, ValueType.RECORD, document, blockProgram, blockRoutine, { update(EditorDocument.update(document, block.copy(arguments = block.arguments + ("arguments" to it)))) })
+                        }
+                    }
+                    val advanced = arguments.filter { it.name in advancedNames }
+                    if (advanced.isNotEmpty()) {
+                        val changed = advanced.count { block.arguments[it.name]?.let { value -> value != it.default } == true }
+                        FieldSection(stringResource(R.string.pipeline_field_timing_placement), if (changed == 0) stringResource(R.string.pipeline_field_default_behavior) else pluralStringResource(R.plurals.pipeline_field_custom_value_count, changed, changed), changed > 0) {
+                            advanced.forEach { arg -> key(arg.name) { argument(arg) } }
+                        }
+                    }
+                    if (block.op == "display.toy") NativeCatalog.get(block.arguments["toy"]?.value?.text().orEmpty())?.let { behavior ->
+                        val customized = behavior.slots.filter { "binding:$it" in block.arguments }
+                        FieldSection(stringResource(R.string.pipeline_editor_artwork_slots), if (customized.isEmpty()) stringResource(R.string.pipeline_field_original_artwork) else pluralStringResource(R.plurals.pipeline_field_artwork_count, customized.size, customized.size), customized.isNotEmpty()) {
+                            Text(stringResource(R.string.pipeline_editor_replace_the_drawing_while_keeping_the_behavior_configure_c), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            var additionalSlot by remember { mutableStateOf<String?>(null) }
+                            (customized + listOfNotNull(additionalSlot)).distinct().forEach { slot ->
+                                ChoiceField(slot.replace('_', ' ').replace('.', ' ').replaceFirstChar(Char::titlecase), block.arguments["binding:$slot"]?.value?.text().orEmpty(), listOf("" to stringResource(R.string.pipeline_field_original_artwork)) + document.bindings.keys.map { it to it }, { id ->
+                                    val args = if (id.isBlank()) block.arguments - "binding:$slot" else block.arguments + ("binding:$slot" to Expression.str(id))
+                                    update(EditorDocument.update(document, block.copy(arguments = args)))
+                                })
+                            }
+                            val remaining = behavior.slots.filterNot { it in customized || it == additionalSlot }
+                            if (remaining.isNotEmpty()) ChoiceField(stringResource(R.string.pipeline_field_replace_artwork), "", remaining.map { it to it.replace('_', ' ').replace('.', ' ').replaceFirstChar(Char::titlecase) }, { additionalSlot = it })
+                            TextButton(onClick = { controller.panel = EditorPanel.ASSETS }) { Text(stringResource(R.string.pipeline_editor_manage_artwork)) }
+                        }
+                    }
+                    val referencedParams = when (block.op) {
+                        "routine.call" -> document.routines.firstOrNull { it.id == block.arguments["routine"]?.value?.text() }?.parameters
+                        "program.run" -> document.programs.firstOrNull { it.id == block.arguments["program"]?.value?.text() }?.parameters
+                        else -> null
+                    }.orEmpty()
+                    if (referencedParams.isNotEmpty()) PipelineCard(Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.pipeline_field_call_inputs), style = MaterialTheme.typography.titleSmall)
+                        referencedParams.forEach { parameter ->
+                            Text(parameter.name, style = MaterialTheme.typography.labelMedium)
+                            ExpressionField(block.arguments["arg:${parameter.id}"] ?: Expression.literal(parameter.default), parameter.type, document, blockProgram, blockRoutine, { update(EditorDocument.update(document, block.copy(arguments = block.arguments + ("arg:${parameter.id}" to it)))) })
+                        }
+                    }
+                    block.arguments.filterKeys { key -> arguments.none { it.name == key } && !key.startsWith("arg:") && !key.startsWith("binding:") }.forEach { (key, value) ->
+                        PipelineCard(Modifier.fillMaxWidth()) {
+                            Text(key, style = MaterialTheme.typography.titleSmall)
+                            ExpressionField(value, ValueType.ANY, document, blockProgram, blockRoutine, { update(EditorDocument.update(document, block.copy(arguments = block.arguments + (key to it)))) })
+                        }
+                    }
+                    FieldSection(stringResource(R.string.pipeline_field_block_details), if (block.comment.isNotBlank()) block.comment else stringResource(if (block.enabled) R.string.pipeline_field_enabled_summary else R.string.pipeline_field_disabled_summary), block.comment.isNotBlank() || !block.enabled) {
+                        OutlinedTextField(block.comment, { update(EditorDocument.update(document, block.copy(comment = it))) }, label = { Text(stringResource(R.string.pipeline_editor_comment)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
+                        SwitchRow(stringResource(R.string.pipeline_editor_enabled), block.enabled, !readOnly) { update(EditorDocument.update(document, block.copy(enabled = it))) }
+                        TextButton(onClick = { controller.referenceOp = block.op; controller.panel = EditorPanel.REFERENCE }) { Text(stringResource(R.string.pipeline_editor_reference_and_runnable_example)) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { controller.movingBlock = block.id; controller.panel = EditorPanel.NONE }, enabled = !readOnly) { Icon(Icons.Outlined.OpenWith, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.pipeline_editor_move_to)) }
+                        TextButton(onClick = { update(EditorDocument.duplicate(document, block.id)); controller.panel = EditorPanel.NONE }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_duplicate)) }
+                    }
                 }
             }
             EditorPanel.SCRIPT -> document.programs.flatMap { it.scripts }.firstOrNull { it.id == controller.selectedScript }?.let { script ->
                 fun change(next: Script) = update(EditorDocument.script(document, next))
+                Text(stringResource(R.string.pipeline_field_event_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PipelineCard(Modifier.fillMaxWidth()) {
                 OutlinedTextField(script.name, { change(script.copy(name = it)) }, label = { Text(stringResource(R.string.pipeline_editor_name)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
                 ChoiceField(stringResource(R.string.pipeline_editor_when), script.trigger.event, EventCatalog.all.map { it.name to it.title }, { event ->
                     val title = EventCatalog.all.firstOrNull { it.name == event }?.title ?: event
                     change(script.copy(name = title, trigger = script.trigger.copy(event = event, calendar = if (event == "calendar.daily") script.trigger.calendar ?: CalendarTrigger() else null)))
                 })
-                OutlinedTextField(script.trigger.event, { change(script.copy(trigger = script.trigger.copy(event = it))) }, label = { Text(stringResource(R.string.pipeline_editor_event_name)) }, supportingText = { Text(stringResource(R.string.pipeline_editor_you_can_also_use_a_named_signal_timer_or_native_event)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
+                var customEvent by remember(script.id) { mutableStateOf(EventCatalog.all.none { it.name == script.trigger.event }) }
+                if (customEvent) OutlinedTextField(script.trigger.event, { change(script.copy(trigger = script.trigger.copy(event = it))) }, label = { Text(stringResource(R.string.pipeline_editor_event_name)) }, supportingText = { Text(stringResource(R.string.pipeline_editor_you_can_also_use_a_named_signal_timer_or_native_event)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
+                else TextButton(onClick = { customEvent = true }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_field_custom_event)) }
                 if (script.trigger.event == "calendar.daily") {
                     val schedule = script.trigger.calendar ?: CalendarTrigger()
                     fun updateSchedule(next: CalendarTrigger) = change(script.copy(trigger = script.trigger.copy(calendar = next)))
@@ -161,11 +215,14 @@ internal fun PipelineEditorInspector(
                     ExpressionField(condition, ValueType.BOOLEAN, document, program, routine, { change(script.copy(trigger = script.trigger.copy(condition = it))) })
                     ChoiceField(stringResource(R.string.pipeline_editor_condition_activation), script.trigger.edge.name, TriggerEdge.entries.map { it.name to when (it) { TriggerEdge.EVENT -> "Every matching event"; TriggerEdge.RISING -> "When it becomes true"; TriggerEdge.FALLING -> "When it becomes false"; TriggerEdge.CHANGE -> "Whenever it changes" } }, { change(script.copy(trigger = script.trigger.copy(edge = TriggerEdge.valueOf(it)))) })
                     SwitchRow(stringResource(R.string.pipeline_editor_run_if_true_when_the_pipeline_starts), script.trigger.initially, !readOnly) { change(script.copy(trigger = script.trigger.copy(initially = it))) }
-                    NumberField(stringResource(R.string.pipeline_editor_stable_for_milliseconds), script.trigger.stableForMs.toDouble(), { change(script.copy(trigger = script.trigger.copy(stableForMs = it.toLong().coerceAtLeast(0)))) }, integer = true)
+                    DurationField(stringResource(R.string.pipeline_field_stable_for), script.trigger.stableForMs.toDouble()) { change(script.copy(trigger = script.trigger.copy(stableForMs = it.toLong().coerceAtLeast(0)))) }
                 }
+                }
+                FieldSection(stringResource(R.string.pipeline_field_event_behavior), stringResource(R.string.pipeline_field_event_behavior_summary), script.priority != 0 || script.reentry != Reentry.RESTART || !script.enabled) {
                 ChoiceField(stringResource(R.string.pipeline_editor_if_triggered_while_already_running), script.reentry.name, Reentry.entries.map { it.name to when (it) { Reentry.RESTART -> "Restart this script"; Reentry.IGNORE -> "Ignore the new event"; Reentry.QUEUE -> "Run it after the current event"; Reentry.PARALLEL -> "Run another instance" } }, { change(script.copy(reentry = Reentry.valueOf(it))) })
                 NumberField(stringResource(R.string.pipeline_editor_priority), script.priority.toDouble(), { change(script.copy(priority = it.toInt())) }, integer = true)
                 SwitchRow(stringResource(R.string.pipeline_editor_enabled), script.enabled, !readOnly) { change(script.copy(enabled = it)) }
+                }
                 TextButton(onClick = { update(EditorDocument.removeScript(document, script.id)); controller.panel = EditorPanel.NONE }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_delete_event_and_its_blocks)) }
             }
             EditorPanel.VARIABLES -> VariablesPanel(routine?.variables ?: program?.variables.orEmpty(), readOnly) { variables ->
@@ -178,7 +235,7 @@ internal fun PipelineEditorInspector(
                 OutlinedButton(onClick = onImportBlocks, enabled = !readOnly) { Text(stringResource(R.string.pipeline_editor_import_routines_or_programs)) }
                 Text(stringResource(R.string.pipeline_editor_name_a_sequence_once_and_call_it_wherever_you_need_it_argu), style = MaterialTheme.typography.bodyMedium)
                 document.routines.forEach { item ->
-                    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
+                    Surface(color = pipelineSurfaceColor(), shape = glyphCorner(20.dp, 28.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(item.name, { update(EditorDocument.routine(document, item.copy(name = it))) }, label = { Text(stringResource(R.string.pipeline_editor_routine_name)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
                             Text("${item.blocks.size} top-level blocks · ${item.parameters.size} arguments", style = MaterialTheme.typography.bodySmall)
@@ -281,12 +338,14 @@ internal fun PipelineEditorInspector(
         }
     }
 }
+}
 
 @Composable
 internal fun SwitchRow(title: String, checked: Boolean, enabled: Boolean = true, onChecked: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val available = enabled && LocalPipelineFieldsEnabled.current
+    Row(Modifier.fillMaxWidth().toggleable(checked, enabled = available, role = Role.Switch, onValueChange = onChecked).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked, onChecked, enabled = enabled)
+        GlyphSwitch(checked, null, enabled = available)
     }
 }
 
@@ -295,7 +354,7 @@ private fun VariablesPanel(variables: List<Variable>, readOnly: Boolean, onChang
     var selected by remember { mutableStateOf<String?>(null) }
     Text(stringResource(R.string.pipeline_editor_store_numbers_conditions_text_and_lists_persistent_values), style = MaterialTheme.typography.bodyMedium)
     variables.forEach { variable ->
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Surface(color = pipelineSurfaceColor(), shape = glyphCorner(20.dp, 28.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth().clickable { selected = if (selected == variable.id) null else variable.id }, verticalAlignment = Alignment.CenterVertically) {
                     Text(variable.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall); Text(typeName(variable.type), style = MaterialTheme.typography.labelSmall)
@@ -320,7 +379,7 @@ private fun ParametersPanel(parameters: List<Parameter>, readOnly: Boolean, onCh
     var selected by remember { mutableStateOf<String?>(null) }
     Text(stringResource(R.string.pipeline_editor_parameters_are_the_inputs_to_this_program_or_routine_expos), style = MaterialTheme.typography.bodyMedium)
     parameters.forEach { parameter ->
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Surface(color = pipelineSurfaceColor(), shape = glyphCorner(20.dp, 28.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth().clickable { selected = if (selected == parameter.id) null else parameter.id }) { Text(parameter.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall); Text(typeName(parameter.type), style = MaterialTheme.typography.labelSmall) }
                 if (selected == parameter.id) {
@@ -365,7 +424,7 @@ private fun ArtworkPanel(document: PipelineDocument, readOnly: Boolean, onChange
     Text(stringResource(R.string.pipeline_editor_behavior_artwork_slots), style = MaterialTheme.typography.titleMedium)
     Text(stringResource(R.string.pipeline_editor_for_example_dino_jump_dino_run_dice_face_1_coin_heads_or_w), style = MaterialTheme.typography.bodySmall)
     document.bindings.forEach { (key, binding) ->
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
+        Surface(color = pipelineSurfaceColor(), shape = glyphCorner(20.dp, 28.dp)) {
             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(key, Modifier.fillMaxWidth().clickable { selected = if (selected == key) null else key }, style = MaterialTheme.typography.titleSmall)
                 if (selected == key) {
@@ -445,21 +504,36 @@ private fun countRoutineCalls(blocks: List<Block>, id: String): Int = blocks.sum
 private fun NativeSettingsField(type: String, fields: Map<String, Value>, readOnly: Boolean, onChange: (Map<String, Value>) -> Unit) {
     val behavior = NativeCatalog.get(type)
     if (behavior == null) { Text(stringResource(R.string.pipeline_editor_choose_a_behavior_first), style = MaterialTheme.typography.bodySmall); return }
-    Text(stringResource(R.string.pipeline_editor_use_the_individual_toy_settings_or_override_a_value_for_th), style = MaterialTheme.typography.bodySmall)
-    behavior.parameters.forEach { parameter ->
-        SwitchRow("Override ${parameter.name.lowercase()}", parameter.id in fields, !readOnly) { enabled ->
-            onChange(if (enabled) fields + (parameter.id to parameter.default) else fields - parameter.id)
-        }
-        fields[parameter.id]?.let { value ->
-            if (parameter.choices.isNotEmpty()) ChoiceField(parameter.name, value.display(), parameter.choices.map { it.display() to it.display() }, { chosen ->
-                onChange(fields + (parameter.id to parameter.choices.first { it.display() == chosen }))
-            }) else LiteralField(value, parameter.type, { next ->
-                val validated = if (next is Value.Number) next.copy(value = next.value.coerceIn(parameter.minimum ?: -Double.MAX_VALUE, parameter.maximum ?: Double.MAX_VALUE)) else next
-                onChange(fields + (parameter.id to validated))
-            })
+    Text(stringResource(R.string.pipeline_editor_use_the_individual_toy_settings_or_override_a_value_for_th), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    fields.forEach { (id, value) ->
+        key(id) {
+            val parameter = behavior.parameters.firstOrNull { it.id == id }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(parameter?.name ?: id, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                IconButton(onClick = { onChange(fields - id) }, enabled = !readOnly) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.pipeline_field_use_toy_setting), Modifier.size(20.dp)) }
+            }
+            fun change(next: Value) {
+                val validated = if (next is Value.Number && parameter != null) next.copy(value = next.value.coerceIn(parameter.minimum ?: -Double.MAX_VALUE, parameter.maximum ?: Double.MAX_VALUE)) else next
+                onChange(fields + (id to validated))
+            }
+            val choices = nativeSettingChoices(type, parameter)
+            when {
+                choices.isNotEmpty() -> ChoiceField(parameter?.name ?: id, value.display(), choices, { selected ->
+                    val original = parameter?.choices?.firstOrNull { it.display() == selected }
+                    change(original ?: if (value is Value.Number) value.copy(value = selected.toDouble()) else text(selected))
+                })
+                parameter != null && value is Value.Number && (parameter.name.endsWith("(ms)") || id == "durationSeconds") -> {
+                    val scale = if (id == "durationSeconds") 1000 else 1
+                    DurationField(parameter.name.substringBefore(" ("), value.value * scale) { change(value.copy(value = it / scale)) }
+                }
+                parameter == null -> LiteralField(value, ValueType.ANY, ::change)
+                else -> ParameterValueField(parameter, value, ::change)
+            }
         }
     }
-    if (behavior.parameters.isEmpty()) Text(stringResource(R.string.pipeline_editor_this_behavior_has_no_additional_settings), style = MaterialTheme.typography.bodySmall)
+    val remaining = behavior.parameters.filterNot { it.id in fields }
+    if (remaining.isNotEmpty()) ChoiceField(stringResource(R.string.pipeline_field_customize_setting), "", remaining.map { it.id to it.name }, { id -> remaining.firstOrNull { it.id == id }?.let { onChange(fields + (id to it.default)) } })
+    if (behavior.parameters.isEmpty() && fields.isEmpty()) Text(stringResource(R.string.pipeline_editor_this_behavior_has_no_additional_settings), style = MaterialTheme.typography.bodySmall)
 }
 
 internal fun allEditorBlocks(document: PipelineDocument): List<Block> {
@@ -479,4 +553,22 @@ private fun NativeCommandSettingsField(block: Block, document: PipelineDocument,
         Text(parameter.name, style = MaterialTheme.typography.labelMedium)
         LiteralField(fields[parameter.id] ?: parameter.default, parameter.type, { onChange(fields + (parameter.id to it)) })
     }
+}
+
+@Composable
+private fun nativeSettingChoices(type: String, parameter: Parameter?): List<Pair<String, String>> {
+    if (parameter == null) return emptyList()
+    val plain = type.removePrefix("background.")
+    val names = when {
+        parameter.id == "theme" && plain in setOf("clock", "text_clock", "pixel_clock", "analog_clock") -> listOf(stringResource(R.string.pipeline_field_clock_plain), stringResource(R.string.pipeline_field_clock_bar), stringResource(R.string.pipeline_field_clock_ring), stringResource(R.string.pipeline_field_clock_analog))
+        parameter.id == "theme" && plain == "visualizer" -> listOf(stringResource(R.string.pipeline_field_bars), stringResource(R.string.pipeline_field_mirrored_bars), stringResource(R.string.pipeline_field_palette))
+        parameter.id == "design" && plain == "coin" -> listOf(stringResource(R.string.pipeline_field_coin_letters), stringResource(R.string.pipeline_field_coin_portrait))
+        else -> emptyList()
+    }
+    if (names.isNotEmpty()) return names.mapIndexed { index, name -> index.toString() to name }
+    return parameter.choices.map { choice -> choice.display() to when (choice.display()) {
+        "celsius" -> stringResource(R.string.pipeline_field_celsius)
+        "fahrenheit" -> stringResource(R.string.pipeline_field_fahrenheit)
+        else -> choice.display().replace('_', ' ').replaceFirstChar(Char::titlecase)
+    } }
 }

@@ -7,6 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
@@ -29,6 +33,8 @@ import space.linuxct.glyphworks.pipeline.PipelineSimulation
 import space.linuxct.glyphworks.pipeline.templates.BuiltinPipelines
 import space.linuxct.glyphworks.ui.pipeline.CustomControlsSettingsContent
 import space.linuxct.glyphworks.ui.pipeline.PipelineSimulationPanel
+import space.linuxct.glyphworks.ui.pipeline.PipelineEditor
+import space.linuxct.glyphworks.ui.pipeline.PipelineEditorController
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.pipeline.*
 
@@ -75,6 +81,7 @@ class PipelineTutorialRenderTest {
     @Test fun ambientSpotlightPng() = render(PipelineChapter.AMBIENT, 2, "tutorial-ambient")
     @Test fun menuSpotlightPng() = render(PipelineChapter.MENU, 2, "tutorial-menu")
     @Test fun lockedToysSpotlightPng() = render(PipelineChapter.SAFETY, 1, "tutorial-locked-toys")
+    @Test fun recoverySpotlightPng() = render(PipelineChapter.SAFETY, 2, "tutorial-recovery")
     @Test fun artworkEditorSpotlightPng() = render(PipelineChapter.TOY, 2, "tutorial-artwork")
 
     @Test fun simulatorFroggerProPng() = renderSimulation(13)
@@ -85,12 +92,12 @@ class PipelineTutorialRenderTest {
         ))))
         PipelineSimulation(PipelineDocument(entryPoint = program.id, programs = listOf(program))).use { simulation ->
             withActivity { PipelineSimulationPanel(simulation, autoRun = false) }.use {
-                compose.onNodeWithText("Sample inputs").performClick()
-                compose.onNodeWithText("Event fields").performClick()
-                compose.onNodeWithText("New field name").performTextInput("amount")
-                compose.onNodeWithText("Add field").performClick()
-                compose.onNode(hasSetTextAction() and hasText("0")).performTextReplacement("7")
-                compose.onNodeWithText("Send event").performClick()
+                compose.onNodeWithText("Sample inputs").performScrollTo().performClick()
+                compose.onNodeWithText("Event fields").performScrollTo().performClick()
+                compose.onNodeWithText("New field name").performScrollTo().performTextInput("amount")
+                compose.onNodeWithText("Add field").performScrollTo().performClick()
+                compose.onNode(hasSetTextAction() and hasText("0")).performScrollTo().performTextReplacement("7")
+                compose.onNodeWithText("Send event").performScrollTo().performClick()
                 compose.runOnIdle { assertEquals(7.0, simulation.values.values.single().number(), 0.0) }
             }
         }
@@ -99,7 +106,9 @@ class PipelineTutorialRenderTest {
     @Test fun customControlsSettingsPng() {
         withActivity {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                CustomControlsSettingsContent(true, "My menu · Running", {}, {}, {})
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    CustomControlsSettingsContent(true, "My menu · Running", {}, {}, {})
+                }
             }
         }.use { save("custom-controls-settings") }
     }
@@ -125,6 +134,7 @@ class PipelineTutorialRenderTest {
             // Freeze its clock for this still capture; waiting for that clock to finish is impossible.
             if (chapter == PipelineChapter.TOY && step == 2) compose.mainClock.autoAdvance = false
             compose.waitForIdle()
+            if (chapter == PipelineChapter.SAFETY && step == 2) compose.onNodeWithText("Resume pipelines").assertIsDisplayed()
             save(name)
         }
         compose.mainClock.autoAdvance = true
@@ -134,12 +144,14 @@ class PipelineTutorialRenderTest {
         PipelineSimulation(BuiltinPipelines.toy("dino"), size).use { simulation ->
             simulation.dispatch(PipelineEvent("key.action")); simulation.advanceBy(100)
             withActivity {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    PipelineSimulationPanel(simulation, autoRun = false, panelSize = size)
-                }
+                val controller = remember { PipelineEditorController().apply { previewExpanded = true } }
+                PipelineEditor(simulation.document, {}, {}, {}, {}, controller = controller,
+                    previewContent = { PipelineSimulationPanel(simulation, autoRun = false, panelSize = size) })
             }.use {
-                compose.onNodeWithText("Execution and variables").performClick()
                 save("simulator-$size")
+                compose.onNodeWithText("Inspect").performScrollTo().performClick()
+                compose.onNodeWithText("Inspector", ignoreCase = true).performScrollTo()
+                save("simulator-inspector-$size")
             }
         }
     }

@@ -100,7 +100,7 @@ internal fun PipelineDemoTour(
     }
 
     Box(Modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalPipelineDemoTargets provides targets) {
+        CompositionLocalProvider(LocalPipelineDemoTargets provides targets, LocalPipelineDemoFocus provides sandbox.focusTarget) {
             PipelineDemoStage(sandbox)
         }
         Box(Modifier.fillMaxSize().swallowTourTouches())
@@ -130,6 +130,7 @@ private fun PipelineDemoStage(sandbox: PipelineDemoSandbox) {
                     enabled = sandbox.customControls,
                     status = stringResource(when { sandbox.stopped -> R.string.pipeline_custom_stopped; sandbox.customControls -> R.string.pipeline_custom_active; else -> R.string.pipeline_custom_off }),
                     onEnabled = { sandbox.customControls = it }, onEdit = {}, onStop = { sandbox.stopped = true },
+                    paused = sandbox.stopped, onResume = { sandbox.stopped = false },
                 )
             }
         }

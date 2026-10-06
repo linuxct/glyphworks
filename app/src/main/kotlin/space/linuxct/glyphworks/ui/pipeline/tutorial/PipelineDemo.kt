@@ -36,6 +36,7 @@ internal class PipelineDemoSandbox(val chapter: PipelineChapter) {
     var controller by mutableStateOf(PipelineEditorController())
         private set
     var stage by mutableStateOf(PipelineDemoStage.EDITOR)
+    var focusTarget by mutableStateOf<String?>(null)
     var customControls by mutableStateOf(false)
     var stopped by mutableStateOf(false)
     var panelSize by mutableIntStateOf(13)
@@ -53,6 +54,7 @@ internal class PipelineDemoSandbox(val chapter: PipelineChapter) {
         history = EditorHistory(document)
         controller = PipelineEditorController()
         stage = PipelineDemoStage.EDITOR
+        focusTarget = null
         customControls = false; stopped = false; panelSize = 13; assetState = null
         previewSequence = 0; previewTime = 0; previewInputs = emptyMap(); previewEvents = emptyList()
         applied = 0
@@ -340,8 +342,8 @@ private fun menuSteps() = listOf(
 private fun safetySteps() = listOf(
     PipelineDemoStep(R.string.pipeline_tutorial_safety_settings, "custom-settings") { s -> s.stage = PipelineDemoStage.SETTINGS; s.customControls = false; beat(400); tap("custom-enable"); s.customControls = true },
     PipelineDemoStep(R.string.pipeline_tutorial_safety_locked, "custom-locked") { s -> s.stage = PipelineDemoStage.LOCKED_TOYS; hide() },
-    PipelineDemoStep(R.string.pipeline_tutorial_safety_stop, "custom-settings") { s -> s.stage = PipelineDemoStage.SETTINGS; tap("custom-stop"); s.stopped = true },
-    PipelineDemoStep(R.string.pipeline_tutorial_safety_standard, "custom-settings") { s -> tap("custom-enable"); s.customControls = false; s.stopped = false },
+    PipelineDemoStep(R.string.pipeline_tutorial_safety_stop, "custom-stop") { s -> s.stage = PipelineDemoStage.SETTINGS; s.focusTarget = "custom-stop"; beat(500); tap("custom-stop"); s.stopped = true },
+    PipelineDemoStep(R.string.pipeline_tutorial_safety_standard, "custom-enable") { s -> s.focusTarget = "custom-enable"; beat(500); tap("custom-enable"); s.customControls = false; s.stopped = false },
 )
 
 private fun inspectSteps() = listOf(
