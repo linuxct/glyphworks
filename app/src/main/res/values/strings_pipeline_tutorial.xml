@@ -1,5 +1,7 @@
 <resources>
     <string name="pipeline_tutorial_title">Pipeline Builder</string>
+    <string name="pipeline_tutorial_subtitle">Learn the canvas, custom toys and controls.</string>
+    <string name="pipeline_default_choice">%1$s · built-in</string>
     <string name="pipeline_tutorial_intro">Build displays, toys and your own controls. Follow the guided editor tours at your own pace.</string>
     <string name="pipeline_tutorial_canvas">Canvas and blocks</string>
     <string name="pipeline_tutorial_events">Events and state</string>

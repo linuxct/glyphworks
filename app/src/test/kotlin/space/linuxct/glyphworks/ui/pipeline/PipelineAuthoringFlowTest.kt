@@ -125,7 +125,7 @@ class PipelineAuthoringFlowTest {
     }
 
     @Test fun migratedAmbientPopupRendersTheShippedPipelineSettings() = withActivity { activity, _, store, _ ->
-        val document = BuiltinPipelines.ambient(Core.prefs)
+        val document = BuiltinPipelines.ambient(Core.prefs).copy(id = "migrated_ambient")
         assertTrue(store.apply(document) is PipelineStore.SaveResult.Saved)
         Core.pipeline.assignAmbient(document.id)
         activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) { AmbientPipelineSettings() } } } }
@@ -134,10 +134,17 @@ class PipelineAuthoringFlowTest {
         compose.onNodeWithText("Applied · revision 1").assertExists()
         assertTrue(document.entry()!!.parameters.none { it.quickSetting && it.type == ValueType.LIST })
         save("ambient-settings")
+        compose.onNodeWithContentDescription("Manage pipeline").performClick()
+        compose.onNodeWithText("Choose").performClick()
+        compose.onNodeWithText("Ambient · built-in").performClick()
+        compose.waitForIdle()
+        assertEquals("builtin_ambient", Core.pipeline.ambientId)
+        compose.onNodeWithText("Original template. Make a copy to change it.").assertIsDisplayed()
+        assertNotNull(store.loadApplied(document.id))
     }
 
     @Test fun ambientQuickControlsStageTogetherAndApplyOnce() = withActivity { activity, fixture, store, _ ->
-        val document = BuiltinPipelines.ambient(fixture.prefs)
+        val document = BuiltinPipelines.ambient(fixture.prefs).copy(id = "my_ambient")
         assertTrue(store.apply(document) is PipelineStore.SaveResult.Saved)
         Core.pipeline.assignAmbient(document.id)
         activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) { AmbientPipelineSettings() } } } }

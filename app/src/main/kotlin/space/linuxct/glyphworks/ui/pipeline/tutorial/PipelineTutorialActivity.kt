@@ -26,6 +26,9 @@ import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.pipeline.PipelineSimulation
 import space.linuxct.glyphworks.ui.pipeline.*
 import space.linuxct.glyphworks.ui.requestPeakRefreshRateWhileVisible
+import space.linuxct.glyphworks.ui.MotionDialog
+import space.linuxct.glyphworks.ui.theme.dialogSurface
+import space.linuxct.glyphworks.ui.theme.glyphCorner
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.glyphworks.ui.tutorial.*
 import space.linuxct.glyphworks.ui.design.DemoTargets
@@ -52,10 +55,25 @@ class PipelineTutorialActivity : ComponentActivity() {
     }
 }
 
-/** Used by Tutorials, library and context help. Selection is outside the tour overlay. */
+@Composable
+internal fun PipelineTutorialDialog(onDismiss: () -> Unit, onChoose: (PipelineChapter) -> Unit) {
+    MotionDialog(onDismiss) { dismiss ->
+        Surface(shape = glyphCorner(28.dp, 36.dp), color = dialogSurface()) {
+            Column(Modifier.padding(vertical = 18.dp)) {
+                Text(stringResource(R.string.pipeline_tutorial_title), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleLarge)
+                PipelineTutorialChapters(onChoose, Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = dismiss) { Text(stringResource(R.string.tut_close)) }
+                }
+            }
+        }
+    }
+}
+
+/** The containing dialog owns vertical scrolling. */
 @Composable
 fun PipelineTutorialChapters(onChoose: (PipelineChapter) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.verticalScroll(rememberScrollState())) {
+    Column(modifier) {
         Text(stringResource(R.string.pipeline_tutorial_intro), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
         PipelineChapter.entries.forEachIndexed { index, chapter ->
             Row(Modifier.fillMaxWidth().clickable { onChoose(chapter) }.padding(horizontal = 16.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {

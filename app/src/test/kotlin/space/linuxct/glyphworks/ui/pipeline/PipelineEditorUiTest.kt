@@ -201,7 +201,10 @@ class PipelineEditorUiTest {
             val before = current().programs
             val canvas = compose.onNodeWithTag("pipeline-canvas")
             val original = current().editor.viewport
-            canvas.performTouchInput { swipe(Offset(width * .5f, height * .9f), Offset(width * .65f, height * .8f), 300) }
+            canvas.performTouchInput { down(Offset(width * .5f, height * .9f)); moveTo(Offset(width * .65f, height * .8f), 300) }
+            compose.waitForIdle()
+            assertEquals("Movement must not rewrite the pipeline while the finger is down", original, current().editor.viewport)
+            canvas.performTouchInput { up() }
             compose.waitForIdle()
             assertNotEquals(original.x, current().editor.viewport.x)
             assertNotEquals(original.y, current().editor.viewport.y)
@@ -212,8 +215,49 @@ class PipelineEditorUiTest {
             }
             compose.waitForIdle()
             assertTrue(current().editor.viewport.scale > oldScale)
+            assertTrue(current().editor.viewport.x.isFinite() && current().editor.viewport.y.isFinite())
             assertEquals(before, current().programs)
         }
+    }
+
+    @Test fun pinchOverBlocksAndEventHeadersZoomsWithoutOpeningSettings() = withEditor(sample()) { controller, current ->
+        val programs = current().programs
+        val positions = current().editor.positions
+        for (tag in listOf("pipeline-block:clock", "pipeline-script:start")) {
+            compose.runOnIdle { controller.focusRequest = tag.substringAfter(':') }
+            compose.waitForIdle()
+            compose.onNodeWithTag(tag).assertIsDisplayed()
+            val center = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.center
+            val before = current().editor.viewport.scale
+            val endSpan = if (before > 1f) 25f else 200f
+            compose.onRoot().performTouchInput {
+                pinch(start0 = center - Offset(100f, 0f), end0 = center - Offset(endSpan, 0f),
+                    start1 = center + Offset(100f, 0f), end1 = center + Offset(endSpan, 0f), durationMillis = 350)
+            }
+            compose.waitForIdle()
+            assertNotEquals("Pinch must work over $tag", before, current().editor.viewport.scale)
+            assertEquals(EditorPanel.NONE, controller.panel)
+            assertEquals(programs, current().programs)
+            assertEquals(positions, current().editor.positions)
+        }
+    }
+
+    @Test fun secondFingerTakesOverHeldBlockForZoomWithoutMovingIt() = withEditor(sample()) { controller, current ->
+        val before = current()
+        val center = compose.onNodeWithTag("pipeline-block:clock").fetchSemanticsNode().boundsInRoot.center
+        compose.onRoot().performTouchInput { down(0, center - Offset(80f, 0f)); advanceEventTime(700); moveBy(Offset.Zero) }
+        compose.waitForIdle()
+        compose.onRoot().performTouchInput {
+            down(1, center + Offset(80f, 0f))
+            moveTo(0, center - Offset(150f, 0f), delayMillis = 80)
+            moveTo(1, center + Offset(150f, 0f), delayMillis = 80)
+            up(1); up(0)
+        }
+        compose.waitForIdle()
+        assertTrue(current().editor.viewport.scale > before.editor.viewport.scale)
+        assertEquals(before.programs, current().programs)
+        assertEquals(before.editor.positions, current().editor.positions)
+        assertEquals(EditorPanel.NONE, controller.panel)
     }
 
     @Suppress("DEPRECATION")

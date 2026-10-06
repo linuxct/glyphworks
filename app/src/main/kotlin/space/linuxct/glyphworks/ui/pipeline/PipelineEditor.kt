@@ -8,7 +8,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -33,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -124,16 +131,20 @@ fun PipelineEditor(
     val routine = current.routines.firstOrNull { it.id == controller.selectedRoutine }
     val issues = remember(current.programs, current.routines, current.designs, current.bindings, current.entryPoint, current.name, current.panels) { PipelineCodec.validate(current) }
     val viewport = controller.viewportOverride ?: current.editor.viewport
+    // A gesture must not rewrite the project (and recompose every block) for each pointer event.
+    // Layout and drawing read this state directly; the document is updated when the gesture ends.
+    val liveViewport = remember(document.id) { mutableStateOf(viewport) }
+    LaunchedEffect(viewport) { liveViewport.value = viewport }
     val density = LocalDensity.current.density
     val haptic = LocalHapticFeedback.current
     var canvasBounds by remember { mutableStateOf(Rect.Zero) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var drag by remember { mutableStateOf<EditorDrag?>(null) }
     var dropTarget by remember { mutableStateOf<BlockLocation?>(null) }
-    val targets = remember { mutableMapOf<BlockLocation, Rect>() }
-    val stackBounds = remember { mutableMapOf<String, Rect>() }
+    val targets = remember { mutableMapOf<BlockLocation, LayoutCoordinates>() }
+    val stackBounds = remember { mutableMapOf<String, LayoutCoordinates>() }
     val stackSizes = remember { mutableMapOf<String, IntSize>() }
-    val blockBounds = remember { mutableMapOf<String, Rect>() }
+    val blockBounds = remember { mutableMapOf<String, LayoutCoordinates>() }
     var paletteSearch by remember { mutableStateOf("") }
     var paletteCategory by remember { mutableStateOf<String?>(null) }
     var overflow by remember { mutableStateOf(false) }
@@ -142,9 +153,10 @@ fun PipelineEditor(
     var lastWorkspace by remember(document.id) { mutableStateOf(controller.selectedRoutine ?: controller.programId ?: document.entryPoint) }
 
     fun setViewport(next: Viewport) {
+        liveViewport.value = next
         workspaceViews[controller.selectedRoutine ?: controller.programId ?: current.entryPoint] = next
         controller.viewportOverride = null
-        update(current.copy(editor = current.editor.copy(viewport = next)), record = false)
+        if (current.editor.viewport != next) update(current.copy(editor = current.editor.copy(viewport = next)), record = false)
     }
     LaunchedEffect(routine?.id, program?.id) {
         val key = routine?.id ?: program?.id.orEmpty()
@@ -152,9 +164,11 @@ fun PipelineEditor(
         lastWorkspace = key
     }
     fun targetAt(point: Offset): BlockLocation? = targets.entries
+        .filter { it.value.isAttached }
+        .map { it.key to it.value.boundsInRoot() }
         .filter { (_, rect) -> rect.inflate(10f * density).contains(point) }
         .filter { (at, _) -> drag?.sourceId?.let { EditorDocument.canMove(current, it, at) } != false }
-        .minByOrNull { (_, rect) -> abs(rect.center.y - point.y) + abs(rect.center.x - point.x) * .12f }?.key
+        .minByOrNull { (_, rect) -> abs(rect.center.y - point.y) + abs(rect.center.x - point.x) * .12f }?.first
     fun moveDrag(delta: Offset) { drag = drag?.copy(pointer = drag!!.pointer + delta); dropTarget = drag?.let { targetAt(it.pointer) } }
     fun finishDrag(cancel: Boolean = false) {
         val active = drag
@@ -233,7 +247,8 @@ fun PipelineEditor(
         setViewport(Viewport(20 - minX * scale, 20 - minY * scale, scale))
     }
     fun centerSelection() {
-        val selected = controller.selectedBlock?.let { blockBounds[it] } ?: controller.selectedScript?.let { stackBounds[it] }
+        val coordinates = controller.selectedBlock?.let { blockBounds[it] } ?: controller.selectedScript?.let { stackBounds[it] }
+        val selected = coordinates?.takeIf { it.isAttached }?.boundsInRoot()
         val latestViewport = controller.viewportOverride ?: current.editor.viewport
         if (selected != null) setViewport(latestViewport.copy(x = latestViewport.x + (canvasBounds.center.x - selected.center.x) / density, y = latestViewport.y + (canvasBounds.center.y - selected.center.y) / density)) else fitAll()
     }
@@ -305,7 +320,7 @@ fun PipelineEditor(
                         modifier = Modifier.pipelineDemoTarget("apply")) { Text(stringResource(R.string.pipeline_editor_apply)) }
                     Box {
                         IconButton(onClick = { overflow = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.pipeline_editor_editor_menu)) }
-                        DropdownMenu(overflow, { overflow = false }) {
+                        DropdownMenu(overflow, { overflow = false }, containerColor = dialogSurface()) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_save_draft)) }, enabled = !readOnly, onClick = { overflow = false; onSave() }, modifier = Modifier.pipelineDemoTarget("save"))
                             DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_project_settings)) }, onClick = { overflow = false; controller.panel = EditorPanel.PROJECT })
                             DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_parameters)) }, onClick = { overflow = false; controller.panel = EditorPanel.PARAMETERS })
@@ -327,7 +342,7 @@ fun PipelineEditor(
                             Text(if (routine != null) routine.name else stringResource(R.string.pipeline_refine_event_count, program?.scripts?.size ?: 0), Modifier.padding(horizontal = 7.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Icon(Icons.Outlined.ExpandMore, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        DropdownMenu(navigatorOpen, { navigatorOpen = false }) {
+                        DropdownMenu(navigatorOpen, { navigatorOpen = false }, containerColor = dialogSurface()) {
                             program?.scripts.orEmpty().forEach { event -> DropdownMenuItem(text = { Text(event.name) }, leadingIcon = { Icon(Icons.Outlined.Bolt, null) }, onClick = { navigatorOpen = false; controller.selectedRoutine = null; controller.focusRequest = event.id }) }
                             if (current.routines.isNotEmpty()) {
                                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -352,22 +367,63 @@ fun PipelineEditor(
             if (controller.previewExpanded && previewContent != null) Surface(Modifier.fillMaxWidth().heightIn(max = previewHeight), color = MaterialTheme.colorScheme.surfaceContainer) { previewContent() }
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("pipeline-canvas").pipelineDemoTarget("canvas")
                 .onGloballyPositioned { canvasBounds = it.boundsInRoot(); canvasSize = it.size }
-                .pointerInput(drag != null) {
-                    if (drag != null) return@pointerInput
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val before = current.editor.viewport
-                        val scale = (before.scale * zoom).coerceIn(.3f, 2f)
-                        val anchor = centroid / density
-                        val x = anchor.x - (anchor.x - before.x) * scale / before.scale + pan.x / density
-                        val y = anchor.y - (anchor.y - before.y) * scale / before.scale + pan.y / density
-                        setViewport(Viewport(x, y, scale))
+                .pointerInput(document.id, density) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        var accumulatedPan = Offset.Zero
+                        var accumulatedZoom = 1f
+                        var initialZoomSpan = 0f
+                        var started = false
+                        var moved = false
+                        var multiTouch = false
+                        do {
+                            // Claim two-finger gestures before block click/long-press handlers.
+                            // Keep observing consumed single-finger events so a second finger can
+                            // take over even when the first finger has already picked up a block.
+                            val initial = awaitPointerEvent(PointerEventPass.Initial)
+                            if (initial.changes.count { it.pressed } >= 2) {
+                                multiTouch = true
+                                if (drag != null) finishDrag(cancel = true)
+                            }
+                            val event = if (multiTouch) initial else awaitPointerEvent(PointerEventPass.Main)
+                            if (multiTouch || (drag == null && event.changes.none { it.isConsumed })) {
+                                val pan = event.calculatePan()
+                                val zoom = event.calculateZoom()
+                                if (!started) {
+                                    if (initialZoomSpan == 0f) initialZoomSpan = event.calculateCentroidSize(useCurrent = false)
+                                    accumulatedPan += pan
+                                    accumulatedZoom *= zoom
+                                    // Use the starting span: measuring against a shrinking span
+                                    // can keep an inward pinch below touch slop indefinitely.
+                                    val zoomDistance = abs(1f - accumulatedZoom) * initialZoomSpan
+                                    if (accumulatedPan.getDistance() > viewConfiguration.touchSlop || zoomDistance > viewConfiguration.touchSlop) started = true
+                                }
+                                if (started && (pan != Offset.Zero || zoom != 1f)) {
+                                    val before = liveViewport.value
+                                    val scale = (before.scale * zoom).coerceIn(.3f, 2f)
+                                    val anchor = event.calculateCentroid(useCurrent = false) / density
+                                    liveViewport.value = Viewport(
+                                        anchor.x - (anchor.x - before.x) * scale / before.scale + pan.x / density,
+                                        anchor.y - (anchor.y - before.y) * scale / before.scale + pan.y / density,
+                                        scale,
+                                    )
+                                    moved = true
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                }
+                            }
+                            // Also consume down/up and stationary events to prevent accidental
+                            // block clicks or a new long press after one pinch finger lifts.
+                            if (multiTouch) event.changes.forEach { it.consume() }
+                        } while (event.changes.any { it.pressed })
+                        if (moved) setViewport(liveViewport.value)
                     }
                 }) {
                 val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (MaterialTheme.lucent) .07f else .10f)
                 Canvas(Modifier.fillMaxSize()) {
-                    val step = 20.dp.toPx() * viewport.scale
-                    val startX = (viewport.x * density % step + step) % step
-                    val startY = (viewport.y * density % step + step) % step
+                    val movingViewport = liveViewport.value
+                    val step = 20.dp.toPx() * movingViewport.scale
+                    val startX = (movingViewport.x * density % step + step) % step
+                    val startY = (movingViewport.y * density % step + step) % step
                     var x = startX
                     while (x < size.width) { var y = startY; while (y < size.height) { drawCircle(gridColor, .7.dp.toPx(), Offset(x, y)); y += step }; x += step }
                 }
@@ -384,13 +440,16 @@ fun PipelineEditor(
                     val activeDrag = drag?.takeIf { it.stackId == stack.id }
                     val shift = activeDrag?.let { (it.pointer - it.start) / (density * viewport.scale) } ?: Offset.Zero
                     val position = Position(base.x + shift.x, base.y + shift.y)
-                    val atX = (viewport.x + position.x * viewport.scale) * density
-                    val atY = (viewport.y + position.y * viewport.scale) * density
-                    // Horizontal culling avoids laying out distant scripts, without truncating a tall active stack.
-                    if (atX + 340 * density * viewport.scale < -120 * density || atX > canvasSize.width + 120 * density) return@forEachIndexed
-                    Column(Modifier.offset { IntOffset(atX.roundToInt(), atY.roundToInt()) }.requiredWidth(312.dp).wrapContentHeight(Alignment.Top, unbounded = true)
-                        .graphicsLayer { scaleX = viewport.scale; scaleY = viewport.scale; transformOrigin = TransformOrigin(0f, 0f) }
-                        .onGloballyPositioned { stackBounds[stack.id] = it.boundsInRoot(); stackSizes[stack.id] = it.size }) {
+                    // Keep neighbouring stacks mounted so they slide into view during the gesture.
+                    Column(Modifier.requiredWidth(312.dp).wrapContentHeight(Alignment.Top, unbounded = true)
+                        .graphicsLayer {
+                            val movingViewport = liveViewport.value
+                            translationX = (movingViewport.x + position.x * movingViewport.scale) * density
+                            translationY = (movingViewport.y + position.y * movingViewport.scale) * density
+                            scaleX = movingViewport.scale; scaleY = movingViewport.scale
+                            transformOrigin = TransformOrigin(0f, 0f)
+                        }
+                        .onGloballyPositioned { stackBounds[stack.id] = it; stackSizes[stack.id] = it.size }) {
                         var headerCoordinates by remember(stack.id) { mutableStateOf<LayoutCoordinates?>(null) }
                         Surface(color = pipelineSurfaceColor(), shape = glyphCorner(18.dp, 24.dp), border = BorderStroke(.75.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .13f)),
                             modifier = Modifier.fillMaxWidth().testTag("pipeline-script:${stack.id}").pipelineDemoTarget("script:${stack.id}").onGloballyPositioned { headerCoordinates = it }
@@ -523,7 +582,7 @@ fun PipelineEditor(
         } else ModalBottomSheet(
             onDismissRequest = { controller.panel = EditorPanel.NONE },
             sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = dialogSurface(),
         ) { DialogBackdropBlur(); content() }
     }
     }
@@ -547,7 +606,7 @@ internal fun pipelineBlockTitle(block: Block): String = when (block.op) {
 @Composable
 private fun BlockList(
     document: PipelineDocument, blocks: List<Block>, location: BlockLocation, controller: PipelineEditorController,
-    targets: MutableMap<BlockLocation, Rect>, blockBounds: MutableMap<String, Rect>, dropTarget: BlockLocation?, draggingId: String?, readOnly: Boolean,
+    targets: MutableMap<BlockLocation, LayoutCoordinates>, blockBounds: MutableMap<String, LayoutCoordinates>, dropTarget: BlockLocation?, draggingId: String?, readOnly: Boolean,
     onInsert: (BlockLocation) -> Unit, onChange: (PipelineDocument) -> Unit,
     onDragStart: (Block, Offset) -> Unit, onDrag: (Offset) -> Unit, onDragEnd: () -> Unit, onDragCancel: () -> Unit, scale: Float,
 ) {
@@ -565,7 +624,7 @@ private fun BlockList(
                 border = BorderStroke(if (selected || running || waiting) 1.2.dp else .5.dp, if (selected || running || waiting) MaterialTheme.colorScheme.primary.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurface.copy(alpha = .065f)),
                 modifier = Modifier.fillMaxWidth()
                 .graphicsLayer { alpha = if (block.id == draggingId || !block.enabled) .48f else 1f }
-                .onGloballyPositioned { blockBounds[block.id] = it.boundsInRoot() }.pipelineDemoTarget("block:${block.id}")
+                .onGloballyPositioned { blockBounds[block.id] = it }.pipelineDemoTarget("block:${block.id}")
                 .semantics { customActions = listOf(
                     CustomAccessibilityAction("Edit block") { controller.selectedBlock = block.id; controller.insertion = null; controller.panel = EditorPanel.BLOCK; true },
                     CustomAccessibilityAction("Move block") { controller.movingBlock = block.id; true },
@@ -590,7 +649,7 @@ private fun BlockList(
                         if (spec?.body == true || block.body.isNotEmpty() || block.otherwise.isNotEmpty()) IconButton(onClick = { onChange(document.copy(editor = document.editor.copy(collapsed = if (folded) document.editor.collapsed - block.id else document.editor.collapsed + block.id))) }, modifier = Modifier.size(40.dp)) { Icon(if (folded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess, "Fold block", modifier = Modifier.size(18.dp)) }
                         Box {
                             IconButton(onClick = { menu = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.pipeline_editor_block_actions), Modifier.size(18.dp)) }
-                            DropdownMenu(menu, { menu = false }) {
+                            DropdownMenu(menu, { menu = false }, containerColor = dialogSurface()) {
                                 DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_edit)) }, onClick = { menu = false; controller.selectedBlock = block.id; controller.insertion = null; controller.panel = EditorPanel.BLOCK })
                                 if (!readOnly) {
                                     DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_move_to)) }, onClick = { menu = false; controller.movingBlock = block.id; controller.movingStack = false })
@@ -629,11 +688,11 @@ private fun Modifier.flowRail(color: Color): Modifier = drawBehind {
 }
 
 @Composable
-private fun InsertionZone(location: BlockLocation, targets: MutableMap<BlockLocation, Rect>, selected: BlockLocation?, readOnly: Boolean, empty: Boolean, onInsert: (BlockLocation) -> Unit, tail: Boolean = false) {
+private fun InsertionZone(location: BlockLocation, targets: MutableMap<BlockLocation, LayoutCoordinates>, selected: BlockLocation?, readOnly: Boolean, empty: Boolean, onInsert: (BlockLocation) -> Unit, tail: Boolean = false) {
     DisposableEffect(location) { onDispose { targets.remove(location) } }
     val active = selected == location
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    Box(Modifier.fillMaxWidth().testTag("pipeline-insertion:${location.ownerId}:${location.parentId}:${location.branch}:${location.index}").height(if (empty) 50.dp else if (tail) 36.dp else 24.dp).onGloballyPositioned { targets[location] = it.boundsInRoot() }
+    Box(Modifier.fillMaxWidth().testTag("pipeline-insertion:${location.ownerId}:${location.parentId}:${location.branch}:${location.index}").height(if (empty) 50.dp else if (tail) 36.dp else 24.dp).onGloballyPositioned { targets[location] = it }
         .clip(RoundedCornerShape(12.dp)).background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else Color.Transparent)
         .clickable(enabled = !readOnly) { onInsert(location) }, contentAlignment = Alignment.Center) {
         if (empty || active || tail) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {

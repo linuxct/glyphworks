@@ -8,10 +8,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
@@ -22,6 +27,7 @@ import org.junit.After
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -36,6 +42,7 @@ import space.linuxct.glyphworks.ui.pipeline.PipelineSimulationPanel
 import space.linuxct.glyphworks.ui.pipeline.PipelineEditor
 import space.linuxct.glyphworks.ui.pipeline.PipelineEditorController
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
+import space.linuxct.glyphworks.ui.TutorialTab
 import space.linuxct.pipeline.*
 
 /** Production editor + shared design-tour shell, rendered entirely in Robolectric. */
@@ -47,6 +54,31 @@ class PipelineTutorialRenderTest {
 
     @After fun clearThemeFixture() {
         Core::class.java.getDeclaredField("prefs").apply { isAccessible = true }.set(null, null)
+    }
+
+    @Test fun prefetchedTutorialTabMeasuresBeforeNavigationAndAllChaptersRemainReachable() {
+        withActivity {
+            HorizontalPager(
+                state = rememberPagerState(pageCount = { 4 }),
+                beyondViewportPageCount = 3,
+                modifier = Modifier.fillMaxSize().testTag("main-tab-pager"),
+            ) { page ->
+                if (page == 3) TutorialTab(PaddingValues(top = 80.dp, bottom = 120.dp), rememberScrollState())
+                else androidx.compose.material3.Text("Page $page")
+            }
+        }.use { activity ->
+            // MainActivity premeasures Tutorials even when it opens on Toys.
+            compose.waitForIdle()
+            repeat(3) { compose.onNodeWithTag("main-tab-pager").performTouchInput { swipeLeft() }; compose.waitForIdle() }
+            compose.onNodeWithText(activity.get().getString(space.linuxct.glyphworks.R.string.pipeline_tutorial_title)).performScrollTo().performClick()
+            compose.waitForIdle()
+            val popup = File("build/reports/pipeline/tutorial/chapter-picker.png")
+            popup.parentFile.mkdirs()
+            compose.onNode(isDialog()).captureToImage().asAndroidBitmap().let { bitmap -> popup.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            val lastChapter = activity.get().getString(PipelineChapter.INSPECT.title)
+            compose.onNodeWithText(lastChapter).performScrollTo().assertIsDisplayed().performClick()
+            assertEquals(PipelineTutorialActivity::class.java.name, shadowOf(activity.get()).nextStartedActivity.component?.className)
+        }
     }
 
     @Test fun navigationMatchesDesignTourIncludingMidAnimationBackAndSkip() {

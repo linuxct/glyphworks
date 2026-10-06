@@ -969,7 +969,7 @@ private fun ImportButton(onImport: () -> Unit) {
 }
 
 @Composable
-private fun filledButtonColors(): ButtonColors = if (isSystemInDarkTheme()) {
+internal fun filledButtonColors(): ButtonColors = if (isSystemInDarkTheme()) {
     ButtonDefaults.buttonColors(
         containerColor = MaterialTheme.colorScheme.secondary,
         contentColor = MaterialTheme.colorScheme.onSecondary,

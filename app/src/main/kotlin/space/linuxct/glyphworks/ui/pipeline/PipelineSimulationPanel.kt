@@ -30,6 +30,7 @@ import space.linuxct.glyphworks.ui.theme.GlyphSwitch
 import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
 import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
 import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
+import space.linuxct.glyphworks.ui.theme.dialogSurface
 import space.linuxct.glyphworks.ui.pipeline.tutorial.pipelineDemoTarget
 import space.linuxct.pipeline.*
 import java.time.Instant
@@ -227,7 +228,7 @@ private fun SimulationChoice(options: List<Pair<String, String>>, selected: Stri
             Text(options.find { it.first == selected }?.second ?: selected, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
         }
-        DropdownMenu(expanded, { expanded = false }) {
+        DropdownMenu(expanded, { expanded = false }, containerColor = dialogSurface()) {
             options.forEach { (id, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { onSelect(id); expanded = false }) }
         }
     }

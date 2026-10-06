@@ -49,6 +49,11 @@ import space.linuxct.glyphworks.pipeline.native.NativeCatalog
 import space.linuxct.glyphworks.pipeline.store.*
 import space.linuxct.glyphworks.pipeline.templates.BuiltinPipelines
 import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialActivity
+import space.linuxct.glyphworks.ui.filledButtonColors
+import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
 import space.linuxct.pipeline.*
 
 /** Create-tab content. There is deliberately no controller enable toggle here. */
@@ -129,36 +134,33 @@ fun PipelineLibraryScreen(
     } }
 
     val ink = MaterialTheme.colorScheme.onSurface
-    val roomyLabels = LocalDensity.current.fontScale > 1.2f
     LazyColumn(modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(uiText(R.string.pipeline_library_heading), style = MaterialTheme.typography.headlineLarge)
                         Text(uiText(R.string.pipeline_refine_library_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = { context.startActivity(PipelineTutorialActivity.intent(context)) }) { Icon(Icons.Outlined.School, uiText(R.string.pipeline_library_tutorial), tint = ink) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { newDialog = true }, colors = libraryActionColors()) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Text(uiText(R.string.pipeline_library_new_button)) }
-                    TextButton(onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, colors = ButtonDefaults.textButtonColors(contentColor = ink)) { Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(uiText(R.string.pipeline_library_import)) }
+                    Button(onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, colors = libraryActionColors()) { Icon(Icons.Outlined.FileOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(uiText(R.string.pipeline_library_import)) }
                 }
                 OutlinedTextField(search, { search = it }, placeholder = { Text(uiText(R.string.pipeline_library_find)) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = glyphCorner(20.dp, 28.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = ink.copy(alpha = .13f), focusedBorderColor = ink, unfocusedContainerColor = pipelineSurfaceColor(), focusedContainerColor = pipelineSurfaceColor()))
-                Surface(shape = glyphCorner(22.dp, 30.dp), color = ink.copy(alpha = .045f)) {
-                    Row(Modifier.fillMaxWidth().then(if (roomyLabels) Modifier.horizontalScroll(rememberScrollState()) else Modifier).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf("Yours" to R.string.pipeline_library_yours, "Starters" to R.string.pipeline_library_starters, "Originals" to R.string.pipeline_library_originals).forEach { (key, title) ->
-                            Surface(onClick = { section = key }, modifier = (if (roomyLabels) Modifier.widthIn(min = 96.dp) else Modifier.weight(1f)).semantics { selected = section == key; role = Role.Tab }, shape = glyphCorner(20.dp, 26.dp), color = if (section == key) pipelineSurfaceColor().copy(alpha = 1f) else Color.Transparent) {
-                                Box(Modifier.heightIn(min = 44.dp).padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) { Text(uiText(title), style = MaterialTheme.typography.labelLarge, color = ink, maxLines = 1) }
-                            }
+                val sections = listOf("Yours" to R.string.pipeline_library_yours, "Starters" to R.string.pipeline_library_starters, "Originals" to R.string.pipeline_library_originals)
+                GlyphSegmentedRow(selected = sections.indexOfFirst { it.first == section }, count = sections.size, modifier = Modifier.fillMaxWidth()) {
+                    sections.forEachIndexed { index, (key, title) ->
+                        SegmentedButton(selected = section == key, onClick = { section = key }, shape = glyphSegmentedShape(index, sections.size), colors = glyphSegmentedColors(section == key), icon = glyphSegmentedIcon(section == key)) {
+                            Text(uiText(title), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     PipelineEyebrow(when(section) { "Starters" -> uiText(R.string.pipeline_refine_start_here); "Originals" -> uiText(R.string.pipeline_refine_built_in); else -> uiText(R.string.pipeline_refine_your_projects) }, Modifier.weight(1f))
                     Box {
-                        TextButton(onClick = { filterMenu = true }, colors = ButtonDefaults.textButtonColors(contentColor = ink)) { Text(kindFilter?.let(::roleName) ?: uiText(R.string.pipeline_library_all), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp)); Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(18.dp)) }
-                        DropdownMenu(filterMenu, { filterMenu = false }) {
+                        TextButton(onClick = { filterMenu = true }) { Text(kindFilter?.let(::roleName) ?: uiText(R.string.pipeline_library_all), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp)); Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(18.dp)) }
+                        DropdownMenu(filterMenu, { filterMenu = false }, containerColor = dialogSurface()) {
                             DropdownMenuItem(text = { Text(uiText(R.string.pipeline_library_all)) }, onClick = { kindFilter = null; filterMenu = false })
                             ProgramKind.entries.forEach { kind -> DropdownMenuItem(text = { Text(roleName(kind)) }, leadingIcon = { Icon(libraryRoleIcon(kind), null) }, onClick = { kindFilter = kind; filterMenu = false }) }
                         }
@@ -169,21 +171,21 @@ fun PipelineLibraryScreen(
         if (section == "Yours") {
             val matching = projects.filter { it.name.contains(search, true) && (kindFilter == null || it.kind == kindFilter) }
             if (matching.isEmpty()) item {
-                PipelineCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), padding = 24.dp) {
+                PipelineCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), padding = 24.dp) {
                     PipelineIconWell(Icons.Outlined.AccountTree, size = 52.dp)
                     Text(uiText(if (projects.isEmpty()) R.string.pipeline_refine_empty_title else R.string.pipeline_library_no_match), style = MaterialTheme.typography.headlineSmall)
                     Text(uiText(if (projects.isEmpty()) R.string.pipeline_refine_empty_body else R.string.pipeline_refine_search_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (projects.isEmpty()) TextButton(onClick = { section = "Starters"; kindFilter = null; search = "" }, colors = ButtonDefaults.textButtonColors(contentColor = ink)) { Text(uiText(R.string.pipeline_refine_explore_starters)); Spacer(Modifier.width(6.dp)); Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.size(18.dp)) }
+                    if (projects.isEmpty()) TextButton(onClick = { section = "Starters"; kindFilter = null; search = "" }) { Text(uiText(R.string.pipeline_refine_explore_starters)); Spacer(Modifier.width(6.dp)); Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.size(18.dp)) }
                 }
             }
             items(matching, key = { it.id }) { project ->
                 var menu by remember(project.id) { mutableStateOf(false) }
-                PipelineCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(glyphCorner(20.dp, 28.dp)).clickable { open(project.id) }, padding = 20.dp) {
+                PipelineCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(glyphCorner(20.dp, 28.dp)).clickable { open(project.id) }, padding = 20.dp) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         PipelineIconWell(libraryRoleIcon(project.kind)); Spacer(Modifier.width(10.dp)); PipelineEyebrow(roleName(project.kind), Modifier.weight(1f))
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, uiText(R.string.pipeline_library_actions, project.name)) }
-                            DropdownMenu(menu, { menu = false }) {
+                            DropdownMenu(menu, { menu = false }, containerColor = dialogSurface()) {
                                 DropdownMenuItem(text = { Text(uiText(R.string.pipeline_library_open)) }, onClick = { menu = false; open(project.id) })
                                 DropdownMenuItem(text = { Text(uiText(R.string.pipeline_library_rename)) }, onClick = { menu = false; renameText = project.name; renameProject = project })
                                 DropdownMenuItem(text = { Text(uiText(R.string.pipeline_library_duplicate)) }, onClick = { menu = false; scope.launch { result(withContext(Dispatchers.IO) { store.duplicate(project.id, uiText(R.string.pipeline_library_copy_name, project.name)) }, true) } })
@@ -197,25 +199,27 @@ fun PipelineLibraryScreen(
                             }
                         }
                     }
-                    Text(project.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(project.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(if (project.hasDraft) uiText(R.string.pipeline_library_draft) else uiText(R.string.pipeline_library_applied, project.appliedRevision ?: 0), style = MaterialTheme.typography.labelMedium)
                             Text(project.panels.sorted().joinToString(" / ") { "$it × $it" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        TextButton(onClick = { open(project.id) }, colors = ButtonDefaults.textButtonColors(contentColor = ink)) { Text(uiText(R.string.pipeline_library_open)); Spacer(Modifier.width(6.dp)); Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.size(18.dp)) }
+                        TextButton(onClick = { open(project.id) }) { Text(uiText(R.string.pipeline_library_open)); Spacer(Modifier.width(6.dp)); Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.size(18.dp)) }
                     }
                 }
             }
         } else {
             val source = if (section == "Originals") templates else starters
             items(source.filter { it.name.contains(search, true) && (kindFilter == null || it.entry()?.kind == kindFilter) }, key = { it.id }) { template ->
-                PipelineCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), padding = 20.dp) {
+                PipelineCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), padding = 20.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) { PipelineIconWell(libraryRoleIcon(template.entry()?.kind ?: ProgramKind.TOY)); Spacer(Modifier.width(10.dp)); PipelineEyebrow(roleName(template.entry()?.kind ?: ProgramKind.TOY)) }
-                    Text(template.name, style = MaterialTheme.typography.headlineSmall)
+                    Text(template.name, style = MaterialTheme.typography.titleLarge)
                     Text(libraryTemplateDescription(template), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { context.startActivity(PipelineEditorActivity.templateIntent(context, template.id)) }, colors = ButtonDefaults.textButtonColors(contentColor = ink)) { Text(uiText(R.string.pipeline_library_view_blocks)) }
+                        if (template.entry()?.kind == ProgramKind.AMBIENT) TextButton(onClick = { Core.pipeline.assignAmbient(template.id); message = uiText(R.string.pipeline_library_ambient_assigned, template.name) }) { Text(uiText(R.string.pipeline_library_use_ambient)) }
+                        if (template.entry()?.kind == ProgramKind.CONTROLLER) TextButton(onClick = { Core.pipeline.setController(template.id); message = uiText(R.string.pipeline_library_controller_selected) }) { Text(uiText(R.string.pipeline_library_select_controller)) }
+                        TextButton(onClick = { context.startActivity(PipelineEditorActivity.templateIntent(context, template.id)) }) { Text(uiText(R.string.pipeline_library_view_blocks)) }
                         Button(onClick = { scope.launch {
                             val copy = PipelineReferences.remap(template).copy(name = uiText(R.string.pipeline_library_copy_name, template.name), createdWith = "GlyphWorks ${BuildConfig.VERSION_NAME}")
                             result(withContext(Dispatchers.IO) { store.saveDraft(copy, 0) }, true)
@@ -294,10 +298,7 @@ internal fun libraryRoleIcon(kind: ProgramKind): ImageVector = when (kind) {
 }
 
 @Composable
-internal fun libraryActionColors(): ButtonColors = ButtonDefaults.buttonColors(
-    containerColor = if (MaterialTheme.lucent) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-    contentColor = if (MaterialTheme.lucent) MaterialTheme.colorScheme.surface.copy(alpha = 1f) else MaterialTheme.colorScheme.onPrimary,
-)
+internal fun libraryActionColors(): ButtonColors = filledButtonColors()
 
 
 @Composable

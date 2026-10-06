@@ -31,6 +31,7 @@ class PipelineController(
     private val inputs = PipelineInputs(app, ports)
     private val stateJson = Json { encodeDefaults = true; ignoreUnknownKeys = true }
     private val builtins = BuiltinPipelines.all().associateBy { it.entry()!!.template!!.removePrefix("glyphworks.") }
+    private val defaults by lazy { (builtins.values + BuiltinPipelines.examples()).associateBy { it.id } }
     @Volatile private var applied = emptyMap<String, PipelineDocument>()
     private var manager: ScreenManager? = null
     private var context: ScreenContext? = null
@@ -89,21 +90,25 @@ class PipelineController(
     fun attachManager(value: ScreenManager) { manager = value; if (controllerMode) value.setControllerScreen(advancedScreen()) }
     fun screens(): List<GlyphScreen> = builtins.map { (id, document) -> screen(id, document) } + applied.values.filter { it.entry()?.kind == ProgramKind.TOY }.map { screen("pipeline_${it.id}", it) }
     private fun screen(id: String, document: PipelineDocument) = PipelineScreen(id, id.startsWith("pipeline_") || id in setOf("ambient", "dice", "coin", "dino", "bottle", "counter", "breathing", "timer", "custom"), document.entry()?.immediateAction == true, this)
-    private fun advancedScreen() = PipelineScreen(ADVANCED_ID, true, applied[controllerId]?.entry()?.immediateAction == true, this)
+    private fun advancedScreen() = PipelineScreen(ADVANCED_ID, true, projectDocument(controllerId)?.entry()?.immediateAction == true, this)
     fun projects() = applied.values.toList()
-    fun document(id: String): PipelineDocument? = when { id == "ambient" -> applied[ambientId] ?: builtins[id]; id == ADVANCED_ID -> applied[controllerId]; id.startsWith("pipeline_") -> applied[id.removePrefix("pipeline_")]; else -> applied[id] ?: builtins[id] }
+    fun defaultProjects(): List<PipelineDocument> = defaults.values.toList()
+    fun defaultDocument(id: String): PipelineDocument? = defaults[id]
+    private fun projectDocument(id: String): PipelineDocument? = defaults[id] ?: applied[id]
+    private fun selectableDocument(id: String): PipelineDocument? = defaults[id] ?: store.loadApplied(id)?.document
+    fun document(id: String): PipelineDocument? = when { id == "ambient" -> projectDocument(ambientId) ?: builtins[id]; id == ADVANCED_ID -> projectDocument(controllerId); id.startsWith("pipeline_") -> projectDocument(id.removePrefix("pipeline_")); else -> projectDocument(id) ?: builtins[id] }
     fun onProjectApplied(id: String) = reload(id)
     fun assignAmbient(id: String) {
-        require((store.loadApplied(id)?.document?.entry()?.kind) == ProgramKind.AMBIENT)
+        require(selectableDocument(id)?.entry()?.kind == ProgramKind.AMBIENT)
         prefs.putString(PipelinePrefs.AMBIENT_ID, id); reload(id)
     }
     fun setController(id: String) {
-        require((store.loadApplied(id)?.document?.entry()?.kind) == ProgramKind.CONTROLLER)
+        require(selectableDocument(id)?.entry()?.kind == ProgramKind.CONTROLLER)
         prefs.putString(PipelinePrefs.CONTROLLER_ID, id); reload(id)
     }
     /** The App settings UI is the only production caller of this explicit activation operation. */
     fun setControllerEnabled(enabled: Boolean) {
-        if (enabled && store.loadApplied(controllerId)?.document?.entry()?.kind != ProgramKind.CONTROLLER) return
+        if (enabled && selectableDocument(controllerId)?.entry()?.kind != ProgramKind.CONTROLLER) return
         clearDiagnostic()
         prefs.putBoolean(PipelinePrefs.CONTROLLER_ENABLED, enabled)
         prefs.putBoolean(PipelinePrefs.STOPPED, false)
@@ -113,7 +118,7 @@ class PipelineController(
     fun setTrigger(toyId: String, projectId: String?) {
         val mapping = triggers().toMutableMap()
         if (projectId == null) mapping.remove(toyId) else {
-            require(store.loadApplied(projectId) != null)
+            require(selectableDocument(projectId) != null)
             if (toyId !in mapping && mapping.size >= MAX_STANDARD_RULES) { fail("At most $MAX_STANDARD_RULES Standard trigger projects can run together."); return }
             mapping[toyId] = projectId
         }
@@ -295,7 +300,7 @@ class PipelineController(
         val generation = ++ruleGeneration
         rules.values.forEach { it.runtime.close() }; rules.clear()
         activeTriggerAssignments = triggers()
-        if (!controllerMode && context != null && !stopped) for ((toy, id) in triggers().entries.take(MAX_STANDARD_RULES)) applied[id]?.let { document ->
+        if (!controllerMode && context != null && !stopped) for ((toy, id) in triggers().entries.take(MAX_STANDARD_RULES)) projectDocument(id)?.let { document ->
             fun start(assets: PipelineAssets) {
                 if (generation != ruleGeneration || controllerMode || context == null || stopped) return
                 val running = create(document, "trigger_$toy", assets)
@@ -355,7 +360,7 @@ class PipelineController(
     private fun loadDocuments() {
         val loaded = store.list().mapNotNull { summary -> store.loadApplied(summary.id)?.document?.let { summary.id to it } }.toMap()
         applied = loaded.mapValues { (id, document) -> applied[id]?.takeIf { it == document } ?: document }
-        (listOf(ambientId, controllerId) + triggers().values.take(MAX_STANDARD_RULES)).distinct().mapNotNull(applied::get).forEach(::prepare)
+        (listOf(ambientId, controllerId) + triggers().values.take(MAX_STANDARD_RULES)).distinct().mapNotNull(::projectDocument).forEach(::prepare)
         applied.values.filter { it.entry()?.kind == ProgramKind.TOY }.forEach { document ->
             val key = PrefKeys.screenEnabled("pipeline_${document.id}")
             if (!prefs.contains(key)) prefs.putBoolean(key, false)

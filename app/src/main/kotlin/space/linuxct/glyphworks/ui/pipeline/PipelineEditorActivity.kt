@@ -40,6 +40,7 @@ import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialActivity
 import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineChapter
 import space.linuxct.glyphworks.ui.requestPeakRefreshRateWhileVisible
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
+import space.linuxct.glyphworks.ui.theme.dialogSurface
 import space.linuxct.pipeline.*
 
 /** Draft ownership and file operations live here; the canvas and simulator stay pure. */
@@ -68,8 +69,9 @@ class PipelineEditorActivity : ComponentActivity() {
                     if (assetId != null) AssetEditor(doc, assetId)
                     else Editor(doc)
                 }
-                error?.let { message -> AlertDialog(onDismissRequest = { error = null }, title = { Text(stringResource(R.string.pipeline_editor_pipeline)) }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text(stringResource(R.string.pipeline_editor_ok)) } }) }
+                error?.let { message -> AlertDialog(containerColor = dialogSurface(), onDismissRequest = { error = null }, title = { Text(stringResource(R.string.pipeline_editor_pipeline)) }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text(stringResource(R.string.pipeline_editor_ok)) } }) }
                 if (conflict) AlertDialog(
+                    containerColor = dialogSurface(),
                     onDismissRequest = { conflict = false }, title = { Text(stringResource(R.string.pipeline_editor_this_project_changed_elsewhere)) },
                     text = { Text(stringResource(R.string.pipeline_editor_your_edits_are_still_here_reload_the_newer_draft_or_keep_y)) },
                     confirmButton = { TextButton(onClick = { conflict = false; lifecycleScope.launch { saveCopy() } }) { Text(stringResource(R.string.pipeline_editor_save_a_copy)) } },
@@ -99,10 +101,15 @@ class PipelineEditorActivity : ComponentActivity() {
             readOnly = true; status = "Original template"
         } else {
             val id = intent.getStringExtra(EXTRA_ID).orEmpty()
-            val snapshot = withContext(Dispatchers.IO) { Core.pipelineStore.loadDraft(id) ?: Core.pipelineStore.loadApplied(id) }
-            document = snapshot?.document; generation = snapshot?.generation ?: 0
-            savedDocument = snapshot?.document
-            readOnly = false; status = if (snapshot?.revision != null) "Saved · revision ${snapshot.revision}" else "Draft saved"
+            val original = Core.pipeline.defaultDocument(id)
+            if (original != null) {
+                document = original; readOnly = true; status = "Original template"
+            } else {
+                val snapshot = withContext(Dispatchers.IO) { Core.pipelineStore.loadDraft(id) ?: Core.pipelineStore.loadApplied(id) }
+                document = snapshot?.document; generation = snapshot?.generation ?: 0
+                savedDocument = snapshot?.document
+                readOnly = false; status = if (snapshot?.revision != null) "Saved · revision ${snapshot.revision}" else "Draft saved"
+            }
         }
         if (document == null) { Toast.makeText(this, "This pipeline could not be opened.", Toast.LENGTH_LONG).show(); finish() }
     }
@@ -206,7 +213,7 @@ class PipelineEditorActivity : ComponentActivity() {
                 )
             }
         }
-        if (tourOffer) AlertDialog(onDismissRequest = { tourOffer = false }, title = { Text(stringResource(R.string.pipeline_editor_meet_pipeline_builder)) }, text = { Text(stringResource(R.string.pipeline_editor_take_a_guided_tour_of_the_canvas_events_and_reusable_block)) }, confirmButton = { TextButton(onClick = { tourOffer = false; startActivity(PipelineTutorialActivity.intent(this@PipelineEditorActivity, tutorialChapter())) }) { Text(stringResource(R.string.pipeline_editor_start_tutorial)) } }, dismissButton = { TextButton(onClick = { tourOffer = false }) { Text(stringResource(R.string.pipeline_editor_not_now)) } })
+        if (tourOffer) AlertDialog(containerColor = dialogSurface(), onDismissRequest = { tourOffer = false }, title = { Text(stringResource(R.string.pipeline_editor_meet_pipeline_builder)) }, text = { Text(stringResource(R.string.pipeline_editor_take_a_guided_tour_of_the_canvas_events_and_reusable_block)) }, confirmButton = { TextButton(onClick = { tourOffer = false; startActivity(PipelineTutorialActivity.intent(this@PipelineEditorActivity, tutorialChapter())) }) { Text(stringResource(R.string.pipeline_editor_start_tutorial)) } }, dismissButton = { TextButton(onClick = { tourOffer = false }) { Text(stringResource(R.string.pipeline_editor_not_now)) } })
         if (capabilitiesOpen) PipelineCapabilitiesSheet(doc) { capabilitiesOpen = false }
         if (importBlocks) PipelineDependencyPicker(doc.id, onDismiss = { importBlocks = false }, onImport = { incoming ->
             document = EditorDocument.merge(document ?: doc, incoming); status = "Unsaved draft"; importBlocks = false
@@ -262,7 +269,7 @@ private fun PipelineAssetPicker(onDismiss: () -> Unit, onDesign: (Design) -> Uni
             when (result) { is DesignCodec.Result.Ok -> copy(result.design); is DesignCodec.Result.Invalid -> message = result.reason; else -> message = "Cannot read this design." }
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = dialogSurface()) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.pipeline_editor_add_artwork), style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.pipeline_editor_name)) }, modifier = Modifier.fillMaxWidth())
@@ -294,7 +301,7 @@ private fun PipelineDependencyPicker(projectId: String, onDismiss: () -> Unit, o
             is PipelineCodec.Result.Invalid -> message = result.diagnostics.joinToString("\n") { it.message }
         } }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = dialogSurface()) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.pipeline_editor_reuse_a_pipeline), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(R.string.pipeline_editor_import_independent_copies_of_its_programs_routines_and_art), style = MaterialTheme.typography.bodyMedium)

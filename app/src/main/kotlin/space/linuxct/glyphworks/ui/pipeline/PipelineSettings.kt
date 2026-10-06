@@ -64,10 +64,10 @@ internal fun AmbientPipelineSettings() {
     }
     LaunchedEffect(revision, assigned, choosing) { reload() }
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { scope.launch { reload() }; onPauseOrDispose {} }
-    fun open(id: String) { context.startActivity(PipelineEditorActivity.intent(context, id)) }
+    fun open(id: String) { context.startActivity(if (Core.pipeline.defaultDocument(id) != null) PipelineEditorActivity.templateIntent(context, id) else PipelineEditorActivity.intent(context, id)) }
     fun create(copy: Boolean) { scope.launch {
         saving = true
-        val source = if (copy) withContext(Dispatchers.IO) { Core.pipelineStore.loadDraft(assigned)?.document ?: Core.pipelineStore.loadApplied(assigned)?.document } else null
+        val source = if (copy) withContext(Dispatchers.IO) { Core.pipeline.defaultDocument(assigned) ?: Core.pipelineStore.loadDraft(assigned)?.document ?: Core.pipelineStore.loadApplied(assigned)?.document } else null
         val newDocument = if (source != null) space.linuxct.glyphworks.pipeline.store.PipelineReferences.remap(source).copy(name = "${source.name} copy") else {
             val program = Program(name = "My Ambient", kind = ProgramKind.AMBIENT, scripts = listOf(Script()))
             PipelineDocument(name = "My Ambient", entryPoint = program.id, programs = listOf(program))
@@ -80,10 +80,11 @@ internal fun AmbientPipelineSettings() {
         }
         saving = false
     } }
-    val doc = snapshot?.document
+    val original = Core.pipeline.defaultDocument(assigned)
+    val doc = original ?: snapshot?.document
     val summary = projects.firstOrNull { it.id == assigned }
     val program = doc?.entry()
-    val quickSettings = program?.parameters?.filter { it.quickSetting }.orEmpty()
+    val quickSettings = if (original == null) program?.parameters?.filter { it.quickSetting }.orEmpty() else emptyList()
     var edited by remember(doc?.id) { mutableStateOf<Map<String, Value>>(emptyMap()) }
     var editGeneration by remember(doc?.id) { mutableStateOf<Long?>(null) }
     val invalid = quickSettings.any { parameter -> parameterValueError(parameter, edited[parameter.id] ?: program!!.values[parameter.id] ?: parameter.default) != null }
@@ -98,11 +99,12 @@ internal fun AmbientPipelineSettings() {
                 PipelineIconWell(Icons.Outlined.AccountTree)
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(doc?.name ?: stringResource(R.string.pipeline_editor_choose_ambient_pipeline), style = MaterialTheme.typography.titleMedium)
+                    if (original != null) Text(stringResource(R.string.pipeline_editor_original_template_make_a_copy_to_change_it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (summary != null) Text("Applied · revision ${summary.appliedRevision}" + if (summary.hasDraft) " · unfinished draft" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box {
                     IconButton(onClick = { manageMenu = true }) { Icon(Icons.Outlined.MoreHoriz, stringResource(R.string.pipeline_refine_manage_pipeline)) }
-                    DropdownMenu(manageMenu, { manageMenu = false }) {
+                    DropdownMenu(manageMenu, { manageMenu = false }, containerColor = dialogSurface()) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_choose)) }, onClick = { manageMenu = false; choosing = true })
                         DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_new)) }, enabled = !saving, onClick = { manageMenu = false; create(false) })
                         DropdownMenuItem(text = { Text(stringResource(R.string.pipeline_editor_duplicate)) }, enabled = doc != null && !saving, onClick = { manageMenu = false; create(true) })
@@ -178,6 +180,9 @@ internal fun AmbientPipelineSettings() {
     if (choosing) AlertDialog(containerColor = dialogSurface(), onDismissRequest = { choosing = false }, title = { Text(stringResource(R.string.pipeline_editor_choose_ambient_pipeline)) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.pipeline_editor_only_applied_revisions_can_run_unfinished_drafts_stay_in_t))
+            Core.pipeline.defaultProjects().filter { it.entry()?.kind == ProgramKind.AMBIENT }.forEach { original ->
+                TextButton(onClick = { Core.pipeline.assignAmbient(original.id); choosing = false }) { Text(stringResource(R.string.pipeline_default_choice, original.name)) }
+            }
             projects.forEach { project -> TextButton(enabled = project.appliedRevision != null, onClick = { Core.pipeline.assignAmbient(project.id); choosing = false }) { Text(project.name + if (project.appliedRevision == null) " · draft" else "") } }
             if (projects.isEmpty()) Text(stringResource(R.string.pipeline_editor_create_a_pipeline_apply_it_in_the_builder_then_choose_it_h))
         }
@@ -195,20 +200,21 @@ internal fun PipelineAdvancedSettings() {
     val pocket by rememberPref(PipelinePrefs.POCKET_PROTECTION){it.getBoolean(PipelinePrefs.POCKET_PROTECTION,true)}
     val revision by rememberPref(PipelinePrefs.LIBRARY_REVISION){it.getLong(PipelinePrefs.LIBRARY_REVISION,0)}
     var projects by remember{mutableStateOf<List<PipelineStore.ProjectSummary>>(emptyList())}
+    val originals = remember { Core.pipeline.defaultProjects().filter { it.entry()?.kind == ProgramKind.CONTROLLER } }
     LaunchedEffect(revision){projects=withContext(Dispatchers.IO){Core.pipelineStore.list().filter{it.kind==ProgramKind.CONTROLLER&&it.appliedRevision!=null}}}
     var choosing by remember{mutableStateOf(false)}
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         val status = when {
             stopped -> stringResource(if (enabled) R.string.pipeline_editor_controller_stopped else R.string.pipeline_editor_standard_pipelines_stopped) + diagnostic.takeIf { it.isNotBlank() }?.let { "\n$it" }.orEmpty()
             diagnostic.isNotBlank() -> diagnostic
-            else -> projects.find { it.id == selected }?.name ?: stringResource(R.string.pipeline_editor_choose_apply_controller)
+            else -> originals.find { it.id == selected }?.name ?: projects.find { it.id == selected }?.name ?: stringResource(R.string.pipeline_editor_choose_apply_controller)
         }
         CustomControlsSettingsContent(enabled, status,
-            onEnabled = { if (!it || projects.any { p -> p.id == selected }) Core.pipeline.setControllerEnabled(it) else choosing = true },
-            onEdit = { if (selected.isNotBlank()) context.startActivity(PipelineEditorActivity.intent(context, selected)) else choosing = true },
+            onEnabled = { if (!it || originals.any { p -> p.id == selected } || projects.any { p -> p.id == selected }) Core.pipeline.setControllerEnabled(it) else choosing = true },
+            onEdit = { if (selected.isNotBlank()) context.startActivity(if (Core.pipeline.defaultDocument(selected) != null) PipelineEditorActivity.templateIntent(context, selected) else PipelineEditorActivity.intent(context, selected)) else choosing = true },
             onStop = { Core.pipeline.stop() }, paused = stopped, onResume = { Core.pipeline.resume() })
         PipelineCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), padding = 0.dp) {
-            PipelineSettingLink(stringResource(R.string.pipeline_editor_choose_controller), Icons.Outlined.AccountTree, projects.find { it.id == selected }?.name) { choosing = true }
+            PipelineSettingLink(stringResource(R.string.pipeline_editor_choose_controller), Icons.Outlined.AccountTree, originals.find { it.id == selected }?.name ?: projects.find { it.id == selected }?.name) { choosing = true }
             if (enabled) {
                 HorizontalDivider(Modifier.padding(horizontal = 18.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .07f))
                 Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -220,6 +226,7 @@ internal fun PipelineAdvancedSettings() {
     }
     if(choosing)AlertDialog(containerColor = dialogSurface(), onDismissRequest={choosing=false},title={Text(stringResource(R.string.pipeline_editor_custom_controls_and_menus))},text={Column(Modifier.verticalScroll(rememberScrollState())) {
         Text(stringResource(R.string.pipeline_editor_apply_a_controller_in_the_builder_then_select_it_here_enab))
+        originals.forEach { original -> TextButton(onClick = { Core.pipeline.setController(original.id); choosing = false }) { Text(stringResource(R.string.pipeline_default_choice, original.name)) } }
         projects.forEach {p->TextButton(onClick={Core.pipeline.setController(p.id);choosing=false}){Text(p.name)}}
         if(projects.isEmpty())Text(stringResource(R.string.pipeline_editor_start_with_the_custom_menu_template_in_create_pipelines))
     }},confirmButton={TextButton(onClick={choosing=false}){Text(stringResource(R.string.pipeline_editor_close))}})
@@ -242,6 +249,7 @@ internal fun PipelineToySettings(toyId:String) {
     if(chooseTrigger)AlertDialog(containerColor = dialogSurface(), onDismissRequest={chooseTrigger=false},title={Text(stringResource(R.string.pipeline_editor_activation_rules))},text={Column(Modifier.verticalScroll(rememberScrollState())) {
         Text(stringResource(R.string.pipeline_editor_choose_an_applied_pipeline_to_watch_for_events_while_a_gly))
         TextButton(onClick={Core.pipeline.setTrigger(toyId,null);chooseTrigger=false}){Text(stringResource(R.string.pipeline_editor_no_additional_rules))}
+        Core.pipeline.defaultProjects().filter { it.entry()?.kind != ProgramKind.CONTROLLER }.forEach { original -> TextButton(onClick = { Core.pipeline.setTrigger(toyId, original.id); chooseTrigger = false }) { Text(stringResource(R.string.pipeline_default_choice, original.name)) } }
         projects.forEach {p->TextButton(onClick={Core.pipeline.setTrigger(toyId,p.id);chooseTrigger=false}){Text(p.name)}}
         if(projects.isEmpty())Text(stringResource(R.string.pipeline_editor_create_a_pipeline_or_copy_an_event_template_in_create_pipe))
     }},confirmButton={TextButton(onClick={chooseTrigger=false}){Text(stringResource(R.string.pipeline_editor_close))}})

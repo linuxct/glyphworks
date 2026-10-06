@@ -26,6 +26,7 @@ import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.WeatherPrefs
 import space.linuxct.glyphworks.notifications.NotificationAccess
 import space.linuxct.glyphworks.ui.*
+import space.linuxct.glyphworks.ui.theme.dialogSurface
 import space.linuxct.pipeline.*
 
 internal fun pipelineMissingSetup(context: Context, document: PipelineDocument): List<String> {
@@ -49,7 +50,7 @@ internal fun PipelineCapabilitiesSheet(document: PipelineDocument, onDismiss: ()
     val audio = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++; Core.pipeline.onProjectApplied(document.id) }
     val location = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++; Core.weather.onConfigurationChanged(); Core.pipeline.onProjectApplied(document.id) }
     fun appSettings() = openInformationSettings(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()))
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = dialogSurface()) {
         Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row { Text(stringResource(R.string.pipeline_editor_permissions_and_sources), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge); TextButton(onClick = onDismiss) { Text(stringResource(R.string.pipeline_editor_done)) } }
             Text(stringResource(R.string.pipeline_editor_editing_and_simulation_work_without_permissions_a_missing), style = MaterialTheme.typography.bodyMedium)

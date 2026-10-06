@@ -30,11 +30,10 @@ internal fun PipelineCard(
     padding: Dp = 18.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
+    Card(
         modifier = modifier,
         shape = glyphCorner(20.dp, 28.dp),
-        color = pipelineSurfaceColor(),
-        border = BorderStroke(.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .055f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(Modifier.padding(padding), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }

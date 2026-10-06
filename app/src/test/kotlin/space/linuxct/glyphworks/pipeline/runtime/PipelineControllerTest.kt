@@ -23,6 +23,30 @@ class PipelineControllerTest {
     @get:Rule val files = TemporaryFolder()
     private fun controller(h: TestHarness, store: PipelineStore = PipelineStore(files.newFolder())) = PipelineController(RuntimeEnvironment.getApplication(), h.prefs, h.ports, h.scheduler, h.size, store)
 
+    @Test fun originalsRemainSelectableWithoutSavingOrOverwritingUserProjects() {
+        val h = TestHarness()
+        val store = PipelineStore(files.newFolder())
+        val controller = controller(h, store)
+        val originalSelection = controller.ambientId
+        val customized = store.loadApplied(originalSelection)!!.document.copy(name = "My unfinished Ambient")
+        assertTrue(store.saveDraft(customized) is PipelineStore.SaveResult.Saved)
+        val savedDraft = store.loadDraft(originalSelection)!!
+        controller.assignAmbient("builtin_ambient")
+        assertEquals("builtin_ambient", controller.document("ambient")!!.id)
+        assertNull(store.loadApplied("builtin_ambient"))
+        assertEquals(savedDraft, store.loadDraft(originalSelection))
+        controller.setController("controller_example")
+        controller.setControllerEnabled(true)
+        assertTrue(controller.controllerMode)
+        assertEquals("controller_example", controller.document(PipelineController.ADVANCED_ID)!!.id)
+        controller.setTrigger("clock", "face_down_clock")
+        assertEquals("face_down_clock", controller.triggerFor("clock"))
+        val restarted = controller(h, store)
+        assertEquals("builtin_ambient", restarted.document("ambient")!!.id)
+        assertEquals("controller_example", restarted.document(PipelineController.ADVANCED_ID)!!.id)
+        assertEquals(savedDraft, store.loadDraft(originalSelection))
+    }
+
     @Test fun legacyAmbientSettingsAndPersistentToyStateSurviveMigrationExactly() {
         for (flags in 0 until 32) {
             val h = TestHarness()

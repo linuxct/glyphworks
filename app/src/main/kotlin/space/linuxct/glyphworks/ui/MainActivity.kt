@@ -3,7 +3,7 @@ package space.linuxct.glyphworks.ui
 import space.linuxct.glyphworks.pipeline.runtime.PipelinePrefs
 import space.linuxct.glyphworks.ui.pipeline.*
 import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialActivity
-import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialChapters
+import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialDialog
 import space.linuxct.pipeline.PipelineRuntime
 
 import android.Manifest
@@ -94,7 +94,7 @@ import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LargeTopAppBar
@@ -183,6 +183,10 @@ import space.linuxct.glyphworks.ui.design.demoTarget
 import space.linuxct.glyphworks.ui.theme.GlyphRadioButton
 import space.linuxct.glyphworks.ui.theme.GlyphSlider
 import space.linuxct.glyphworks.ui.theme.GlyphSwitch
+import space.linuxct.glyphworks.ui.theme.GlyphSegmentedRow
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedColors
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedShape
+import space.linuxct.glyphworks.ui.theme.glyphSegmentedIcon
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.glyphworks.ui.theme.Backdrop
 import space.linuxct.glyphworks.ui.theme.ThinBrush
@@ -506,9 +510,9 @@ private fun MainScreen(startTab: Int = 0) {
                         onDeckGesture = { toyDeckGesture = it },
                     )
                     Tab.CREATE -> Column(Modifier.fillMaxSize().padding(top = pagePadding.calculateTopPadding())) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FilterChip(selected = !pipelineLibrary, onClick = { pipelineLibrary = false }, label = { Text(stringResource(R.string.create_designs_section)) })
-                            FilterChip(selected = pipelineLibrary, onClick = { pipelineLibrary = true }, label = { Text(stringResource(R.string.create_pipelines_section)) })
+                        GlyphSegmentedRow(selected = if (pipelineLibrary) 1 else 0, count = 2, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            SegmentedButton(selected = !pipelineLibrary, onClick = { pipelineLibrary = false }, shape = glyphSegmentedShape(0, 2), colors = glyphSegmentedColors(!pipelineLibrary), icon = glyphSegmentedIcon(!pipelineLibrary)) { Text(stringResource(R.string.create_designs_section)) }
+                            SegmentedButton(selected = pipelineLibrary, onClick = { pipelineLibrary = true }, shape = glyphSegmentedShape(1, 2), colors = glyphSegmentedColors(pipelineLibrary), icon = glyphSegmentedIcon(pipelineLibrary)) { Text(stringResource(R.string.create_pipelines_section)) }
                         }
                         val createPadding = PaddingValues(bottom = pagePadding.calculateBottomPadding())
                         if (pipelineLibrary) PipelineLibraryScreen(contentPadding = createPadding)
@@ -1267,10 +1271,10 @@ private fun CreatorNameRow() {
     }
 }
 
-private enum class TutorialTopic { KEY, AMBIENT, HANDOVER }
+private enum class TutorialTopic { KEY, AMBIENT, HANDOVER, PIPELINE }
 
 @Composable
-private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
+internal fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
     val context = LocalContext.current
     var topic by remember { mutableStateOf<TutorialTopic?>(null) }
     var showAmbientSettings by remember { mutableStateOf(false) }
@@ -1309,10 +1313,14 @@ private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
                 ) { topic = TutorialTopic.HANDOVER }
             }
             restrictedSettingsTutorialItem()
+            item {
+                SetupRow(
+                    title = stringResource(R.string.pipeline_tutorial_title),
+                    subtitle = stringResource(R.string.pipeline_tutorial_subtitle),
+                    good = null,
+                ) { topic = TutorialTopic.PIPELINE }
+            }
         }
-
-        SectionHeader("Pipeline Builder")
-        PipelineTutorialChapters(onChoose = { chapter -> context.startActivity(PipelineTutorialActivity.intent(context, chapter)) })
         Spacer(Modifier.height(innerPadding.calculateBottomPadding() + NAV_PILL_CLEARANCE))
     }
 
@@ -1326,6 +1334,10 @@ private fun TutorialTab(innerPadding: PaddingValues, scrollState: ScrollState) {
             },
         )
         TutorialTopic.HANDOVER -> HandoverTutorialDialog(onDismiss = { topic = null })
+        TutorialTopic.PIPELINE -> PipelineTutorialDialog(onDismiss = { topic = null }, onChoose = { chapter ->
+            topic = null
+            context.startActivity(PipelineTutorialActivity.intent(context, chapter))
+        })
         null -> {}
     }
     if (showAmbientSettings) {
