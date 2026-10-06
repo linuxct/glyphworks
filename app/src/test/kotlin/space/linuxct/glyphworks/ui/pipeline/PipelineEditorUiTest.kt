@@ -49,6 +49,47 @@ class PipelineEditorUiTest {
         ), editor = EditorMetadata(viewport = Viewport(0f, 12f, .9f)))
 
     @Test fun rendersRealWorkspaceLucent() = withEditor(sample(), lucent = true) { _, _ -> save("workspace-lucent") }
+    @Test fun blockContentsStayInsideTheirOutlinesLucent() = checkBlockContainment(lucent = true)
+    @Test fun blockContentsStayInsideTheirOutlinesLegacy() = checkBlockContainment(lucent = false)
+    @Test fun nestedBlockContentsFitAtLargeFontSizes() = checkBlockContainment(lucent = true, fontScale = 1.5f)
+
+    private fun checkBlockContainment(lucent: Boolean, fontScale: Float = 1f) {
+        val condition = Block(id = "condition", op = "flow.if", arguments = mapOf("condition" to Expression.bool(true)),
+            body = listOf(Block(id = "battery", op = "display.toy", arguments = mapOf("toy" to Expression.str("battery"), "slot" to Expression.str("charging"), "priority" to Expression.num(10)))),
+            otherwise = listOf(Block(id = "release", op = "display.release", arguments = mapOf("slot" to Expression.str("charging")), comment = "Return to the selected background.")))
+        // Deeper than the screenshot: titles, descriptions, menus and insertion controls must
+        // still have room when they sit inside several enclosing controls.
+        val doc = PipelineDocument(id = "containment", name = "My Ambient", entryPoint = "ambient", programs = listOf(
+            Program(id = "ambient", kind = ProgramKind.AMBIENT, scripts = listOf(Script(id = "start", blocks = listOf(
+                Block(id = "loop", op = "flow.forever", body = listOf(Block(id = "repeat", op = "flow.repeat", arguments = mapOf("count" to Expression.num(2)), body = listOf(condition))))))))))
+        withEditor(doc, lucent = lucent, fontScale = fontScale) { controller, _ ->
+            compose.onNodeWithContentDescription("Fit all").performClick()
+            compose.waitForIdle()
+            for (id in listOf("loop", "repeat", "condition", "battery", "release")) {
+                val outline = compose.onNodeWithTag("pipeline-block-outline:$id", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                val contents = compose.onAllNodes(hasAnyAncestor(hasTestTag("pipeline-block-outline:$id")), useUnmergedTree = true).fetchSemanticsNodes()
+                assertTrue(contents.isNotEmpty())
+                contents.forEach { node ->
+                    val bounds = node.boundsInRoot
+                    assertTrue("Content escaped $id: $bounds outside $outline", bounds.left >= outline.left && bounds.top >= outline.top && bounds.right <= outline.right && bounds.bottom <= outline.bottom)
+                }
+                val title = compose.onNodeWithTag("pipeline-block-title:$id", useUnmergedTree = true)
+                val titleBounds = title.fetchSemanticsNode().boundsInRoot
+                assertTrue("Title must be inset from $id's outline", titleBounds.left > outline.left && titleBounds.top > outline.top && titleBounds.right < outline.right && titleBounds.bottom < outline.bottom)
+                val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                title.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                assertFalse("Title must wrap within $id", layouts.single().hasVisualOverflow)
+            }
+            val footer = compose.onNodeWithTag("pipeline-insertion:start:condition:OTHERWISE:1", useUnmergedTree = true)
+            footer.assert(hasAnyAncestor(hasTestTag("pipeline-block-outline:release")))
+            save("block-containment-${if (lucent) "lucent" else "legacy"}${if (fontScale > 1f) "-large-font" else ""}")
+            footer.performClick()
+            compose.waitForIdle()
+            assertEquals(BlockLocation("start", "condition", BlockBranch.OTHERWISE, 1), controller.insertion)
+            assertEquals(EditorPanel.PALETTE, controller.panel)
+        }
+    }
+
     @Test fun rendersAmbientBackgroundRoutineAndPalette() = withEditor(BuiltinPipelines.ambient()) { controller, current ->
         compose.runOnIdle { controller.selectedRoutine = current().routines.first().id }
         compose.waitForIdle()

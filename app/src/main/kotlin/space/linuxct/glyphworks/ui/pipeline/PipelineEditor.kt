@@ -129,6 +129,16 @@ fun PipelineEditor(
     }
     val program = current.programs.firstOrNull { it.id == controller.programId } ?: current.entry() ?: current.programs.firstOrNull()
     val routine = current.routines.firstOrNull { it.id == controller.selectedRoutine }
+    val stacks = remember(program?.scripts, routine) {
+        if (routine != null) listOf(WorkspaceStack(routine.id, routine.name, routine.blocks, null))
+        else program?.scripts.orEmpty().map { WorkspaceStack(it.id, it.name, it.blocks, it) }
+    }
+    val stackWidths = remember(stacks) { stacks.associate { it.id to maxOf(312f, blockListWidth(it.blocks)) } }
+    val defaultPositions = remember(stackWidths) {
+        var x = 24f
+        stackWidths.mapValues { (_, width) -> Position(x, 24f).also { x += width + 36f } }
+    }
+    fun stackPosition(id: String) = current.editor.positions[id] ?: defaultPositions[id] ?: Position(24f, 24f)
     val issues = remember(current.programs, current.routines, current.designs, current.bindings, current.entryPoint, current.name, current.panels) { PipelineCodec.validate(current) }
     val viewport = controller.viewportOverride ?: current.editor.viewport
     // A gesture must not rewrite the project (and recompose every block) for each pointer event.
@@ -209,10 +219,10 @@ fun PipelineEditor(
     }
     fun addEvent() {
         val owner = program ?: return
-        val occupied = owner.scripts.mapIndexed { index, script ->
-            val origin = current.editor.positions[script.id] ?: Position(24f + index * 348f, 24f)
+        val occupied = owner.scripts.map { script ->
+            val origin = stackPosition(script.id)
             val height = stackSizes[script.id]?.height?.div(density) ?: 320f
-            Rect(origin.x - 16f, origin.y - 16f, origin.x + 328f, origin.y + height + 16f)
+            Rect(origin.x - 16f, origin.y - 16f, origin.x + (stackWidths[script.id] ?: 312f) + 16f, origin.y + height + 16f)
         }
         var position = Position((24f - viewport.x) / viewport.scale, (24f - viewport.y) / viewport.scale)
         while (occupied.any { it.overlaps(Rect(position.x, position.y, position.x + 312f, position.y + 180f)) }) {
@@ -239,7 +249,7 @@ fun PipelineEditor(
         }
     }
     fun fitAll() {
-        val positions = if (routine != null) listOf(routine.id to (current.editor.positions[routine.id] ?: Position(24f, 24f))) else program?.scripts.orEmpty().mapIndexed { index, script -> script.id to (current.editor.positions[script.id] ?: Position(24f + index * 348f, 24f)) }
+        val positions = stacks.map { it.id to stackPosition(it.id) }
         if (positions.isEmpty()) { setViewport(Viewport()); return }
         val minX = positions.minOf { it.second.x }; val maxX = positions.maxOf { it.second.x + (stackSizes[it.first]?.width?.div(density) ?: 312f) }
         val minY = positions.minOf { it.second.y }; val maxY = positions.maxOf { it.second.y + (stackSizes[it.first]?.height?.div(density) ?: 320f) }
@@ -263,7 +273,7 @@ fun PipelineEditor(
             controller.selectedRoutine = current.routines.firstOrNull { it.id == location.ownerId }?.id
             val owningProgram = current.programs.firstOrNull { p -> p.scripts.any { it.id == location.ownerId } }
             if (owningProgram != null) controller.programId = owningProgram.id
-            val position = current.editor.positions[location.ownerId] ?: Position(24f + (owningProgram?.scripts?.indexOfFirst { it.id == location.ownerId } ?: 0).coerceAtLeast(0) * 348f, 24f)
+            val position = stackPosition(location.ownerId)
             var ancestors = setOf(location.ownerId)
             var parent = location.parentId
             while (parent != null) { ancestors += parent; parent = EditorDocument.location(current, parent)?.parentId }
@@ -427,7 +437,6 @@ fun PipelineEditor(
                     var x = startX
                     while (x < size.width) { var y = startY; while (y < size.height) { drawCircle(gridColor, .7.dp.toPx(), Offset(x, y)); y += step }; x += step }
                 }
-                val stacks = if (routine != null) listOf(WorkspaceStack(routine.id, routine.name, routine.blocks, null)) else program?.scripts.orEmpty().map { WorkspaceStack(it.id, it.name, it.blocks, it) }
                 if (stacks.isEmpty()) Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     PipelineIconWell(Icons.Outlined.AccountTree, size = 72.dp)
                     Spacer(Modifier.height(16.dp))
@@ -435,13 +444,13 @@ fun PipelineEditor(
                     Text(stringResource(R.string.pipeline_editor_choose_when_your_pipeline_runs_then_add_the_blocks_it_shou), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                     if (!readOnly) FilledTonalButton(onClick = ::addEvent, modifier = Modifier.padding(top = 18.dp)) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Text(stringResource(R.string.pipeline_refine_first_event), Modifier.padding(start = 7.dp)) }
                 }
-                stacks.forEachIndexed { index, stack ->
-                    val base = current.editor.positions[stack.id] ?: Position(24f + index * 348f, 24f)
+                stacks.forEach { stack ->
+                    val base = stackPosition(stack.id)
                     val activeDrag = drag?.takeIf { it.stackId == stack.id }
                     val shift = activeDrag?.let { (it.pointer - it.start) / (density * viewport.scale) } ?: Offset.Zero
                     val position = Position(base.x + shift.x, base.y + shift.y)
                     // Keep neighbouring stacks mounted so they slide into view during the gesture.
-                    Column(Modifier.requiredWidth(312.dp).wrapContentHeight(Alignment.Top, unbounded = true)
+                    Column(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).width(stackWidths.getValue(stack.id).dp)
                         .graphicsLayer {
                             val movingViewport = liveViewport.value
                             translationX = (movingViewport.x + position.x * movingViewport.scale) * density
@@ -459,7 +468,7 @@ fun PipelineEditor(
                                     drag = EditorDrag(stackId = stack.id, start = point, pointer = point, origin = base)
                                 }, onDrag = { change, amount -> change.consume(); moveDrag(amount * viewport.scale) }, onDragEnd = { finishDrag() }, onDragCancel = { finishDrag(true) }) }
                                 .clickable { if (stack.script != null) { controller.selectedScript = stack.id; controller.selectedBlock = null; controller.insertion = null; controller.panel = EditorPanel.SCRIPT } else controller.panel = EditorPanel.ROUTINES }) {
-                            Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 PipelineIconWell(if (stack.script == null) Icons.Outlined.AccountTree else Icons.Outlined.Bolt, size = 34.dp)
                                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                                     Text(stringResource(if (stack.script == null) R.string.pipeline_refine_routine else R.string.pipeline_refine_event), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.2.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -590,6 +599,14 @@ fun PipelineEditor(
 
 private data class WorkspaceStack(val id: String, val title: String, val blocks: List<Block>, val script: Script?)
 
+// Each nested branch uses the card's 12 dp inset on both sides and a 12 dp rail.
+// Grow the enclosing stack instead of squeezing deep blocks and their headers to zero width.
+private fun blockListWidth(blocks: List<Block>): Float = blocks.maxOfOrNull { block ->
+    if (BlockCatalog[block.op]?.body == true || block.body.isNotEmpty() || block.otherwise.isNotEmpty()) {
+        maxOf(blockListWidth(block.body), blockListWidth(block.otherwise)) + 36f
+    } else 240f
+} ?: 240f
+
 internal fun roleName(kind: ProgramKind): String = when (kind) { ProgramKind.TOY -> "Interactive toy"; ProgramKind.AMBIENT -> "Ambient background"; ProgramKind.CONTROLLER -> "Custom controls and menus"; ProgramKind.ROUTINE -> "Reusable routine" }
 
 private fun pipelineBlockKindTitle(op: String): String = when (op) {
@@ -622,7 +639,7 @@ private fun BlockList(
             val waiting = block.id in controller.waitingBlockIds
             Surface(color = pipelineSurfaceColor(), shape = glyphCorner(14.dp, 20.dp),
                 border = BorderStroke(if (selected || running || waiting) 1.2.dp else .5.dp, if (selected || running || waiting) MaterialTheme.colorScheme.primary.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurface.copy(alpha = .065f)),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("pipeline-block-outline:${block.id}")
                 .graphicsLayer { alpha = if (block.id == draggingId || !block.enabled) .48f else 1f }
                 .onGloballyPositioned { blockBounds[block.id] = it }.pipelineDemoTarget("block:${block.id}")
                 .semantics { customActions = listOf(
@@ -630,17 +647,17 @@ private fun BlockList(
                     CustomAccessibilityAction("Move block") { controller.movingBlock = block.id; true },
                     CustomAccessibilityAction("Duplicate block") { if (!readOnly) onChange(EditorDocument.duplicate(document, block.id)); !readOnly },
                 ) }) {
-                Column {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
                     Row(Modifier.fillMaxWidth().testTag("pipeline-block:${block.id}").onGloballyPositioned { coordinates = it }
                         .pointerInput(block.id, readOnly, block, scale) { if (!readOnly) detectDragGesturesAfterLongPress(onDragStart = { point -> coordinates?.localToRoot(point)?.let { onDragStart(block, it) } }, onDrag = { change, delta -> change.consume(); onDrag(delta * scale) }, onDragEnd = onDragEnd, onDragCancel = onDragCancel) }
-                        .clickable { controller.selectedBlock = block.id; controller.insertion = null; controller.panel = EditorPanel.BLOCK }.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                        .clickable { controller.selectedBlock = block.id; controller.insertion = null; controller.panel = EditorPanel.BLOCK }, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).padding(end = 4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Icon(pipelineCategoryIcon(spec?.category.orEmpty()), null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(spec?.category.orEmpty().uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = .9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(spec?.category.orEmpty().uppercase(), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = .9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.height(3.dp))
-                            Text(pipelineBlockTitle(block), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(pipelineBlockTitle(block), modifier = Modifier.testTag("pipeline-block-title:${block.id}"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                             if (running || waiting) Text(if (waiting) "Waiting" else "Running", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             val summary = blockDisplaySummary(if (block.op == "display.toy") block.copy(arguments = block.arguments - "toy") else block, document)
                             if (summary.isNotBlank()) Text(summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -665,20 +682,25 @@ private fun BlockList(
                         }
                     }
                     if (!folded) {
-                        if (spec?.body == true || block.body.isNotEmpty()) Column(Modifier.padding(start = 12.dp, end = 8.dp, bottom = 8.dp).flowRail(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)).padding(start = 10.dp)) {
+                        if (spec?.body == true || block.body.isNotEmpty()) Column(Modifier.padding(top = 8.dp).flowRail(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)).padding(start = 12.dp)) {
                             BlockList(document, block.body, BlockLocation(location.ownerId, block.id), controller, targets, blockBounds, dropTarget, draggingId, readOnly, onInsert, onChange, onDragStart, onDrag, onDragEnd, onDragCancel, scale)
                         }
                         if (spec?.otherwise == true || block.otherwise.isNotEmpty()) {
-                            Text(stringResource(R.string.pipeline_editor_otherwise), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 14.dp, top = 6.dp))
-                            Column(Modifier.padding(start = 12.dp, end = 8.dp, bottom = 8.dp).flowRail(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)).padding(start = 10.dp)) {
+                            Text(stringResource(R.string.pipeline_editor_otherwise), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+                            Column(Modifier.flowRail(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)).padding(start = 12.dp)) {
                                 BlockList(document, block.otherwise, BlockLocation(location.ownerId, block.id, BlockBranch.OTHERWISE), controller, targets, blockBounds, dropTarget, draggingId, readOnly, onInsert, onChange, onDragStart, onDrag, onDragEnd, onDragCancel, scale)
                             }
+                        }
+                    }
+                    if (index == blocks.lastIndex) {
+                        Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            InsertionZone(location.copy(index = blocks.size), targets, dropTarget, readOnly, empty = false, onInsert = onInsert, tail = true)
                         }
                     }
                 }
             }
         }
-        InsertionZone(location.copy(index = blocks.size), targets, dropTarget, readOnly, blocks.isEmpty(), onInsert, tail = true)
+        if (blocks.isEmpty()) InsertionZone(location.copy(index = 0), targets, dropTarget, readOnly, empty = true, onInsert = onInsert, tail = true)
     }
 }
 
@@ -692,12 +714,12 @@ private fun InsertionZone(location: BlockLocation, targets: MutableMap<BlockLoca
     DisposableEffect(location) { onDispose { targets.remove(location) } }
     val active = selected == location
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    Box(Modifier.fillMaxWidth().testTag("pipeline-insertion:${location.ownerId}:${location.parentId}:${location.branch}:${location.index}").height(if (empty) 50.dp else if (tail) 36.dp else 24.dp).onGloballyPositioned { targets[location] = it }
+    Box(Modifier.fillMaxWidth().testTag("pipeline-insertion:${location.ownerId}:${location.parentId}:${location.branch}:${location.index}").heightIn(min = if (empty) 50.dp else if (tail) 36.dp else 24.dp).onGloballyPositioned { targets[location] = it }
         .clip(RoundedCornerShape(12.dp)).background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else Color.Transparent)
         .clickable(enabled = !readOnly) { onInsert(location) }, contentAlignment = Alignment.Center) {
-        if (empty || active || tail) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        if (empty || active || tail) Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             if (!readOnly) Icon(if (active) Icons.Outlined.South else Icons.Outlined.Add, null, Modifier.size(14.dp), tint = if (active) MaterialTheme.colorScheme.primary else ink.copy(alpha = .65f))
-            Text(stringResource(if (active) R.string.pipeline_refine_drop_here else if (readOnly) R.string.pipeline_refine_end else R.string.pipeline_refine_add_block), style = MaterialTheme.typography.labelSmall, color = if (active) MaterialTheme.colorScheme.primary else ink.copy(alpha = .7f))
-        } else Box(Modifier.width(1.dp).fillMaxHeight().background(ink.copy(alpha = .16f)))
+            Text(stringResource(if (active) R.string.pipeline_refine_drop_here else if (readOnly) R.string.pipeline_refine_end else R.string.pipeline_refine_add_block), modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall, color = if (active) MaterialTheme.colorScheme.primary else ink.copy(alpha = .7f))
+        } else Box(Modifier.width(1.dp).height(24.dp).background(ink.copy(alpha = .16f)))
     }
 }
