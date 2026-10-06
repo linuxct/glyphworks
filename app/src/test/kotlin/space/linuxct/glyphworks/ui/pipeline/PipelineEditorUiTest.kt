@@ -60,7 +60,7 @@ class PipelineEditorUiTest {
         // Deeper than the screenshot: titles, descriptions, menus and insertion controls must
         // still have room when they sit inside several enclosing controls.
         val doc = PipelineDocument(id = "containment", name = "My Ambient", entryPoint = "ambient", programs = listOf(
-            Program(id = "ambient", kind = ProgramKind.AMBIENT, scripts = listOf(Script(id = "start", blocks = listOf(
+            Program(id = "ambient", name="ambient", kind = ProgramKind.AMBIENT, scripts = listOf(Script(id = "start", blocks = listOf(
                 Block(id = "loop", op = "flow.forever", body = listOf(Block(id = "repeat", op = "flow.repeat", arguments = mapOf("count" to Expression.num(2)), body = listOf(condition))))))))))
         withEditor(doc, lucent = lucent, fontScale = fontScale) { controller, _ ->
             compose.onNodeWithContentDescription("Fit all").performClick()
