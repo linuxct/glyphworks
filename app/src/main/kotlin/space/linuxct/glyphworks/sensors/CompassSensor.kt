@@ -28,6 +28,14 @@ class CompassSensor(private val app: Context) : AzimuthPort, SensorEventListener
     @Volatile private var lastPollAt = 0L
     private var started = false
 
+    @Synchronized override fun setActive(active: Boolean) {
+        if (active) return
+        mainHandler.removeCallbacks(idleCheck)
+        if (started) sensorManager?.unregisterListener(this)
+        started = false
+        azimuth = null; haveGravity = false; haveGeo = false
+    }
+
     private val idleCheck = object : Runnable {
         override fun run() {
             synchronized(this@CompassSensor) {

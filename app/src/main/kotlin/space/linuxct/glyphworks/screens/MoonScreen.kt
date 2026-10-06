@@ -53,7 +53,7 @@ class MoonScreen : GlyphScreen {
         private const val FULL_MOON_PHASE = 0.5
         private const val CHORD_EPSILON = 0.0001f
 
-        fun renderFrame(size: Int, phase: Double): IntArray {
+        fun renderFrame(size: Int, phase: Double, earthshine: Float = EARTHSHINE, softness: Float = SOFT): IntArray {
             val n = if (size >= 25) 25 else 13
             val map = if (n == 25) MOON_25 else MOON_13
             val out = IntArray(size * size)
@@ -74,9 +74,9 @@ class MoonScreen : GlyphScreen {
                     val xn = (dx / chord).coerceIn(-1f, 1f)
                     // Signed distance past the terminator, positive on the lit side.
                     val signed = if (waxing) xn - terminator else -xn - terminator
-                    val litFactor = (0.5f + signed / (2f * SOFT)).coerceIn(0f, 1f)
+                    val litFactor = (0.5f + signed / (2f * softness.coerceIn(0.001f, 1f))).coerceIn(0f, 1f)
 
-                    val bright = base * (EARTHSHINE + (1f - EARTHSHINE) * litFactor)
+                    val bright = base * (earthshine.coerceIn(0f, 1f) + (1f - earthshine.coerceIn(0f, 1f)) * litFactor)
                     out[y * size + x] = bright.toInt().coerceIn(0, MAX_BRIGHTNESS)
                 }
             }

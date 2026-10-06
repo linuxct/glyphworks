@@ -1,5 +1,6 @@
 package space.linuxct.glyphworks.util
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -38,8 +39,27 @@ class JavaRandomPort : RandomPort {
 
 class BatteryReader(private val app: Context) : BatteryPort {
 
-    private fun stickyBatteryStatus(): Intent? =
-        app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    @Volatile private var cachedBattery: Intent? = null
+    private var sampledAt = 0L
+    private var active = false
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { if (intent?.action == Intent.ACTION_BATTERY_CHANGED) cachedBattery = intent }
+    }
+    @Synchronized override fun setActive(active: Boolean) {
+        if (this.active == active) return
+        this.active = active
+        if (active) cachedBattery = app.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: cachedBattery
+        else runCatching { app.unregisterReceiver(receiver) }
+    }
+    @Synchronized private fun stickyBatteryStatus(): Intent? {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (cachedBattery == null || (!active && now - sampledAt >= 1000)) {
+            cachedBattery = app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)); sampledAt = now
+        }
+        return cachedBattery
+    }
+    override fun isPlugged(): Boolean? = stickyBatteryStatus()?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)?.takeIf { it >= 0 }?.let { it != 0 }
+    override fun isFull(): Boolean? = stickyBatteryStatus()?.getIntExtra(BatteryManager.EXTRA_STATUS, -1)?.takeIf { it >= 0 }?.let { it == BatteryManager.BATTERY_STATUS_FULL }
 
     override fun levelPercent(): Int {
         val intent = stickyBatteryStatus() ?: return 100

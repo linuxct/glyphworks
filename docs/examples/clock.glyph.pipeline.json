@@ -1,0 +1,26 @@
+{
+  "format": "glyph.pipeline",
+  "formatVersion": 1,
+  "id": "example_clock_project",
+  "name": "Clock on start",
+  "author": "GlyphWorks",
+  "createdAt": "2026-10-06T00:00:00Z",
+  "modifiedAt": "2026-10-06T00:00:00Z",
+  "entryPoint": "example_clock",
+  "panels": [13, 25],
+  "requires": [{"capability": "native.clock", "version": 1}],
+  "programs": [{
+    "id": "example_clock",
+    "name": "Clock",
+    "kind": "TOY",
+    "scripts": [{
+      "id": "clock_start",
+      "trigger": {"event": "start"},
+      "blocks": [{
+        "id": "clock_display",
+        "op": "display.toy",
+        "arguments": {"toy": {"op": "literal", "value": {"type": "text", "value": "clock"}}}
+      }]
+    }]
+  }]
+}

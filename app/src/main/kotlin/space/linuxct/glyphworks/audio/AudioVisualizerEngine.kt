@@ -23,8 +23,9 @@ class AudioVisualizerEngine(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var visualizer: Visualizer? = null
     private var captureBuf = ByteArray(0)
-    private var smoothed = FloatArray(0)
-    private var bandEdges = IntArray(0)
+    private data class Profile(var smoothed: FloatArray = FloatArray(0), var bandEdges: IntArray = IntArray(0))
+    private val profiles = mutableMapOf<Pair<Int, Int>, Profile>()
+    private val captureCache = SpectrumCaptureCache()
 
     @Volatile private var lastPollAt = 0L
     @Volatile private var lastFailAt = 0L
@@ -41,24 +42,28 @@ class AudioVisualizerEngine(
         }
     }
 
+    override fun bands(n: Int): FloatArray? = bands(n, prefs.getInt(PrefKeys.VISUALIZER_TUNING, PrefKeys.VISUALIZER_TUNING_DEF))
+
     @Synchronized
-    override fun bands(n: Int): FloatArray? {
+    override fun bands(n: Int, tuning: Int): FloatArray? {
         lastPollAt = System.currentTimeMillis()
         if (app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             return null
         }
         val engine = visualizer ?: create() ?: return null
-        if (captureBuf.size != engine.captureSize) captureBuf = ByteArray(engine.captureSize)
-        val status = try {
-            engine.getFft(captureBuf)
-        } catch (e: Exception) {
-            Log.w(TAG, "getFft failed", e)
-            releaseLocked()
-            lastFailAt = System.currentTimeMillis()
-            return null
-        }
-        if (status != Visualizer.SUCCESS) return null
-        return toBands(captureBuf, n)
+        return captureCache.sample(android.os.SystemClock.elapsedRealtime(), n.coerceIn(1, 64), tuning.coerceIn(CALMEST_TUNING, LIVELIEST_TUNING), read = {
+            if (captureBuf.size != engine.captureSize) captureBuf = ByteArray(engine.captureSize)
+            val status = try { engine.getFft(captureBuf) } catch (failure: Exception) {
+                Log.w(TAG, "getFft failed", failure)
+                releaseLocked(); lastFailAt = System.currentTimeMillis()
+                Visualizer.ERROR
+            }
+            if (status == Visualizer.SUCCESS) captureBuf else null
+        }, convert = ::toBands)
+    }
+
+    @Synchronized override fun setActive(active: Boolean) {
+        if (!active) { mainHandler.removeCallbacks(idleCheck); releaseLocked() }
     }
 
     private fun create(): Visualizer? {
@@ -91,12 +96,13 @@ class AudioVisualizerEngine(
             Log.d(TAG, "Visualizer released")
         }
         visualizer = null
+        captureCache.clear()
+        profiles.clear()
     }
 
     // The FFT buffer holds DC, then Nyquist, then (re, im) pairs.
-    private fun toBands(fft: ByteArray, n: Int): FloatArray {
-        val tuning = prefs.getInt(PrefKeys.VISUALIZER_TUNING, PrefKeys.VISUALIZER_TUNING_DEF)
-            .coerceIn(CALMEST_TUNING, LIVELIEST_TUNING)
+    private fun toBands(fft: ByteArray, n: Int, tuning: Int): FloatArray {
+        val profile = profiles.getOrPut(n to tuning) { Profile() }
         val gain = GAIN_BASE + tuning * GAIN_PER_STEP
         val attack = ATTACK_BASE + tuning * ATTACK_PER_STEP
         val decay = DECAY_BASE + (LIVELIEST_TUNING - tuning) * DECAY_PER_STEP
@@ -104,8 +110,10 @@ class AudioVisualizerEngine(
         val pairs = (fft.size - 2) / 2
         val twoThirdsOfNyquist = pairs * 2 / 3
         val maxBin = twoThirdsOfNyquist.coerceAtLeast(n + 1)
-        if (bandEdges.size != n + 1) bandEdges = buildLogEdges(n, maxBin)
-        if (smoothed.size != n) smoothed = FloatArray(n)
+        if (profile.bandEdges.size != n + 1) profile.bandEdges = buildLogEdges(n, maxBin)
+        if (profile.smoothed.size != n) profile.smoothed = FloatArray(n)
+        val bandEdges = profile.bandEdges
+        val smoothed = profile.smoothed
 
         val out = FloatArray(n)
         var rawMax = 0f

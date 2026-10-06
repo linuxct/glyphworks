@@ -36,6 +36,18 @@ class CustomScreen : GlyphScreen {
     private var playing = false
     private var pendingFrame: Cancelable? = null
 
+    override fun behaviorState(): Map<String, Any> = mapOf("phase" to if (playing) "playing" else "paused", "playing" to playing, "frame" to index, "frames" to frames.size)
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        when (name) {
+            "play" -> if (!playing && animated()) { playing = true; if (index >= frames.size - 1) index = 0; push(); arm() }
+            "pause" -> { cancelChain(); playing = false }
+            "restart" -> { cancelChain(); index = 0; playing = animated(); push(); if (playing) arm() }
+            "frame" -> { cancelChain(); playing = false; index = ((arguments["index"] as? Number)?.toInt() ?: 0).coerceIn(0, (frames.size - 1).coerceAtLeast(0)); push() }
+            else -> return false
+        }
+        return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         cancelChain()

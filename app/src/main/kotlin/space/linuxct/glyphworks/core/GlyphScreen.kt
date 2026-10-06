@@ -30,6 +30,16 @@ interface GlyphScreen {
     val instantAction: Boolean get() = false
 
     fun onActivate(ctx: ScreenContext)
+    /** Optional scoped preview suspension; true means the screen retains its running state. */
+    fun suspendForPreview(): Boolean = false
+    fun resumeFromPreview() {}
+
     fun onDeactivate()
     fun onEvent(event: String) {}
+
+    /** Primitive, hardware-free state exposed to programmable native behavior blocks. */
+    fun behaviorState(): Map<String, Any> = emptyMap()
+
+    /** Returns true only when the behavior recognized the command. */
+    fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean = false
 }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pipeline_refine_workspace_original">Original · read only</string>
+    <string name="pipeline_refine_check">Check pipeline (%1$d)</string>
+    <string name="pipeline_refine_event_count">Events · %1$d</string>
+    <string name="pipeline_refine_preview">Preview</string>
+    <string name="pipeline_refine_close_preview">Close preview</string>
+    <string name="pipeline_refine_routine">ROUTINE</string>
+    <string name="pipeline_refine_event">EVENT</string>
+    <string name="pipeline_refine_drop_here">Insert here</string>
+    <string name="pipeline_refine_end">End</string>
+    <string name="pipeline_refine_add_block">Add block</string>
+    <string name="pipeline_refine_first_event">Add your first event</string>
+    <string name="pipeline_refine_zoom_in">Zoom in</string>
+    <string name="pipeline_refine_zoom_out">Zoom out</string>
+    <string name="pipeline_refine_adding_to">In %1$s</string>
+    <string name="pipeline_refine_new_event">New event</string>
+    <string name="pipeline_refine_copy_hint">Make a copy in the library to edit this original.</string>
+    <string name="pipeline_refine_no_blocks">No matching blocks. Try a different search.</string>
+    <string name="pipeline_refine_clear_filters">Clear filters</string>
+</resources>

@@ -1,0 +1,39 @@
+{
+  "format": "glyph.pipeline",
+  "formatVersion": 1,
+  "id": "example_counter_project",
+  "name": "A counter made of blocks",
+  "author": "GlyphWorks",
+  "createdAt": "2026-10-06T00:00:00Z",
+  "modifiedAt": "2026-10-06T00:00:00Z",
+  "entryPoint": "example_counter",
+  "panels": [13, 25],
+  "programs": [{
+    "id": "example_counter",
+    "name": "Counter",
+    "kind": "TOY",
+    "variables": [{"id": "count", "name": "Count", "type": "NUMBER", "initial": {"type": "number", "value": 0}}],
+    "scripts": [{
+      "id": "counter_press",
+      "trigger": {"event": "key.action"},
+      "blocks": [{
+        "id": "counter_increment",
+        "op": "variable.change",
+        "arguments": {"variable": {"value": {"type": "text", "value": "count"}}}
+      }]
+    }, {
+      "id": "counter_render",
+      "trigger": {"event": "tick"},
+      "blocks": [
+        {"id": "counter_scene", "op": "scene.create"},
+        {"id": "counter_clear", "op": "scene.clear"},
+        {"id": "counter_number", "op": "scene.text", "arguments": {
+          "text": {"op": "variable", "key": "count"},
+          "x": {"value": {"type": "number", "value": 4}},
+          "y": {"value": {"type": "number", "value": 4}}
+        }},
+        {"id": "counter_present", "op": "scene.present"}
+      ]
+    }]
+  }]
+}

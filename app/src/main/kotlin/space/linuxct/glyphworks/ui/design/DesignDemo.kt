@@ -5,17 +5,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import kotlinx.coroutines.delay
 import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.core.design.DEFAULT_LEVELS
 import space.linuxct.glyphworks.core.design.DESIGN_FORMAT
@@ -46,42 +40,7 @@ internal enum class DemoTarget {
     TOP_BAR,
 }
 
-private data class DemoKey(val target: DemoTarget, val index: Int)
-
-@Stable
-internal class DemoTargets {
-
-    private val bounds = mutableStateMapOf<DemoKey, Rect>()
-
-    fun report(target: DemoTarget, index: Int, rect: Rect) {
-        val key = DemoKey(target, index)
-        if (bounds[key] != rect) bounds[key] = rect
-    }
-
-    fun forget(target: DemoTarget, index: Int) {
-        bounds.remove(DemoKey(target, index))
-    }
-
-    fun boundsOf(target: DemoTarget, index: Int): Rect? = bounds[DemoKey(target, index)]
-
-    fun centerOf(target: DemoTarget, index: Int): Offset? = boundsOf(target, index)?.center
-
-    fun unionOf(target: DemoTarget): Rect? {
-        var union: Rect? = null
-        for ((key, rect) in bounds) {
-            if (key.target != target) continue
-            union = union?.let {
-                Rect(
-                    left = minOf(it.left, rect.left),
-                    top = minOf(it.top, rect.top),
-                    right = maxOf(it.right, rect.right),
-                    bottom = maxOf(it.bottom, rect.bottom),
-                )
-            } ?: rect
-        }
-        return union
-    }
-}
+internal typealias DemoTargets = space.linuxct.glyphworks.ui.tutorial.TourTargets<DemoTarget>
 
 internal val LocalDemoTargets = compositionLocalOf<DemoTargets?> { null }
 
@@ -94,106 +53,8 @@ internal fun Modifier.demoTarget(target: DemoTarget, index: Int = 0): Modifier {
     return onGloballyPositioned { targets.report(target, index, it.boundsInRoot()) }
 }
 
-@Stable
-internal class DemoGhost {
-
-    var position by mutableStateOf<Offset?>(null)
-        private set
-
-    var press by mutableFloatStateOf(0f)
-        private set
-
-    fun moveTo(point: Offset) {
-        position = point
-    }
-
-    fun pressTo(fraction: Float) {
-        press = fraction.coerceIn(0f, 1f)
-    }
-
-    fun hide() {
-        position = null
-        press = 0f
-    }
-}
-
-/**
- * Played, a step animates. Replayed with [instant], every wait and glide returns at once.
- * An instant path must never call `delay` or `withFrameNanos`: a replay runs inside an effect
- * that may already be cancelled, and suspending there would throw.
- */
-@Stable
-internal class DemoActor(
-    private val ghost: DemoGhost,
-    private val targets: DemoTargets,
-    private val instant: Boolean,
-) {
-
-    fun centerOf(target: DemoTarget, index: Int = 0): Offset? = targets.centerOf(target, index)
-
-    fun boundsOf(target: DemoTarget, index: Int = 0): Rect? = targets.boundsOf(target, index)
-
-    suspend fun beat(ms: Long) {
-        if (!instant) delay(ms)
-    }
-
-    suspend fun glideTo(point: Offset, ms: Long = GLIDE_MS) {
-        if (instant) return
-        val from = ghost.position
-        if (from == null) {
-            ghost.moveTo(point)
-            return
-        }
-        animate(ms) { t ->
-            val e = ease(t)
-            ghost.moveTo(Offset(from.x + (point.x - from.x) * e, from.y + (point.y - from.y) * e))
-        }
-    }
-
-    suspend fun tap(target: DemoTarget, index: Int = 0) {
-        val point = centerOf(target, index) ?: return
-        glideTo(point)
-        if (instant) return
-        animate(TAP_MS) { t -> ghost.pressTo(if (t < 0.5f) t * 2f else (1f - t) * 2f) }
-        ghost.pressTo(0f)
-        beat(TAP_SETTLE_MS)
-    }
-
-    suspend fun holdOn(target: DemoTarget, index: Int = 0) {
-        val point = centerOf(target, index) ?: return
-        glideTo(point)
-        if (instant) return
-        animate(HOLD_MS) { t -> ghost.pressTo(t) }
-        ghost.pressTo(1f)
-    }
-
-    suspend fun release() {
-        if (instant) return
-        ghost.pressTo(0f)
-        beat(TAP_SETTLE_MS)
-    }
-
-    fun hide() = ghost.hide()
-
-    private suspend inline fun animate(ms: Long, block: (Float) -> Unit) {
-        val span = ms.coerceAtLeast(1L)
-        val t0 = withFrameNanos { it }
-        while (true) {
-            val t = withFrameNanos { now -> ((now - t0) / 1_000_000f) / span }
-            block(t.coerceIn(0f, 1f))
-            if (t >= 1f) return
-        }
-    }
-
-    private companion object {
-        const val GLIDE_MS = 460L
-        const val TAP_MS = 220L
-        const val TAP_SETTLE_MS = 260L
-        const val HOLD_MS = 520L
-
-        fun ease(t: Float): Float = t * t * (3f - 2f * t)
-    }
-}
+internal typealias DemoGhost = space.linuxct.glyphworks.ui.tutorial.TourGhost
+internal typealias DemoActor = space.linuxct.glyphworks.ui.tutorial.TourActor<DemoTarget>
 
 internal fun demoDesign(home: PokemonCodename, name: String): Design = Design(
     format = DESIGN_FORMAT,

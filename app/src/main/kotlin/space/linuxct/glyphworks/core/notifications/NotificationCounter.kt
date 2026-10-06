@@ -1,7 +1,7 @@
 package space.linuxct.glyphworks.core.notifications
 
 /**
- * Only the metadata needed to count outstanding notifications. [key] is the platform's
+ * Only the metadata needed to count notifications and route package-level events. [key] is the platform's
  * opaque notification key; [groupKey] must distinguish packages and users, or be null for
  * an ungrouped notification. Notification contents, badge numbers, and intents never enter
  * this model.
@@ -14,6 +14,7 @@ data class NotificationMetadata(
     val isOngoing: Boolean = false,
     val isForegroundService: Boolean = false,
     val isMedia: Boolean = false,
+    val packageName: String = "",
 ) {
     val isCountable: Boolean
         get() = isClearable && !isOngoing && !isForegroundService && !isMedia

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pipeline_field_choose">Choose…</string>
+    <string name="pipeline_field_search">Search</string>
+    <string name="pipeline_field_no_matches">No matching options.</string>
+    <string name="pipeline_field_expand">Expand section</string>
+    <string name="pipeline_field_collapse">Collapse section</string>
+    <string name="pipeline_field_unit">Unit</string>
+    <string name="pipeline_field_ms">ms</string>
+    <string name="pipeline_field_seconds">seconds</string>
+    <string name="pipeline_field_minutes">minutes</string>
+    <string name="pipeline_field_seconds_short">s</string>
+    <string name="pipeline_field_minutes_short">min</string>
+    <string name="pipeline_field_duration">Duration</string>
+    <string name="pipeline_field_add_unit">Add a measurement unit</string>
+    <string name="pipeline_field_fixed_value">Fixed value</string>
+    <string name="pipeline_field_change_source">Change source</string>
+    <string name="pipeline_field_value_source">Use a value from</string>
+    <string name="pipeline_field_custom_input">Use a custom input path</string>
+    <string name="pipeline_field_ignore_result">Don\'t store result</string>
+    <string name="pipeline_field_edit_design">Edit design</string>
+    <string name="pipeline_field_draw_design">Draw a design</string>
+    <string name="pipeline_field_toy_options">Toy options</string>
+    <string name="pipeline_field_inherit_settings">Uses this toy’s settings. Customize only what you need.</string>
+    <plurals name="pipeline_field_override_count">
+        <item quantity="one">%1$d customized setting</item>
+        <item quantity="other">%1$d customized settings</item>
+    </plurals>
+    <string name="pipeline_field_command_options">Action options</string>
+    <plurals name="pipeline_field_custom_value_count">
+        <item quantity="one">%1$d custom value</item>
+        <item quantity="other">%1$d custom values</item>
+    </plurals>
+    <string name="pipeline_field_timing_placement">Timing and advanced options</string>
+    <string name="pipeline_field_default_behavior">Default timing, placement and behavior.</string>
+    <string name="pipeline_field_original_artwork">Original artwork</string>
+    <plurals name="pipeline_field_artwork_count">
+        <item quantity="one">%1$d artwork replacement</item>
+        <item quantity="other">%1$d artwork replacements</item>
+    </plurals>
+    <string name="pipeline_field_replace_artwork">Replace a drawing</string>
+    <string name="pipeline_field_call_inputs">Inputs</string>
+    <string name="pipeline_field_block_details">Block details</string>
+    <string name="pipeline_field_enabled_summary">Enabled · no comment</string>
+    <string name="pipeline_field_disabled_summary">Disabled · skipped when the pipeline runs</string>
+    <string name="pipeline_field_custom_event">Use a named signal or custom event</string>
+    <string name="pipeline_field_stable_for">Must remain true for</string>
+    <string name="pipeline_field_event_behavior">While this event runs</string>
+    <string name="pipeline_field_event_behavior_summary">Repeat handling, priority and whether the event is enabled.</string>
+    <string name="pipeline_field_use_toy_setting">Use the toy’s setting</string>
+    <string name="pipeline_field_customize_setting">Customize a setting</string>
+    <string name="pipeline_field_block_settings">Block settings</string>
+    <string name="pipeline_field_event_settings">Event settings</string>
+    <string name="pipeline_field_background_choice">%1$s · background</string>
+    <string name="pipeline_field_event_intro">Choose what starts these blocks, then add a condition if needed.</string>
+    <string name="pipeline_field_clock_plain">Plain digits</string>
+    <string name="pipeline_field_clock_bar">Digits with battery bar</string>
+    <string name="pipeline_field_clock_ring">Digits with battery ring</string>
+    <string name="pipeline_field_clock_analog">Analog</string>
+    <string name="pipeline_field_bars">Bars</string>
+    <string name="pipeline_field_mirrored_bars">Mirrored bars</string>
+    <string name="pipeline_field_palette">Palette</string>
+    <string name="pipeline_field_coin_letters">Letters (H/T)</string>
+    <string name="pipeline_field_coin_portrait">Portrait and numeral</string>
+    <string name="pipeline_field_celsius">°C · Celsius</string>
+    <string name="pipeline_field_fahrenheit">°F · Fahrenheit</string>
+    <string name="pipeline_field_native_purpose">Choose a toy, then tailor its behavior or artwork.</string>
+</resources>

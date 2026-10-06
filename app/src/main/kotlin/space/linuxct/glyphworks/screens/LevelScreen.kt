@@ -44,7 +44,8 @@ class LevelScreen : GlyphScreen {
         private const val CELL_HALF_WIDTH = 0.5f
 
         /** Follows [InclinePort]: positive means that edge of the device is the low one. */
-        fun renderFrame(size: Int, pitchDeg: Float?, rollDeg: Float?): IntArray {
+        fun renderFrame(size: Int, pitchDeg: Float?, rollDeg: Float?, ballScale: Float = 1f, targetScale: Float = 1f,
+                        maximumTilt: Float = MAX_TILT_DEG, tolerance: Float = TOLERANCE_DEG): IntArray {
             val canvas = MatrixCanvas(size)
             val centre = (size - 1) / 2f
             val centreCell = size / 2
@@ -55,15 +56,15 @@ class LevelScreen : GlyphScreen {
             canvas.light(size - 1, centreCell, EDGE)
 
             if (pitchDeg == null || rollDeg == null) {
-                canvas.ring(centre, centre, ringInner(size), ringOuter(size), TARGET_IDLE)
+                canvas.ring(centre, centre, ringInner(size) * targetScale.coerceIn(0f, 2f), ringOuter(size) * targetScale.coerceIn(0f, 2f), TARGET_IDLE)
                 // Brighter than the idle ring, or the two blur together at 13 columns.
                 val textTop = size / 2 - Font3x5.HEIGHT / 2
                 Font3x5.drawStringCentered(canvas, "?", textTop, NO_READING)
                 return canvas.copyOut()
             }
 
-            val target = if (isLevel(pitchDeg, rollDeg)) TARGET_LEVEL else TARGET_IDLE
-            canvas.ring(centre, centre, ringInner(size), ringOuter(size), target)
+            val target = if (hypot(pitchDeg.toDouble(), rollDeg.toDouble()) <= tolerance.coerceAtLeast(0f)) TARGET_LEVEL else TARGET_IDLE
+            canvas.ring(centre, centre, ringInner(size) * targetScale.coerceIn(0f, 2f), ringOuter(size) * targetScale.coerceIn(0f, 2f), target)
 
             // Positive roll means the right edge is low, so the ball goes to +x. Positive
             // pitch means the top edge is low, and rows grow downward, so it goes to -y.
@@ -72,13 +73,13 @@ class LevelScreen : GlyphScreen {
             // the centre cell. Outside it, the tolerance comes off the magnitude and the
             // remaining travel spreads over TOLERANCE_DEG..MAX_TILT_DEG, so the ball
             // eases out yet still reaches the edge at MAX_TILT_DEG.
-            val radius = ballRadius(size)
+            val radius = ballRadius(size) * ballScale.coerceIn(0.1f, 2f)
             val reach = centre - radius - CELL_HALF_WIDTH
             val tiltDeg = hypot(pitchDeg.toDouble(), rollDeg.toDouble()).toFloat()
-            val cellsPerDegree = if (tiltDeg <= TOLERANCE_DEG) {
+            val cellsPerDegree = if (tiltDeg <= tolerance.coerceAtLeast(0f)) {
                 0f
             } else {
-                val travel = (tiltDeg - TOLERANCE_DEG) / (MAX_TILT_DEG - TOLERANCE_DEG)
+                val travel = (tiltDeg - tolerance.coerceAtLeast(0f)) / (maximumTilt - tolerance.coerceAtLeast(0f)).coerceAtLeast(0.1f)
                 clampUnit(travel) * reach / tiltDeg
             }
             val dx = rollDeg * cellsPerDegree

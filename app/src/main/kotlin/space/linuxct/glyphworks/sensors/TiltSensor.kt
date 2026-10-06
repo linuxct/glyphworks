@@ -19,6 +19,14 @@ class TiltSensor(app: Context) : TiltPort, SensorEventListener {
     @Volatile private var lastPollAt = 0L
     private var started = false
 
+    @Synchronized override fun setActive(active: Boolean) {
+        if (active) return
+        mainHandler.removeCallbacks(idleCheck)
+        if (started) sensorManager?.unregisterListener(this)
+        started = false
+        x = 0f; y = 0f
+    }
+
     private val idleCheck = object : Runnable {
         override fun run() {
             synchronized(this@TiltSensor) {
