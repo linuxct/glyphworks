@@ -1,0 +1,22 @@
+<resources>
+    <string name="pipeline_sim_refined_sample_data">Sample data · On-screen only</string>
+    <string name="pipeline_sim_refined_preview">Preview</string>
+    <string name="pipeline_sim_refined_matrix_description">%1$d by %1$d Matrix preview</string>
+    <string name="pipeline_sim_refined_running">Running</string>
+    <string name="pipeline_sim_refined_paused">Paused</string>
+    <string name="pipeline_sim_refined_advance">+5 seconds</string>
+    <string name="pipeline_sim_refined_inspect">Inspect</string>
+    <string name="pipeline_sim_refined_inspector">Inspector</string>
+    <string name="pipeline_sim_refined_events">Events</string>
+    <string name="pipeline_sim_refined_device">Device inputs</string>
+    <string name="pipeline_sim_refined_sample_note">Sample values only. Your phone and Glyph are not used.</string>
+    <string name="pipeline_sim_refined_music">Music playing</string>
+    <string name="pipeline_sim_refined_charging">Charging</string>
+    <string name="pipeline_sim_refined_face_down">Phone face down</string>
+    <string name="pipeline_sim_refined_all_inputs">All inputs</string>
+    <string name="pipeline_sim_refined_vector_hint">Enter three values: x, y, z.</string>
+    <string name="pipeline_sim_refined_activity">Activity</string>
+    <string name="pipeline_sim_refined_values">Values</string>
+    <string name="pipeline_sim_refined_no_values">This program has no variables yet.</string>
+    <string name="pipeline_sim_refined_elapsed">%1$.2f s</string>
+</resources>
