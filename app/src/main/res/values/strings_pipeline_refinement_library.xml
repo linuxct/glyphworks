@@ -1,5 +1,18 @@
 <resources>
     <string name="pipeline_refine_library_intro">Create toys, shape Ambient, or build your own controls.</string>
+    <string name="pipeline_refine_active_pipeline">Current display setup</string>
+    <string name="pipeline_refine_active_unknown">Status is provided by app settings.</string>
+    <string name="pipeline_refine_builtin_default_active">Built-in default is in use.</string>
+    <string name="pipeline_refine_use_builtin_default">Use built-in default</string>
+    <string name="pipeline_refine_customize_ambient">Customize Ambient</string>
+    <string name="pipeline_refine_customize_ambient_detail">Choose backgrounds and how they change.</string>
+    <string name="pipeline_refine_create_toy">Create a toy</string>
+    <string name="pipeline_refine_create_toy_detail">Build a display toy of your own.</string>
+    <string name="pipeline_refine_add_toy_rule">Add a toy rule</string>
+    <string name="pipeline_refine_add_toy_rule_detail">Choose what your toy does when something happens.</string>
+    <string name="pipeline_refine_custom_controls_menus">Custom controls and menus</string>
+    <string name="pipeline_refine_custom_controls_detail">Build your own menu, buttons, and actions.</string>
+    <string name="pipeline_refine_advanced_locked">Turn on Advanced mode to build custom controls and menus.</string>
     <string name="pipeline_refine_start_here">Start with an idea</string>
     <string name="pipeline_refine_built_in">Inside the original toys</string>
     <string name="pipeline_refine_your_projects">Your projects</string>

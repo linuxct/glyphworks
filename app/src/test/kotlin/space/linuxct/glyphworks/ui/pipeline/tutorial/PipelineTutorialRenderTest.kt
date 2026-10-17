@@ -87,13 +87,13 @@ class PipelineTutorialRenderTest {
             PipelineDemoTour(PipelineChapter.CANVAS, { closed++ })
         }.use { activity ->
             compose.onNodeWithText("Back").assertIsNotEnabled()
-            compose.onNodeWithText("Step 1 of 10").assertExists()
+            compose.onNodeWithText("Step 1 of 6").assertExists()
             compose.onNodeWithText("Next").performClick()
-            compose.onNodeWithText("Step 2 of 10").assertExists()
+            compose.onNodeWithText("Step 2 of 6").assertExists()
             // The user is never required to finish a pointer demonstration before moving on.
             compose.onNodeWithText("Next").performClick()
             compose.onNodeWithText("Back").performClick()
-            compose.onNodeWithText("Step 2 of 10").assertExists()
+            compose.onNodeWithText("Step 2 of 6").assertExists()
             compose.onNodeWithText("Skip").performClick()
             compose.runOnIdle { assertEquals(1, closed) }
             compose.runOnIdle { activity.get().onBackPressedDispatcher.onBackPressed() }
@@ -147,14 +147,14 @@ class PipelineTutorialRenderTest {
 
     @Test fun inspectorRemainsBehindTheTourAndDoesNotReceiveTouches() {
         val finished = AtomicInteger(-1)
-        withActivity { PipelineDemoTour(PipelineChapter.CANVAS, {}, initialStep = 5, onStepFinished = finished::set) }.use {
-            compose.waitUntil(timeoutMillis = 15_000) { finished.get() == 5 }
+        withActivity { PipelineDemoTour(PipelineChapter.EVENTS, {}, initialStep = 9, onStepFinished = finished::set) }.use {
+            compose.waitUntil(timeoutMillis = 15_000) { finished.get() == 9 }
             // A ModalBottomSheet window would be above the tour and make this focus the field.
             val field = compose.onAllNodes(hasSetTextAction()).onFirst()
             field.performTouchInput { click() }
             field.assertIsNotFocused()
             compose.onNodeWithText("Next").assertIsDisplayed().performClick()
-            compose.onNodeWithText("Step 7 of 10").assertExists()
+            compose.onNodeWithText("Step 11 of 13").assertExists()
         }
     }
 

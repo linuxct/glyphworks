@@ -23,7 +23,9 @@ class PipelineController(
     private val size: Int,
     val store: PipelineStore,
 ) {
-    val controllerMode get() = prefs.getBoolean(PipelinePrefs.CONTROLLER_ENABLED, false)
+    val advancedFeaturesEnabled get() = prefs.getBoolean(PipelinePrefs.ADVANCED_ENABLED, false)
+    val ambientPipelineEnabled get() = advancedFeaturesEnabled && prefs.getBoolean(PipelinePrefs.AMBIENT_ENABLED, false)
+    val controllerMode get() = advancedFeaturesEnabled && prefs.getBoolean(PipelinePrefs.CONTROLLER_ENABLED, false)
     val controllerId get() = prefs.getString(PipelinePrefs.CONTROLLER_ID, "")
     val ambientId get() = prefs.getString(PipelinePrefs.AMBIENT_ID, "")
     val stopped get() = prefs.getBoolean(PipelinePrefs.STOPPED, false)
@@ -88,7 +90,8 @@ class PipelineController(
         store.addListener { reload(null) }
     }
     fun attachManager(value: ScreenManager) { manager = value; if (controllerMode) value.setControllerScreen(advancedScreen()) }
-    fun screens(): List<GlyphScreen> = builtins.map { (id, document) -> screen(id, document) } + applied.values.filter { it.entry()?.kind == ProgramKind.TOY }.map { screen("pipeline_${it.id}", it) }
+    fun screens(): List<GlyphScreen> = builtins.map { (id, document) -> screen(id, document) } +
+        if (advancedFeaturesEnabled) applied.values.filter { it.entry()?.kind == ProgramKind.TOY }.map { screen("pipeline_${it.id}", it) } else emptyList()
     private fun screen(id: String, document: PipelineDocument) = PipelineScreen(id, id.startsWith("pipeline_") || id in setOf("ambient", "dice", "coin", "dino", "bottle", "counter", "breathing", "timer", "custom"), document.entry()?.immediateAction == true, this)
     private fun advancedScreen() = PipelineScreen(ADVANCED_ID, true, projectDocument(controllerId)?.entry()?.immediateAction == true, this)
     fun projects() = applied.values.toList()
@@ -96,9 +99,38 @@ class PipelineController(
     fun defaultDocument(id: String): PipelineDocument? = defaults[id]
     private fun projectDocument(id: String): PipelineDocument? = defaults[id] ?: applied[id]
     private fun selectableDocument(id: String): PipelineDocument? = defaults[id] ?: store.loadApplied(id)?.document
-    fun document(id: String): PipelineDocument? = when { id == "ambient" -> projectDocument(ambientId) ?: builtins[id]; id == ADVANCED_ID -> projectDocument(controllerId); id.startsWith("pipeline_") -> projectDocument(id.removePrefix("pipeline_")); else -> projectDocument(id) ?: builtins[id] }
+    fun document(id: String): PipelineDocument? = when {
+        id == "ambient" -> if (ambientPipelineEnabled && ambientId.isNotBlank()) projectDocument(ambientId) ?: builtins[id] else standardAmbientDocument()
+        id == ADVANCED_ID -> projectDocument(controllerId)
+        id.startsWith("pipeline_") -> projectDocument(id.removePrefix("pipeline_"))
+        else -> projectDocument(id) ?: builtins[id]
+    }
+    private fun standardAmbientDocument(): PipelineDocument = BuiltinPipelines.ambient(prefs).let { source ->
+        source.copy(id = STANDARD_AMBIENT_ID, name = "Ambient", programs = source.programs.map { it.copy(template = null) })
+    }
+    fun standardAmbientSettingsChanged() {
+        if (ambientPipelineEnabled) return
+        scheduler.run { if (activeId == "ambient") manager?.refreshCurrentScreen() }
+    }
+    /** Enabling the feature exposes authoring; it does not select or run a custom pipeline. */
+    fun setAdvancedFeaturesEnabled(enabled: Boolean) {
+        if (advancedFeaturesEnabled == enabled) return
+        prefs.putBoolean(PipelinePrefs.ADVANCED_ENABLED, enabled)
+        scheduler.run {
+            manager?.setControllerScreen(if (controllerMode) advancedScreen() else null)
+            manager?.replaceCatalog(screens())
+            restartRules()
+            if (activeId == "ambient" && !ambientPipelineEnabled) manager?.refreshCurrentScreen()
+        }
+    }
+    fun setAmbientPipelineEnabled(enabled: Boolean) {
+        if (enabled && !advancedFeaturesEnabled) return
+        prefs.putBoolean(PipelinePrefs.AMBIENT_ENABLED, enabled)
+        scheduler.run { if (activeId == "ambient") manager?.refreshCurrentScreen() }
+    }
     fun onProjectApplied(id: String) = reload(id)
     fun assignAmbient(id: String) {
+        require(advancedFeaturesEnabled) { "Enable Advanced features in App settings before assigning a custom Ambient pipeline." }
         require(selectableDocument(id)?.entry()?.kind == ProgramKind.AMBIENT)
         prefs.putString(PipelinePrefs.AMBIENT_ID, id); reload(id)
     }
@@ -108,6 +140,7 @@ class PipelineController(
     }
     /** The App settings UI is the only production caller of this explicit activation operation. */
     fun setControllerEnabled(enabled: Boolean) {
+        if (enabled && !advancedFeaturesEnabled) return
         if (enabled && selectableDocument(controllerId)?.entry()?.kind != ProgramKind.CONTROLLER) return
         clearDiagnostic()
         prefs.putBoolean(PipelinePrefs.CONTROLLER_ENABLED, enabled)
@@ -116,6 +149,7 @@ class PipelineController(
     }
     fun setPocketProtection(enabled: Boolean) { prefs.putBoolean(PipelinePrefs.POCKET_PROTECTION, enabled); scheduler.run { updateDemand() } }
     fun setTrigger(toyId: String, projectId: String?) {
+        require(advancedFeaturesEnabled) { "Enable Advanced features in App settings before adding toy rules." }
         val mapping = triggers().toMutableMap()
         if (projectId == null) mapping.remove(toyId) else {
             require(selectableDocument(projectId) != null)
@@ -128,15 +162,16 @@ class PipelineController(
     fun deleteProject(id: String): Boolean {
         if (!store.delete(id)) return false
         alarms.cancelDocument(id)
-        if (ambientId == id) prefs.putString(PipelinePrefs.AMBIENT_ID, "")
+        if (ambientId == id) { prefs.putString(PipelinePrefs.AMBIENT_ID, ""); prefs.putBoolean(PipelinePrefs.AMBIENT_ENABLED, false) }
         if (controllerId == id) prefs.putString(PipelinePrefs.CONTROLLER_ID, "")
-        val remaining = triggers().filterValues { it != id }
+        val remaining = storedTriggers().filterValues { it != id }
         prefs.putString(PipelinePrefs.TRIGGERS, remaining.entries.joinToString(",") { "${it.key}=${it.value}" })
         reload(null)
         return true
     }
     fun triggerFor(toyId: String) = triggers()[toyId]
-    private fun triggers() = prefs.getString(PipelinePrefs.TRIGGERS, "").split(',').mapNotNull { token -> token.split('=', limit = 2).takeIf { it.size == 2 && it.all(String::isNotBlank) }?.let { it[0] to it[1] } }.toMap()
+    private fun storedTriggers() = prefs.getString(PipelinePrefs.TRIGGERS, "").split(',').mapNotNull { token -> token.split('=', limit = 2).takeIf { it.size == 2 && it.all(String::isNotBlank) }?.let { it[0] to it[1] } }.toMap()
+    private fun triggers() = if (advancedFeaturesEnabled) storedTriggers() else emptyMap()
     fun stop() { prefs.putBoolean(PipelinePrefs.STOPPED, true); scheduler.run { alarms.cancelAll(); closeRuntimes(); context?.pushFrame(IntArray(size * size)) } }
     fun resume() { clearDiagnostic(); prefs.putBoolean(PipelinePrefs.STOPPED, false); scheduler.run { manager?.refreshCurrentScreen() } }
     fun suspendPreview() { previewSuspended = true; selected?.runtime?.externallyCovered(true); rules.values.forEach { it.runtime.externallyCovered(true) } }
@@ -367,30 +402,50 @@ class PipelineController(
         }
     }
     private fun migrate() {
-        if (prefs.getInt(PipelinePrefs.MIGRATION_VERSION, 0) >= 1) return
-        // A fixed migration ID makes retries idempotent after a crash between file and preference writes.
-        val ambient = BuiltinPipelines.ambient(prefs).let { it.copy(id = "migrated_ambient", name = "My Ambient", programs = it.programs.map { p -> p.copy(template = null) }) }
-        if (store.loadApplied(ambient.id) == null && store.apply(ambient) !is PipelineStore.SaveResult.Saved) return
-        prefs.putString(PipelinePrefs.AMBIENT_ID, ambient.id)
-        val controller = ControllerTemplate.create().copy(id = "my_controls", name = "My controls and menus")
-        if (store.loadApplied(controller.id) == null) store.apply(controller)
-        if (store.loadApplied(controller.id) != null) prefs.putString(PipelinePrefs.CONTROLLER_ID, controller.id)
-        for ((key, value) in mapOf(PrefKeys.COUNTER to number(prefs.getInt(PrefKeys.COUNTER, 0)), PrefKeys.TIMER_START to number(prefs.getLong(PrefKeys.TIMER_START, 0)), PrefKeys.TIMER_PAUSED_ELAPSED to number(prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, 0)), PrefKeys.TIMER_CHIMED_FOR to number(prefs.getLong(PrefKeys.TIMER_CHIMED_FOR, 0)))) {
-            val toy = if (key == PrefKeys.COUNTER) "counter" else "timer"
-            prefs.putString(stateKey("builtin_$toy", "builtin_$toy", "native:main:$key"), stateJson.encodeToString(Value.serializer(), value))
+        var version = prefs.getInt(PipelinePrefs.MIGRATION_VERSION, 0)
+        if (version < 1) {
+            // A fixed migration ID makes retries idempotent after a crash between file and preference writes.
+            val ambient = BuiltinPipelines.ambient(prefs).let { it.copy(id = "migrated_ambient", name = "My Ambient", programs = it.programs.map { p -> p.copy(template = null) }) }
+            if (store.loadApplied(ambient.id) == null && store.apply(ambient) !is PipelineStore.SaveResult.Saved) return
+            prefs.putString(PipelinePrefs.AMBIENT_ID, ambient.id)
+            val controller = ControllerTemplate.create().copy(id = "my_controls", name = "My controls and menus")
+            if (store.loadApplied(controller.id) == null) store.apply(controller)
+            if (store.loadApplied(controller.id) != null) prefs.putString(PipelinePrefs.CONTROLLER_ID, controller.id)
+            for ((key, value) in mapOf(PrefKeys.COUNTER to number(prefs.getInt(PrefKeys.COUNTER, 0)), PrefKeys.TIMER_START to number(prefs.getLong(PrefKeys.TIMER_START, 0)), PrefKeys.TIMER_PAUSED_ELAPSED to number(prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, 0)), PrefKeys.TIMER_CHIMED_FOR to number(prefs.getLong(PrefKeys.TIMER_CHIMED_FOR, 0)))) {
+                val toy = if (key == PrefKeys.COUNTER) "counter" else "timer"
+                prefs.putString(stateKey("builtin_$toy", "builtin_$toy", "native:main:$key"), stateJson.encodeToString(Value.serializer(), value))
+            }
+            val legacyStart = prefs.getLong(PrefKeys.TIMER_START, 0)
+            if (legacyStart > 0 && prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, 0) == 0L) {
+                alarms.action("builtin_timer", "native.timer.schedule", mapOf("owner" to text("builtin_timer"), "instance" to text("root:main"), "deadline" to number(legacyStart + prefs.getInt(PrefKeys.TIMER_DURATION, 60) * 1000L)))
+            }
+            ports.timer.cancelAlarm()
+            prefs.putInt(PipelinePrefs.MIGRATION_VERSION, 1)
+            version = 1
         }
-        val legacyStart = prefs.getLong(PrefKeys.TIMER_START, 0)
-        if (legacyStart > 0 && prefs.getLong(PrefKeys.TIMER_PAUSED_ELAPSED, 0) == 0L) {
-            alarms.action("builtin_timer", "native.timer.schedule", mapOf("owner" to text("builtin_timer"), "instance" to text("root:main"), "deadline" to number(legacyStart + prefs.getInt(PrefKeys.TIMER_DURATION, 60) * 1000L)))
+        if (version < 2) {
+            // Preserve explicit opt-ins made before the gate existed. The default Ambient copy
+            // created above is not evidence that a user chose Advanced features.
+            val oldAmbientId = prefs.getString(PipelinePrefs.AMBIENT_ID, "")
+            val customAmbientSelected = oldAmbientId.isNotBlank() && oldAmbientId != "migrated_ambient"
+            val editedMigratedAmbient = store.loadApplied("migrated_ambient")?.generation?.let { it > 1 } == true
+            val enabledCustomToy = store.list().any { project ->
+                project.kind == ProgramKind.TOY && prefs.getBoolean(PrefKeys.screenEnabled("pipeline_${project.id}"), false)
+            }
+            val optedIn = prefs.getBoolean(PipelinePrefs.CONTROLLER_ENABLED, false) || storedTriggers().isNotEmpty() || customAmbientSelected || editedMigratedAmbient || enabledCustomToy
+            if (optedIn) {
+                prefs.putBoolean(PipelinePrefs.ADVANCED_ENABLED, true)
+                if (customAmbientSelected || editedMigratedAmbient) prefs.putBoolean(PipelinePrefs.AMBIENT_ENABLED, true)
+            }
+            prefs.putInt(PipelinePrefs.MIGRATION_VERSION, 2)
         }
-        ports.timer.cancelAlarm()
-        prefs.putInt(PipelinePrefs.MIGRATION_VERSION, 1)
     }
     private fun readStateValue(documentId: String, programId: String, state: String): Value? = prefs.getString(stateKey(documentId, programId, state), "").takeIf(String::isNotBlank)?.let { runCatching { stateJson.decodeFromString(Value.serializer(), it) }.getOrNull() }
     fun onAlarm(key: String, deadline: Long) { alarms.fire(key, deadline); scheduler.run { selected?.runtime?.advance(); rules.values.forEach { it.runtime.advance() }; compose() } }
     companion object {
         const val MAX_STANDARD_RULES = 32
         const val ADVANCED_ID = "pipeline_controller"
+        const val STANDARD_AMBIENT_ID = "standard_ambient"
         fun stateKey(document: String, program: String, state: String) = "pipelineState:$document:$program:$state"
         fun capabilities(document: PipelineDocument, prefs: Prefs? = null): Set<String> = PipelineRuntime.capabilities(document) + buildSet {
             val knownDynamic = document.programs.flatMap { program -> program.parameters.flatMap { parameter ->

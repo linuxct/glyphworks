@@ -19,4 +19,15 @@
     <string name="pipeline_sim_refined_values">Values</string>
     <string name="pipeline_sim_refined_no_values">This program has no variables yet.</string>
     <string name="pipeline_sim_refined_elapsed">%1$.2f s</string>
+    <string name="pipeline_preview_explanation_title">Latest decision</string>
+    <string name="pipeline_preview_why">Why?</string>
+    <string name="pipeline_preview_no_details">No further detail is available.</string>
+    <string name="pipeline_preview_block_id">Block · %1$s</string>
+    <string name="pipeline_preview_state_no_event">No event</string>
+    <string name="pipeline_preview_state_handled">Handled</string>
+    <string name="pipeline_preview_state_condition_skipped">Condition skipped</string>
+    <string name="pipeline_preview_state_displayed">Displayed</string>
+    <string name="pipeline_preview_state_competing_action_won">Another action won</string>
+    <string name="pipeline_preview_state_missing_input">Input unavailable</string>
+    <string name="pipeline_preview_state_error">Runtime error</string>
 </resources>

@@ -50,6 +50,56 @@ internal fun scopedEditorVariables(program: Program?, routine: Routine?): List<V
 internal fun scopedEditorParameters(program: Program?, routine: Routine?): List<Parameter> =
     (routine?.parameters.orEmpty() + program?.parameters.orEmpty()).distinctBy { it.id }
 
+/** Keep familiar event names readable while unknown/custom IDs remain verbatim in the picker. */
+internal fun eventDisplayTitle(id: String, catalogTitle: String): String = when (id) {
+    "tick" -> "On each update · check a state"
+    "key.down" -> "Key pressed"
+    "key.up" -> "Key released"
+    "shake" -> "Shake detected"
+    "orientation.changed" -> "Phone orientation changed"
+    "battery.changed" -> "Battery state changed"
+    "music.changed" -> "Music state changed"
+    "screen.changed" -> "Screen state changed"
+    "calendar.daily" -> "At a time of day"
+    else -> catalogTitle
+}
+
+/** The small state form is deliberately limited to exact boolean input expressions. */
+internal fun simpleConditionState(expression: Expression): Pair<String, Boolean>? {
+    val target = if (expression.op == "not" && expression.args.size == 1) expression.args.single() else expression
+    if (target.op != "input") return null
+    val input = InputCatalog[target.key] ?: return null
+    if (input.type != ValueType.BOOLEAN) return null
+    return target.key to (expression.op != "not")
+}
+
+@Composable
+internal fun EventConditionField(
+    expression: Expression,
+    document: PipelineDocument,
+    program: Program?,
+    routine: Routine?,
+    onChange: (Expression) -> Unit,
+) {
+    val mapped = simpleConditionState(expression)
+    if (mapped != null) {
+        val choices = InputCatalog.all.filter { it.type == ValueType.BOOLEAN }.map { it.key to it.title }
+        ChoiceField(stringResource(R.string.pipeline_event_state_label), mapped.first, choices, { key -> onChange(if (mapped.second) Expression.input(key) else Expression.operation("not", Expression.input(key))) })
+        ChoiceField(stringResource(R.string.pipeline_event_state_value), mapped.second.toString(), listOf("true" to stringResource(R.string.pipeline_event_state_true), "false" to stringResource(R.string.pipeline_event_state_false)), { value -> onChange(if (value == "true") Expression.input(mapped.first) else Expression.operation("not", Expression.input(mapped.first))) })
+    } else {
+        Text(stringResource(R.string.pipeline_event_advanced_condition_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ExpressionField(expression, ValueType.BOOLEAN, document, program, routine, onChange)
+    }
+}
+
+internal fun eventMoreSummary(script: Script): String = buildList {
+    if (script.trigger.stableForMs != 0L) add("stable for ${script.trigger.stableForMs} ms")
+    if (script.trigger.initially) add("checks when started")
+    if (script.priority != 0) add("priority ${script.priority}")
+    if (script.reentry != Reentry.RESTART) add(script.reentry.name.lowercase())
+    if (!script.enabled) add("disabled")
+}.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "Timing, priority, and reentry"
+
 /** Named, searchable choices instead of internal identifiers or a screen-height dropdown. */
 @Composable
 internal fun ChoiceField(label: String, value: String, choices: List<Pair<String, String>>, onChange: (String) -> Unit, modifier: Modifier = Modifier, selectedLabel: String? = null) {

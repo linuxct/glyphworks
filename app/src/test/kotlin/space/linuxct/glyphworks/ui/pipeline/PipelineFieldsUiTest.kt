@@ -108,6 +108,40 @@ class PipelineFieldsUiTest {
         assertTrue(blockDisplaySummary(choices.copy(arguments = choices.arguments + ("wrap" to Expression.bool(false))), document).contains("Wrap around: Off"))
     }
 
+    @Test fun commonBooleanConditionsMapExactlyAndUnsupportedExpressionsStayAdvanced() {
+        val faceDown = Expression.input("orientation.faceDown")
+        assertEquals("orientation.faceDown" to true, simpleConditionState(faceDown))
+        assertEquals("orientation.faceDown" to false, simpleConditionState(Expression.operation("not", faceDown)))
+        val compound = Expression.operation("greater", Expression.input("battery.level"), Expression.num(90))
+        assertNull(simpleConditionState(compound))
+        assertNull(simpleConditionState(Expression.input("vendor.custom")))
+        assertEquals("On each update · check a state", eventDisplayTitle("tick", "On each update"))
+        assertEquals("vendor.event", eventDisplayTitle("vendor.event", "vendor.event"))
+    }
+
+    @Test fun editingFriendlyStateKeepsTriggerTimingAndAdvancedValues() {
+        val condition = Expression.input("orientation.faceDown")
+        val script = Script(id = "watch", name = "Face down clock", priority = 7, reentry = Reentry.QUEUE,
+            trigger = Trigger("tick", condition, TriggerEdge.CHANGE, initially = true, stableForMs = 2500), blocks = emptyList())
+        val initial = PipelineDocument(id = "event_fixture", name = "Events", entryPoint = "toy", programs = listOf(Program(id = "toy", name = "Events", scripts = listOf(script))))
+        withScript(initial, script.id) { current ->
+            compose.onNodeWithText("Face down").assertExists()
+            compose.onNodeWithText("State is").assertExists()
+            compose.onNodeWithText("More options").assertExists()
+            compose.onAllNodes(hasSetTextAction())[1].assertTextContains("2.5")
+            compose.onNodeWithText("State to check").performClick()
+            compose.onNodeWithText("Face up", substring = false).performClick()
+            compose.waitForIdle()
+            val saved = current().programs.single().scripts.single()
+            assertEquals(Expression.input("orientation.faceUp"), saved.trigger.condition)
+            assertEquals(TriggerEdge.CHANGE, saved.trigger.edge)
+            assertTrue(saved.trigger.initially)
+            assertEquals(2500L, saved.trigger.stableForMs)
+            assertEquals(7, saved.priority)
+            assertEquals(Reentry.QUEUE, saved.reentry)
+        }
+    }
+
     @Test fun routinePickersResolveLocalShadowingBeforeTypeFilters() {
         val set = Block(id = "set_local", op = "variable.set", arguments = mapOf("variable" to Expression.str("global_counter"), "value" to Expression.num(2)))
         val append = Block(id = "append_global", op = "list.add", arguments = mapOf("variable" to Expression.str("global_list"), "value" to Expression.num(3)))
@@ -153,7 +187,12 @@ class PipelineFieldsUiTest {
     }
 
     @Suppress("DEPRECATION")
-    private fun withDocument(initial: PipelineDocument, blockId: String, action: (PipelineEditorController, () -> PipelineDocument) -> Unit) {
+    private fun withScript(initial: PipelineDocument, scriptId: String, action: (() -> PipelineDocument) -> Unit) {
+        withDocument(initial, "", panel = EditorPanel.SCRIPT, scriptId = scriptId) { _, current -> action(current) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun withDocument(initial: PipelineDocument, blockId: String, panel: EditorPanel = EditorPanel.BLOCK, scriptId: String? = null, action: (PipelineEditorController, () -> PipelineDocument) -> Unit) {
         val fixture = TestHarness(13)
         fixture.prefs.putBoolean(PrefKeys.LUCENT_ENABLED, true)
         Core::class.java.getDeclaredField("prefs").apply { isAccessible = true }.set(null, fixture.prefs)
@@ -161,8 +200,9 @@ class PipelineFieldsUiTest {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java)
         val controller = PipelineEditorController().apply {
             selectedBlock = blockId
+            selectedScript = scriptId
             selectedRoutine = initial.routines.firstOrNull { it.id == EditorDocument.location(initial, blockId)?.ownerId }?.id
-            panel = EditorPanel.BLOCK
+            this.panel = panel
         }
         var document by mutableStateOf(initial)
         try {

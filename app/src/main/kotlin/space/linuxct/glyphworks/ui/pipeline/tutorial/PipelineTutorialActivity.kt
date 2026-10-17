@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -58,7 +59,12 @@ class PipelineTutorialActivity : ComponentActivity() {
 @Composable
 internal fun PipelineTutorialDialog(onDismiss: () -> Unit, onChoose: (PipelineChapter) -> Unit) {
     MotionDialog(onDismiss) { dismiss ->
-        Surface(shape = glyphCorner(28.dp, 36.dp), color = dialogSurface()) {
+        val maxDialogHeight = LocalConfiguration.current.screenHeightDp.dp * .9f
+        Surface(
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxDialogHeight),
+            shape = glyphCorner(28.dp, 36.dp),
+            color = dialogSurface(),
+        ) {
             Column(Modifier.padding(vertical = 18.dp)) {
                 Text(stringResource(R.string.pipeline_tutorial_title), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleLarge)
                 PipelineTutorialChapters(onChoose, Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()))
@@ -76,9 +82,13 @@ fun PipelineTutorialChapters(onChoose: (PipelineChapter) -> Unit, modifier: Modi
     Column(modifier) {
         Text(stringResource(R.string.pipeline_tutorial_intro), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
         PipelineChapter.entries.forEachIndexed { index, chapter ->
-            Row(Modifier.fillMaxWidth().clickable { onChoose(chapter) }.padding(horizontal = 16.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { onChoose(chapter) }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 Text((index + 1).toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Text(stringResource(chapter.title), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(chapter.title), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             }
         }
     }

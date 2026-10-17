@@ -1,7 +1,6 @@
 package space.linuxct.glyphworks.ui.pipeline.tutorial
 
 import androidx.compose.runtime.*
-import androidx.compose.ui.geometry.Offset
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import space.linuxct.glyphworks.BuildConfig
@@ -15,10 +14,10 @@ import space.linuxct.pipeline.*
 
 /** Chapter selection lives outside the tour, just as the editor tutorial's entry point does. */
 enum class PipelineChapter(val title: Int) {
-    CANVAS(R.string.pipeline_tutorial_canvas), EVENTS(R.string.pipeline_tutorial_events),
-    AMBIENT(R.string.pipeline_tutorial_ambient), TOY(R.string.pipeline_tutorial_toy),
-    REUSE(R.string.pipeline_tutorial_reuse), MENU(R.string.pipeline_tutorial_menu),
-    SAFETY(R.string.pipeline_tutorial_safety), INSPECT(R.string.pipeline_tutorial_inspect),
+    CANVAS(R.string.pipeline_tutorial_canvas), AMBIENT(R.string.pipeline_tutorial_ambient),
+    TOY(R.string.pipeline_tutorial_toy), REUSE(R.string.pipeline_tutorial_reuse),
+    MENU(R.string.pipeline_tutorial_menu), SAFETY(R.string.pipeline_tutorial_safety),
+    EVENTS(R.string.pipeline_tutorial_events), INSPECT(R.string.pipeline_tutorial_inspect),
 }
 
 internal enum class PipelineDemoStage { EDITOR, ASSET_EDITOR, SETTINGS, LOCKED_TOYS }
@@ -140,34 +139,37 @@ internal fun pipelineDemoSteps(chapter: PipelineChapter): List<PipelineDemoStep>
 }
 
 private fun canvasSteps() = listOf(
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_intro, "canvas") { s -> s.script(START, "start", emptyList()); hide() },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_pan, "canvas") { s ->
-        centerOf("canvas", 0)?.let { point ->
-            glideTo(point); holdOn("canvas"); glideTo(point + Offset(-90f, 65f), 650)
-        }
-        s.controller.viewportOverride = Viewport(-70f, 60f, .85f); release(); beat(550)
-        s.controller.viewportOverride = Viewport(); beat(350)
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_intro, "canvas") { hide() },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_event, "add-event") { s ->
+        tap("add-event")
+        s.script(PRESS, "key.action", emptyList())
+        s.controller.selectedScript = PRESS
+        beat(300)
     },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_event, "add-event") { s -> tap("add-event"); s.script(PRESS, "key.action", emptyList()); s.controller.selectedScript = PRESS; beat(300) },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_condition, "canvas") { s ->
+        // An If is optional in a real pipeline. This demo uses a sample input so the
+        // successful path remains visible in Preview without consulting device state.
+        s.insert(PRESS, block("quickIf", "flow.if", "condition" to Expression.input("battery.charging")))
+        s.input("battery.charging", boolean(true))
+        tap("block:quickIf")
+        s.open(EditorPanel.BLOCK, "quickIf")
+        beat(450)
+    },
     PipelineDemoStep(R.string.pipeline_tutorial_canvas_display, "canvas") { s ->
-        s.focusOwner(START)
-        open(s, EditorPanel.PALETTE, "blocks"); holdOn("palette:display.toy")
-        centerOf("script:$START", 0)?.let { glideTo(it + Offset(0f, 64f), 650) }
-        s.insert(START, toy("demoClock", "clock")); release(); s.open(EditorPanel.NONE)
+        s.focusOwner(PRESS)
+        open(s, EditorPanel.PALETTE, "blocks")
+        holdOn("palette:display.toy")
+        s.insert(PRESS, toy("quickClock", "clock"), parent = "quickIf")
+        release()
+        s.open(EditorPanel.NONE)
     },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_nest, "canvas") { s ->
-        s.insert(START, block("demoRepeat", "flow.repeat", "count" to Expression.num(3)), index = 0)
-        holdOn("block:demoClock"); centerOf("block:demoRepeat", 0)?.let { glideTo(it, 650) }
-        s.edit(EditorDocument.move(s.document, "demoClock", BlockLocation(START, "demoRepeat")))
-        s.insert(START, wait("demoWait", 1000), "demoRepeat"); release()
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_preview, "preview") { s ->
+        s.controller.previewExpanded = true
+        tap("preview")
+        s.input("battery.charging", boolean(true))
+        s.event("key.action")
+        beat(500)
     },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_value, "inspector") { s ->
-        tap("block:demoWait"); s.open(EditorPanel.BLOCK, "demoWait"); beat(500)
-        s.edit(EditorDocument.update(s.document, wait("demoWait", 2000))); beat(400)
-    },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_undo, "toolbar") { s -> s.open(EditorPanel.NONE); tap("undo"); s.undo(); beat(550); tap("redo"); s.redo() },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_preview, "preview") { s -> tap("preview"); s.event("key.action"); s.advance(250) },
-    PipelineDemoStep(R.string.pipeline_tutorial_canvas_apply, "apply") { s -> s.controller.previewExpanded = false; tap("apply"); beat(300) },
 )
 
 private fun eventsSteps() = listOf(
@@ -199,6 +201,37 @@ private fun eventsSteps() = listOf(
     PipelineDemoStep(R.string.pipeline_tutorial_events_cancel, "canvas") { s ->
         s.script("cancelPress", "key.double", listOf(block("cancelTimer", "timer.cancel", "name" to literal("music-return"))))
         s.event("key.double")
+    },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_pan, "canvas") { s ->
+        centerOf("canvas", 0)?.let { point ->
+            glideTo(point); holdOn("canvas"); glideTo(point + androidx.compose.ui.geometry.Offset(-90f, 65f), 650)
+        }
+        s.controller.viewportOverride = Viewport(-70f, 60f, .85f); release(); beat(400)
+        s.controller.viewportOverride = Viewport(); beat(300)
+    },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_nest, "canvas") { s ->
+        s.script("canvasStart", "start", listOf(block("canvasRepeat", "flow.repeat", "count" to Expression.num(3), body = listOf(
+            toy("canvasClock", "clock"), wait("canvasWait", 1000),
+        ))))
+        holdOn("block:canvasClock")
+        centerOf("block:canvasRepeat", 0)?.let { glideTo(it, 500) }
+        release()
+    },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_value, "inspector") { s ->
+        tap("block:canvasWait")
+        s.open(EditorPanel.BLOCK, "canvasWait")
+        s.edit(EditorDocument.update(s.document, wait("canvasWait", 2000)))
+        beat(450)
+    },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_undo, "toolbar") { s ->
+        s.open(EditorPanel.NONE)
+        tap("undo"); s.undo(); beat(350)
+        tap("redo"); s.redo()
+    },
+    PipelineDemoStep(R.string.pipeline_tutorial_canvas_apply, "apply") { s ->
+        s.controller.previewExpanded = false
+        tap("apply")
+        beat(300)
     },
 )
 

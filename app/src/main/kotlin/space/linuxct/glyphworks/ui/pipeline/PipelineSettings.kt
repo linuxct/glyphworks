@@ -38,6 +38,7 @@ import space.linuxct.glyphworks.Core
 import space.linuxct.glyphworks.pipeline.runtime.PipelinePrefs
 import space.linuxct.glyphworks.pipeline.store.PipelineStore
 import space.linuxct.glyphworks.ui.ScreenSettingsDialog
+import space.linuxct.glyphworks.ui.MainActivity
 import space.linuxct.glyphworks.ui.rememberPref
 import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineChapter
 import space.linuxct.glyphworks.ui.pipeline.tutorial.PipelineTutorialActivity
@@ -49,6 +50,7 @@ internal fun AmbientPipelineSettings() {
     val resources = LocalResources.current
     val revision by rememberPref(PipelinePrefs.LIBRARY_REVISION) { it.getLong(PipelinePrefs.LIBRARY_REVISION, 0) }
     val assigned by rememberPref(PipelinePrefs.AMBIENT_ID) { it.getString(PipelinePrefs.AMBIENT_ID, "") }
+    val pipelineEnabled by rememberPref(PipelinePrefs.AMBIENT_ENABLED) { it.getBoolean(PipelinePrefs.AMBIENT_ENABLED, false) }
     val scope = rememberCoroutineScope()
     var snapshot by remember { mutableStateOf<PipelineStore.Snapshot?>(null) }
     var projects by remember { mutableStateOf<List<PipelineStore.ProjectSummary>>(emptyList()) }
@@ -90,6 +92,11 @@ internal fun AmbientPipelineSettings() {
     val invalid = quickSettings.any { parameter -> parameterValueError(parameter, edited[parameter.id] ?: program!!.values[parameter.id] ?: parameter.default) != null }
     val ink = MaterialTheme.colorScheme.onSurface
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        PipelineCard(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.pipeline_ambient_mode_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.pipeline_ambient_mode_summary), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SwitchRow(stringResource(R.string.pipeline_ambient_use_custom), pipelineEnabled) { Core.pipeline.setAmbientPipelineEnabled(it) }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(stringResource(R.string.pipeline_editor_build_your_ambient_display), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.pipeline_refine_ambient_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -230,6 +237,25 @@ internal fun PipelineAdvancedSettings() {
         projects.forEach {p->TextButton(onClick={Core.pipeline.setController(p.id);choosing=false}){Text(p.name)}}
         if(projects.isEmpty())Text(stringResource(R.string.pipeline_editor_start_with_the_custom_menu_template_in_create_pipelines))
     }},confirmButton={TextButton(onClick={choosing=false}){Text(stringResource(R.string.pipeline_editor_close))}})
+}
+
+@Composable
+internal fun AdvancedFeaturesSettings() {
+    val context = LocalContext.current
+    val enabled by rememberPref(PipelinePrefs.ADVANCED_ENABLED) { it.getBoolean(PipelinePrefs.ADVANCED_ENABLED, false) }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PipelineCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+            Text(stringResource(R.string.pipeline_advanced_features_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.pipeline_advanced_features_summary), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SwitchRow(stringResource(R.string.pipeline_advanced_features_enable), enabled) { Core.pipeline.setAdvancedFeaturesEnabled(it) }
+            if (enabled) {
+                Button(onClick = { context.startActivity(MainActivity.createTabIntent(context)) }, modifier = Modifier.fillMaxWidth(), colors = libraryActionColors()) {
+                    Text(stringResource(R.string.pipeline_advanced_open_library))
+                }
+            }
+        }
+        if (enabled) PipelineAdvancedSettings()
+    }
 }
 
 @Composable

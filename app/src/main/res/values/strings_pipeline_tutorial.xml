@@ -1,10 +1,10 @@
 <resources>
     <string name="pipeline_tutorial_title">Pipeline Builder</string>
-    <string name="pipeline_tutorial_subtitle">Learn the canvas, custom toys and controls.</string>
+    <string name="pipeline_tutorial_subtitle">Make a first behavior, then explore Ambient, toys and controls.</string>
     <string name="pipeline_default_choice">%1$s · built-in</string>
-    <string name="pipeline_tutorial_intro">Build displays, toys and your own controls. Follow the guided editor tours at your own pace.</string>
-    <string name="pipeline_tutorial_canvas">Canvas and blocks</string>
-    <string name="pipeline_tutorial_events">Events and state</string>
+    <string name="pipeline_tutorial_intro">Start with one small behavior: when you press the key, optionally check a condition, show a toy, then see it work in Preview. Choose a chapter to explore more.</string>
+    <string name="pipeline_tutorial_canvas">Make your first behavior</string>
+    <string name="pipeline_tutorial_events">More about events and state</string>
     <string name="pipeline_tutorial_ambient">Design your Ambient</string>
     <string name="pipeline_tutorial_toy">Create a toy</string>
     <string name="pipeline_tutorial_reuse">Reuse your work</string>
@@ -12,15 +12,16 @@
     <string name="pipeline_tutorial_safety">Use custom controls safely</string>
     <string name="pipeline_tutorial_inspect">Inspect and share</string>
     <string name="pipeline_tutorial_project">Tutorial project</string>
-    <string name="pipeline_tutorial_canvas_intro">This is the same editor you use for your own pipelines. This tour uses a temporary project. Nothing is saved or sent to your Glyph.</string>
-    <string name="pipeline_tutorial_canvas_pan">Drag empty canvas space to move in either direction. Pinch to zoom. Recenter brings your blocks back into view.</string>
-    <string name="pipeline_tutorial_canvas_event">An event starts a stack of blocks. This stack runs when the pipeline starts.</string>
-    <string name="pipeline_tutorial_canvas_display">Choose a display block and drop it inside the event. Blocks run in order from top to bottom.</string>
+    <string name="pipeline_tutorial_canvas_intro">Let’s make one working behavior in a temporary project. You can go back or retry; this sandbox is never saved or sent to your Glyph.</string>
+    <string name="pipeline_tutorial_canvas_event">When is the trigger: this stack runs when you press the key. Events describe something that happens; they are different from conditions.</string>
+    <string name="pipeline_tutorial_canvas_condition">If is optional. Add it when the action should depend on something being true. Here we check the sample value “Charging” so Preview can show the successful path.</string>
+    <string name="pipeline_tutorial_canvas_display">Then comes the action. This display block is inside the If, so Clock appears only when the sample says Charging. Without the If, the display would run on every press.</string>
     <string name="pipeline_tutorial_canvas_nest">Control blocks contain other blocks. Here a repeat block runs the display and wait together. Drop markers show exactly where a block will go.</string>
     <string name="pipeline_tutorial_canvas_value">Select a block to change its inputs. Inputs have types and units: this wait is a duration in milliseconds.</string>
     <string name="pipeline_tutorial_canvas_undo">Undo and Redo work on complete edits. Moving around the canvas does not add undo steps.</string>
-    <string name="pipeline_tutorial_canvas_preview">Preview runs the actual pipeline with sample inputs. You can send a key press without using the phone’s real button.</string>
-    <string name="pipeline_tutorial_canvas_apply">Save draft keeps work in progress. Apply checks the whole project before replacing its running revision. A broken draft does not interrupt a working pipeline.</string>
+    <string name="pipeline_tutorial_canvas_preview">Preview runs this pipeline in the same interpreter with sample inputs. Send the sample key press: because Charging is true, Clock appears. Preview does not apply the project.</string>
+    <string name="pipeline_tutorial_canvas_pan">Move around the canvas by dragging empty space. Pinch to zoom; the view saves with the project, while moving the canvas stays outside the undo history.</string>
+    <string name="pipeline_tutorial_canvas_apply">Apply publishes the validated draft to the selected mode. It does not turn on Ambient overrides, toy rules, or custom controls; those are separate choices in App settings.</string>
     <string name="pipeline_tutorial_events_edge">An event is something that happens once. A condition describes what is true now. A key press is an event; music playing is a condition.</string>
     <string name="pipeline_tutorial_events_condition">If chooses one of two paths. Combine conditions with All, Any or Not. Unavailable sensor data stays unavailable; it is not treated as zero.</string>
     <string name="pipeline_tutorial_events_variable">Variables remember values between events. Here a press increases a counter. A variable belongs to its project or routine, unless you explicitly make it persistent.</string>
@@ -56,7 +57,7 @@
     <string name="pipeline_tutorial_menu_global">Global rules can temporarily take priority. For example, face down shows Clock, or a shake shows Weather for 30 seconds.</string>
     <string name="pipeline_tutorial_menu_return">When an interruption ends, resume the previous menu or toy. Preview makes both the active presentation and hidden branches visible.</string>
     <string name="pipeline_tutorial_menu_enable">Saving or applying a controller never enables custom controls by itself. Activation is available only in App settings, where you can also stop it.</string>
-    <string name="pipeline_tutorial_safety_settings">Custom controls are enabled only from App settings. Choose a valid controller, review its required capabilities and configure pocket protection.</string>
+    <string name="pipeline_tutorial_safety_settings">Standard features work with the normal toy selector. Advanced custom controls require an explicit opt-in in App settings. This demo toggle changes only the tutorial sandbox. Saving or applying a pipeline is a separate choice from enabling its mode.</string>
     <string name="pipeline_tutorial_safety_locked">While custom controls are enabled, Toys is unavailable. Your controller owns the menu and navigation. Create, Settings and Tutorials remain available.</string>
     <string name="pipeline_tutorial_safety_stop">Stop is outside the pipeline’s control. It stops a faulty or unwanted controller even if that controller has no working menu.</string>
     <string name="pipeline_tutorial_safety_standard">Return to Standard restores normal toy selection. Editing and previewing a controller never changes this mode without your choice.</string>

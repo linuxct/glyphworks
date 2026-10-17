@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import space.linuxct.glyphworks.ui.tutorial.*
+import space.linuxct.pipeline.Expression
 import space.linuxct.pipeline.PipelineCodec
 
 class PipelineDemoTest {
@@ -48,6 +49,20 @@ class PipelineDemoTest {
                 assertTrue("$chapter: $errors", errors.isEmpty())
             }
         }
+    }
+
+    @Test fun firstBehaviorBuildsWhenOptionalIfThenAndPreviewInOrder() {
+        val sandbox = replay(PipelineChapter.CANVAS, pipelineDemoSteps(PipelineChapter.CANVAS).size)
+        val press = sandbox.document.entry()!!.scripts.single { it.id == "tutorialPress" }
+        assertEquals("key.action", press.trigger.event)
+        assertEquals(1, press.blocks.size)
+        val conditional = press.blocks.single()
+        assertEquals("flow.if", conditional.op)
+        assertEquals(Expression.input("battery.charging"), conditional.arguments["condition"])
+        assertEquals("display.toy", conditional.body.single().op)
+        assertEquals(Expression.str("clock"), conditional.body.single().arguments["toy"])
+        assertEquals(true, sandbox.previewInputs["battery.charging"]?.boolean())
+        assertTrue(sandbox.previewEvents.any { (_, event) -> event.name == "key.action" })
     }
 
     @Test fun dinoArtworkDemonstrationContainsBothPanelVariantsAndASeparateBinding() {

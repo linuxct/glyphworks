@@ -1,0 +1,10 @@
+<resources>
+    <string name="pipeline_advanced_features_title">Advanced features</string>
+    <string name="pipeline_advanced_features_summary">Keep GlyphWorks’ usual toy selection and Ambient controls, or opt in to custom event rules and programmable displays.</string>
+    <string name="pipeline_advanced_features_enable">Enable Pipeline Builder features</string>
+    <string name="pipeline_advanced_open_library">Open Pipeline Builder</string>
+    <string name="pipeline_ambient_mode_title">Ambient display mode</string>
+    <string name="pipeline_ambient_mode_summary">The standard mode follows the Ambient options above. Turn this on to use the selected custom pipeline instead.</string>
+    <string name="pipeline_ambient_use_custom">Use custom Ambient pipeline</string>
+    <string name="pipeline_refine_standard_ambient_active">Standard Ambient</string>
+</resources>

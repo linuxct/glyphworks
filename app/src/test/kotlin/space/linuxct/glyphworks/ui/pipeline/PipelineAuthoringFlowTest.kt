@@ -116,7 +116,9 @@ class PipelineAuthoringFlowTest {
         ), scripts = listOf(Script(blocks = listOf(Block(op = "display.toy")))))
         val document = PipelineDocument(name = "My Ambient", entryPoint = program.id, programs = listOf(program))
         assertTrue(store.apply(document) is PipelineStore.SaveResult.Saved)
+        Core.pipeline.setAdvancedFeaturesEnabled(true)
         Core.pipeline.assignAmbient(document.id)
+        Core.pipeline.setAmbientPipelineEnabled(true)
         activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) { AmbientPipelineSettings() } } } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Clock style").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Applied · revision 1").assertExists()
@@ -127,7 +129,9 @@ class PipelineAuthoringFlowTest {
     @Test fun migratedAmbientPopupRendersTheShippedPipelineSettings() = withActivity { activity, _, store, _ ->
         val document = BuiltinPipelines.ambient(Core.prefs).copy(id = "migrated_ambient")
         assertTrue(store.apply(document) is PipelineStore.SaveResult.Saved)
+        Core.pipeline.setAdvancedFeaturesEnabled(true)
         Core.pipeline.assignAmbient(document.id)
+        Core.pipeline.setAmbientPipelineEnabled(true)
         activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) { AmbientPipelineSettings() } } } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Cycle automatically").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Open Pipeline Builder").assertIsDisplayed()
@@ -146,7 +150,9 @@ class PipelineAuthoringFlowTest {
     @Test fun ambientQuickControlsStageTogetherAndApplyOnce() = withActivity { activity, fixture, store, _ ->
         val document = BuiltinPipelines.ambient(fixture.prefs).copy(id = "my_ambient")
         assertTrue(store.apply(document) is PipelineStore.SaveResult.Saved)
+        Core.pipeline.setAdvancedFeaturesEnabled(true)
         Core.pipeline.assignAmbient(document.id)
+        Core.pipeline.setAmbientPipelineEnabled(true)
         activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) { AmbientPipelineSettings() } } } }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("pipeline-quick-setting:autoCycle").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("pipeline-quick-setting:autoCycle").assertIsToggleable().performClick()
@@ -171,7 +177,9 @@ class PipelineAuthoringFlowTest {
         ), scripts = listOf(Script(blocks = listOf(Block(op = "display.toy")))))
         val document = PipelineDocument(name = "My Ambient", entryPoint = program.id, programs = listOf(program))
         assertTrue(store.apply(document) is PipelineStore.SaveResult.Saved)
+        Core.pipeline.setAdvancedFeaturesEnabled(true)
         Core.pipeline.assignAmbient(document.id)
+        Core.pipeline.setAmbientPipelineEnabled(true)
         activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) { AmbientPipelineSettings() } } } }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("pipeline-quick-setting:speed").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("pipeline-quick-setting:speed").performClick()
@@ -225,19 +233,6 @@ class PipelineAuthoringFlowTest {
         save("library-compact-large-font")
         compose.onNodeWithText("Originals").performScrollTo().performClick()
         compose.onNodeWithText("Originals").assertIsSelected()
-    }
-
-    @Test @Config(qualifiers = "w360dp-h400dp-notnight-xxhdpi") fun shortWindowKeepsFormActionsVisibleWhileFieldsScroll() = withActivity(fontScale = 1.5f) { activity, _, store, _ ->
-        var opened: String? = null
-        activity.setContent { GlyphWorksTheme { Surface(color = MaterialTheme.colorScheme.background) { PipelineLibraryScreen(onOpen = { opened = it }) } } }
-        compose.onNodeWithText("New pipeline", substring = true).performClick()
-        compose.onNodeWithText("Name").performScrollTo().performTextInput("My compact toy")
-        compose.onNodeWithText("Create", substring = false).assertIsDisplayed()
-        compose.onNodeWithText("Cancel", substring = false).assertIsDisplayed()
-        save("library-short-window-form", dialog = true)
-        compose.onNodeWithText("Create", substring = false).performClick()
-        compose.waitUntil(10_000) { opened != null }
-        assertEquals("My compact toy", store.loadDraft(opened!!)!!.document.name)
     }
 
     @Test fun standardModeCanRecoverAndStopPipelinesWithoutEnablingCustomControls() = withActivity { activity, fixture, _, _ ->

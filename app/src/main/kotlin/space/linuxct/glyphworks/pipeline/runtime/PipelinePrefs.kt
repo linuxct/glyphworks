@@ -2,6 +2,8 @@ package space.linuxct.glyphworks.pipeline.runtime
 
 object PipelinePrefs {
     const val MIGRATION_VERSION = "pipelineMigrationVersion"
+    const val ADVANCED_ENABLED = "pipelineAdvancedFeaturesEnabled"
+    const val AMBIENT_ENABLED = "pipelineAmbientOverrideEnabled"
     const val AMBIENT_ID = "pipelineAmbientId"
     const val CONTROLLER_ID = "pipelineControllerId"
     const val CONTROLLER_ENABLED = "pipelineControllerEnabled"

@@ -1,0 +1,4 @@
+<resources>
+    <string name="standard_ambient_customize_with_pipeline_builder">Advanced features in App settings</string>
+    <string name="standard_ambient_advanced_features_hint">Enable Advanced features to customize this display with the Pipeline Builder.</string>
+</resources>

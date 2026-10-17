@@ -64,6 +64,14 @@ fun PipelineLibraryScreen(
     contentPadding: PaddingValues = PaddingValues(bottom = 120.dp),
     newRequest: Int = 0,
     onOpen: ((String) -> Unit)? = null,
+    onCustomizeAmbient: (() -> Unit)? = null,
+    onCreateToy: (() -> Unit)? = null,
+    onAddToyRule: (() -> Unit)? = null,
+    onCustomControls: (() -> Unit)? = null,
+    advancedDestinationsEnabled: Boolean = true,
+    activePipelineLabel: String? = null,
+    builtInDefaultActive: Boolean? = null,
+    onRestoreBuiltInDefault: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -143,9 +151,46 @@ fun PipelineLibraryScreen(
                     }
                     IconButton(onClick = { context.startActivity(PipelineTutorialActivity.intent(context)) }) { Icon(Icons.Outlined.School, uiText(R.string.pipeline_library_tutorial), tint = ink) }
                 }
+                if (activePipelineLabel != null || onRestoreBuiltInDefault != null) {
+                    PipelineCard(Modifier.fillMaxWidth(), padding = 16.dp) {
+                        Text(uiText(R.string.pipeline_refine_active_pipeline), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(activePipelineLabel ?: uiText(R.string.pipeline_refine_active_unknown), style = MaterialTheme.typography.titleMedium)
+                        if (builtInDefaultActive == true) Text(uiText(R.string.pipeline_refine_builtin_default_active), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        else if (onRestoreBuiltInDefault != null) TextButton(onClick = onRestoreBuiltInDefault) { Text(uiText(R.string.pipeline_refine_use_builtin_default)) }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(uiText(R.string.pipeline_refine_start_here), style = MaterialTheme.typography.titleMedium)
+                    LibraryDestination(
+                        icon = Icons.Outlined.NightsStay,
+                        title = uiText(R.string.pipeline_refine_customize_ambient),
+                        detail = uiText(R.string.pipeline_refine_customize_ambient_detail),
+                        onClick = { onCustomizeAmbient?.invoke() ?: run { section = "Yours"; kindFilter = ProgramKind.AMBIENT; search = "" } },
+                    )
+                    LibraryDestination(
+                        icon = Icons.Outlined.Widgets,
+                        title = uiText(R.string.pipeline_refine_create_toy),
+                        detail = uiText(R.string.pipeline_refine_create_toy_detail),
+                        onClick = { if (onCreateToy != null) onCreateToy() else { newKind = ProgramKind.TOY; newDialog = true } },
+                    )
+                    LibraryDestination(
+                        icon = Icons.Outlined.AddCircleOutline,
+                        title = uiText(R.string.pipeline_refine_add_toy_rule),
+                        detail = uiText(R.string.pipeline_refine_add_toy_rule_detail),
+                        enabled = advancedDestinationsEnabled,
+                        onClick = { if (onAddToyRule != null) onAddToyRule() else { newKind = ProgramKind.ROUTINE; newDialog = true } },
+                    )
+                    LibraryDestination(
+                        icon = Icons.AutoMirrored.Outlined.AltRoute,
+                        title = uiText(R.string.pipeline_refine_custom_controls_menus),
+                        detail = uiText(if (advancedDestinationsEnabled) R.string.pipeline_refine_custom_controls_detail else R.string.pipeline_refine_advanced_locked),
+                        enabled = advancedDestinationsEnabled,
+                        onClick = { if (onCustomControls != null) onCustomControls() else { newKind = ProgramKind.CONTROLLER; newDialog = true } },
+                    )
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = { newDialog = true }, colors = libraryActionColors()) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Text(uiText(R.string.pipeline_library_new_button)) }
-                    Button(onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, colors = libraryActionColors()) { Icon(Icons.Outlined.FileOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(uiText(R.string.pipeline_library_import)) }
+                    Button(onClick = { newKind = ProgramKind.TOY; newDialog = true }, colors = libraryActionColors()) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Text(uiText(R.string.pipeline_library_new_button)) }
+                    OutlinedButton(onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }) { Icon(Icons.Outlined.FileOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(uiText(R.string.pipeline_library_import)) }
                 }
                 OutlinedTextField(search, { search = it }, placeholder = { Text(uiText(R.string.pipeline_library_find)) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = glyphCorner(20.dp, 28.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = ink.copy(alpha = .13f), focusedBorderColor = ink, unfocusedContainerColor = pipelineSurfaceColor(), focusedContainerColor = pipelineSurfaceColor()))
                 val sections = listOf("Yours" to R.string.pipeline_library_yours, "Starters" to R.string.pipeline_library_starters, "Originals" to R.string.pipeline_library_originals)
@@ -265,6 +310,30 @@ fun PipelineLibraryScreen(
         }
     }, confirmButton = { TextButton(onClick = { historyProject = null }) { Text(uiText(R.string.pipeline_library_close)) } }) }
     message?.let { text -> AlertDialog(containerColor = dialogSurface(), onDismissRequest = { message = null }, text = { Text(text) }, confirmButton = { TextButton(onClick = { message = null }) { Text(uiText(R.string.pipeline_library_ok)) } }) }
+}
+
+@Composable
+private fun LibraryDestination(
+    icon: ImageVector,
+    title: String,
+    detail: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    PipelineCard(
+        Modifier.fillMaxWidth().clip(glyphCorner(18.dp, 24.dp)).clickable(enabled = enabled, onClick = onClick),
+        padding = 14.dp,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PipelineIconWell(icon, size = 42.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (enabled) Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            else Icon(Icons.Outlined.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 /** Explicit width avoids intrinsic text-field relayout in Material 3's AlertDialog text slot. */

@@ -186,12 +186,20 @@ internal fun PipelineEditorInspector(
                 Text(stringResource(R.string.pipeline_field_event_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 PipelineCard(Modifier.fillMaxWidth()) {
                 OutlinedTextField(script.name, { change(script.copy(name = it)) }, label = { Text(stringResource(R.string.pipeline_editor_name)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
-                ChoiceField(stringResource(R.string.pipeline_editor_when), script.trigger.event, EventCatalog.all.map { it.name to it.title }, { event ->
-                    val title = EventCatalog.all.firstOrNull { it.name == event }?.title ?: event
-                    change(script.copy(name = title, trigger = script.trigger.copy(event = event, calendar = if (event == "calendar.daily") script.trigger.calendar ?: CalendarTrigger() else null)))
+                Text(stringResource(R.string.pipeline_event_watch_heading), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.pipeline_event_watch_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ChoiceField(stringResource(R.string.pipeline_editor_when), script.trigger.event, EventCatalog.all.map { it.name to eventDisplayTitle(it.name, it.title) }, { event ->
+                    // Event-specific settings stay serialized while another event is selected.
+                    change(script.copy(trigger = script.trigger.copy(event = event)))
                 })
+                EventCatalog.all.firstOrNull { it.name == script.trigger.event }?.capability?.let {
+                    Text(stringResource(R.string.pipeline_editor_editing_and_simulation_work_without_permissions_a_missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 var customEvent by remember(script.id) { mutableStateOf(EventCatalog.all.none { it.name == script.trigger.event }) }
-                if (customEvent) OutlinedTextField(script.trigger.event, { change(script.copy(trigger = script.trigger.copy(event = it))) }, label = { Text(stringResource(R.string.pipeline_editor_event_name)) }, supportingText = { Text(stringResource(R.string.pipeline_editor_you_can_also_use_a_named_signal_timer_or_native_event)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
+                if (customEvent) {
+                    Text(stringResource(R.string.pipeline_event_advanced_event_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(script.trigger.event, { change(script.copy(trigger = script.trigger.copy(event = it))) }, label = { Text(stringResource(R.string.pipeline_editor_event_name)) }, supportingText = { Text(stringResource(R.string.pipeline_editor_you_can_also_use_a_named_signal_timer_or_native_event)) }, modifier = Modifier.fillMaxWidth(), enabled = !readOnly)
+                }
                 else TextButton(onClick = { customEvent = true }, enabled = !readOnly) { Text(stringResource(R.string.pipeline_field_custom_event)) }
                 if (script.trigger.event == "calendar.daily") {
                     val schedule = script.trigger.calendar ?: CalendarTrigger()
@@ -210,15 +218,17 @@ internal fun PipelineEditorInspector(
                     }
                     Text(stringResource(R.string.pipeline_editor_runs_once_at_this_local_time_on_each_chosen_day_while_the), style = MaterialTheme.typography.bodySmall)
                 }
+                Text(stringResource(R.string.pipeline_event_when_heading), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.pipeline_event_when_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SwitchRow(stringResource(R.string.pipeline_editor_only_when_a_condition_matches), script.trigger.condition != null, !readOnly) { change(script.copy(trigger = script.trigger.copy(condition = if (it) Expression.bool(true) else null))) }
                 script.trigger.condition?.let { condition ->
-                    ExpressionField(condition, ValueType.BOOLEAN, document, program, routine, { change(script.copy(trigger = script.trigger.copy(condition = it))) })
-                    ChoiceField(stringResource(R.string.pipeline_editor_condition_activation), script.trigger.edge.name, TriggerEdge.entries.map { it.name to when (it) { TriggerEdge.EVENT -> "Every matching event"; TriggerEdge.RISING -> "When it becomes true"; TriggerEdge.FALLING -> "When it becomes false"; TriggerEdge.CHANGE -> "Whenever it changes" } }, { change(script.copy(trigger = script.trigger.copy(edge = TriggerEdge.valueOf(it)))) })
+                    EventConditionField(condition, document, program, routine) { change(script.copy(trigger = script.trigger.copy(condition = it))) }
+                    ChoiceField(stringResource(R.string.pipeline_editor_condition_activation), script.trigger.edge.name, TriggerEdge.entries.map { it.name to when (it) { TriggerEdge.EVENT -> stringResource(R.string.pipeline_event_edge_each); TriggerEdge.RISING -> stringResource(R.string.pipeline_event_edge_rising); TriggerEdge.FALLING -> stringResource(R.string.pipeline_event_edge_falling); TriggerEdge.CHANGE -> stringResource(R.string.pipeline_event_edge_change) } }, { change(script.copy(trigger = script.trigger.copy(edge = TriggerEdge.valueOf(it)))) })
+                }
+                }
+                FieldSection(stringResource(R.string.pipeline_event_more_options), eventMoreSummary(script), script.priority != 0 || script.reentry != Reentry.RESTART || !script.enabled || script.trigger.initially || script.trigger.stableForMs != 0L) {
                     SwitchRow(stringResource(R.string.pipeline_editor_run_if_true_when_the_pipeline_starts), script.trigger.initially, !readOnly) { change(script.copy(trigger = script.trigger.copy(initially = it))) }
                     DurationField(stringResource(R.string.pipeline_field_stable_for), script.trigger.stableForMs.toDouble()) { change(script.copy(trigger = script.trigger.copy(stableForMs = it.toLong().coerceAtLeast(0)))) }
-                }
-                }
-                FieldSection(stringResource(R.string.pipeline_field_event_behavior), stringResource(R.string.pipeline_field_event_behavior_summary), script.priority != 0 || script.reentry != Reentry.RESTART || !script.enabled) {
                 ChoiceField(stringResource(R.string.pipeline_editor_if_triggered_while_already_running), script.reentry.name, Reentry.entries.map { it.name to when (it) { Reentry.RESTART -> "Restart this script"; Reentry.IGNORE -> "Ignore the new event"; Reentry.QUEUE -> "Run it after the current event"; Reentry.PARALLEL -> "Run another instance" } }, { change(script.copy(reentry = Reentry.valueOf(it))) })
                 NumberField(stringResource(R.string.pipeline_editor_priority), script.priority.toDouble(), { change(script.copy(priority = it.toInt())) }, integer = true)
                 SwitchRow(stringResource(R.string.pipeline_editor_enabled), script.enabled, !readOnly) { change(script.copy(enabled = it)) }

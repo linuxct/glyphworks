@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pipeline_overview_untitled">Untitled project</string>
+    <string name="pipeline_overview_empty_title">Start with a behavior</string>
+    <string name="pipeline_overview_empty_body">Choose what starts it, add any conditions, then choose what should appear or happen.</string>
+    <string name="pipeline_overview_add_behavior">Add behavior</string>
+    <string name="pipeline_overview_add">Add</string>
+    <string name="pipeline_overview_behaviors">Behaviors</string>
+    <string name="pipeline_overview_when">When</string>
+    <string name="pipeline_overview_if">If</string>
+    <string name="pipeline_overview_then">Then show / do</string>
+    <string name="pipeline_overview_enabled">Enabled</string>
+    <string name="pipeline_overview_disabled">Disabled</string>
+    <string name="pipeline_overview_edit">Edit</string>
+    <string name="pipeline_overview_preview">Preview</string>
+    <string name="pipeline_overview_open_canvas">Open full canvas</string>
+    <string name="pipeline_overview_routines">Reusable routines</string>
+    <string name="pipeline_overview_artwork">Artwork</string>
+    <string name="pipeline_overview_none_available">Nothing here yet</string>
+    <string name="pipeline_overview_untitled_behavior">Untitled behavior</string>
+    <string name="pipeline_overview_no_conditions">No extra conditions</string>
+    <string name="pipeline_overview_missing_event">Event is not configured</string>
+    <string name="pipeline_overview_missing_condition">Condition details are unavailable</string>
+    <string name="pipeline_overview_missing_action">Action is not configured</string>
+</resources>

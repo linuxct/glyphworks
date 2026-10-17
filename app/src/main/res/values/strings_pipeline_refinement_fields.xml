@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="pipeline_event_watch_heading">What to watch</string>
+    <string name="pipeline_event_watch_hint">Choose a signal, such as a key press, a sensor change, or a daily time.</string>
+    <string name="pipeline_event_when_heading">When should it run?</string>
+    <string name="pipeline_event_when_hint">A signal happens once. A condition describes a state that can become true or false.</string>
+    <string name="pipeline_event_advanced_event_notice">This event is outside the standard catalog. Its original identifier is preserved and editable.</string>
+    <string name="pipeline_event_advanced_condition_notice">This condition uses an expression the simple state form cannot represent. Edit it below; its original expression is preserved.</string>
+    <string name="pipeline_event_state_label">State to check</string>
+    <string name="pipeline_event_state_value">State is</string>
+    <string name="pipeline_event_state_true">True</string>
+    <string name="pipeline_event_state_false">False</string>
+    <string name="pipeline_event_edge_each">On every matching event</string>
+    <string name="pipeline_event_edge_rising">When the condition becomes true</string>
+    <string name="pipeline_event_edge_falling">When the condition becomes false</string>
+    <string name="pipeline_event_edge_change">Whenever the condition changes</string>
+    <string name="pipeline_event_more_options">More options</string>
     <string name="pipeline_field_choose">Choose…</string>
     <string name="pipeline_field_search">Search</string>
     <string name="pipeline_field_no_matches">No matching options.</string>

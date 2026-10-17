@@ -251,6 +251,11 @@ class MainActivity : ComponentActivity() {
 
         fun createTabIntent(context: Context): Intent =
             Intent(context, MainActivity::class.java).putExtra(EXTRA_TAB, Tab.CREATE.ordinal)
+
+        fun settingsTabIntent(context: Context): Intent =
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(EXTRA_TAB, Tab.SETTINGS.ordinal)
     }
 }
 
@@ -326,8 +331,11 @@ private fun MainScreen(startTab: Int = 0) {
     val pagerState = rememberPagerState(initialPage = startTab, pageCount = { Tab.entries.size })
     val scope = rememberCoroutineScope()
     var toyDeckGesture by remember { mutableStateOf(false) }
-    val customControls by rememberPref(PipelinePrefs.CONTROLLER_ENABLED) { it.getBoolean(PipelinePrefs.CONTROLLER_ENABLED, false) }
+    val advancedFeatures by rememberPref(PipelinePrefs.ADVANCED_ENABLED) { it.getBoolean(PipelinePrefs.ADVANCED_ENABLED, false) }
+    val customControlsPreference by rememberPref(PipelinePrefs.CONTROLLER_ENABLED) { it.getBoolean(PipelinePrefs.CONTROLLER_ENABLED, false) }
+    val customControls = advancedFeatures && customControlsPreference
     var pipelineLibrary by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(advancedFeatures) { if (!advancedFeatures) pipelineLibrary = false }
 
     var untestedAck by rememberSaveable {
         mutableStateOf(
@@ -510,12 +518,27 @@ private fun MainScreen(startTab: Int = 0) {
                         onDeckGesture = { toyDeckGesture = it },
                     )
                     Tab.CREATE -> Column(Modifier.fillMaxSize().padding(top = pagePadding.calculateTopPadding())) {
-                        GlyphSegmentedRow(selected = if (pipelineLibrary) 1 else 0, count = 2, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        if (advancedFeatures) GlyphSegmentedRow(selected = if (pipelineLibrary) 1 else 0, count = 2, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                             SegmentedButton(selected = !pipelineLibrary, onClick = { pipelineLibrary = false }, shape = glyphSegmentedShape(0, 2), colors = glyphSegmentedColors(!pipelineLibrary), icon = glyphSegmentedIcon(!pipelineLibrary)) { Text(stringResource(R.string.create_designs_section)) }
                             SegmentedButton(selected = pipelineLibrary, onClick = { pipelineLibrary = true }, shape = glyphSegmentedShape(1, 2), colors = glyphSegmentedColors(pipelineLibrary), icon = glyphSegmentedIcon(pipelineLibrary)) { Text(stringResource(R.string.create_pipelines_section)) }
                         }
                         val createPadding = PaddingValues(bottom = pagePadding.calculateBottomPadding())
-                        if (pipelineLibrary) PipelineLibraryScreen(contentPadding = createPadding)
+                        if (advancedFeatures && pipelineLibrary) PipelineLibraryScreen(
+                            contentPadding = createPadding,
+                            advancedDestinationsEnabled = advancedFeatures,
+                            activePipelineLabel = if (Core.pipeline.ambientPipelineEnabled) Core.pipeline.document("ambient")?.name else setupContext.getString(R.string.pipeline_refine_standard_ambient_active),
+                            builtInDefaultActive = !Core.pipeline.ambientPipelineEnabled,
+                            onCustomizeAmbient = {
+                                val id = Core.pipeline.ambientId.ifBlank { "migrated_ambient" }
+                                setupContext.startActivity(PipelineEditorActivity.intent(setupContext, id))
+                            },
+                            onAddToyRule = { scope.launch { pagerState.animateScrollToPage(Tab.TOYS.ordinal) } },
+                            onCustomControls = {
+                                val id = Core.pipeline.controllerId.ifBlank { "my_controls" }
+                                setupContext.startActivity(PipelineEditorActivity.intent(setupContext, id))
+                            },
+                            onRestoreBuiltInDefault = { Core.pipeline.setAmbientPipelineEnabled(false) },
+                        )
                         else CreateTab(createPadding, createListState, createState)
                     }
                     Tab.SETTINGS -> SettingsTab(
@@ -1165,7 +1188,7 @@ private fun AppSettingsSection(refreshTick: Int) {
         }
         item { BrightnessRow() }
         item { CreatorNameRow() }
-        item { PipelineAdvancedSettings() }
+        item { AdvancedFeaturesSettings() }
         // Adds its own item only in the GitHub build. About remains last in both variants.
         updateSettingsItem()
         item { AboutRow() }
@@ -1787,6 +1810,7 @@ private fun UnsupportedDeviceScreen() {
 
 @Composable
 internal fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
+    val advancedFeatures by rememberPref(PipelinePrefs.ADVANCED_ENABLED) { it.getBoolean(PipelinePrefs.ADVANCED_ENABLED, false) }
     AlertDialog(
         containerColor = dialogSurface(),
         modifier = Modifier
@@ -1809,13 +1833,13 @@ internal fun ScreenSettingsDialog(id: String, onDismiss: () -> Unit) {
                     "breathing" -> BreathingSettings()
                     "timer" -> TimerSettings()
                     "visualizer" -> VisualizerSettings()
-                    "ambient" -> AmbientSettings()
+                    "ambient" -> AmbientSettings(onDismiss)
                     "custom" -> CustomDesignSettings()
                     "notifications" -> NotificationsSettings()
                     "weather" -> WeatherSettings()
                 }
-                if (id in SCREEN_DISPLAY_NAMES && id != "ambient") PipelineToySettings(id)
-                if (id.startsWith("pipeline_")) {
+                if (advancedFeatures && id in SCREEN_DISPLAY_NAMES && id != "ambient") PipelineToySettings(id)
+                if (advancedFeatures && id.startsWith("pipeline_")) {
                     val context = LocalContext.current
                     TextButton(onClick = { context.startActivity(PipelineEditorActivity.intent(context, id.removePrefix("pipeline_"))) }) { Text(stringResource(R.string.pipeline_editor_open_pipeline_builder)) }
                 }
@@ -1940,7 +1964,18 @@ private fun CustomDesignSettings() {
 }
 
 @Composable
-private fun AmbientSettings() { AmbientPipelineSettings() }
+private fun AmbientSettings(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val advanced by rememberPref(PipelinePrefs.ADVANCED_ENABLED) { it.getBoolean(PipelinePrefs.ADVANCED_ENABLED, false) }
+    if (advanced) AmbientPipelineSettings()
+    else StandardAmbientSettings(
+        onOpenPipelineBuilder = {
+            onDismiss()
+            context.startActivity(MainActivity.settingsTabIntent(context))
+        },
+        onStandardSettingsChanged = Core.pipeline::standardAmbientSettingsChanged,
+    )
+}
 
 @Composable
 private fun IntChoiceGroup(optionsInStoredOrder: List<String>, key: String, def: Int) {

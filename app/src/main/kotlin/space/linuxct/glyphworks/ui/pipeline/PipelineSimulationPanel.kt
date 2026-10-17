@@ -2,6 +2,7 @@ package space.linuxct.glyphworks.ui.pipeline
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +38,33 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoField
 
+/** A trace state supplied by the pipeline simulator. The panel never derives this from the rendered frame. */
+enum class PreviewExplanationState {
+    NO_EVENT,
+    HANDLED,
+    CONDITION_SKIPPED,
+    DISPLAYED,
+    COMPETING_ACTION_WON,
+    MISSING_INPUT,
+    ERROR,
+}
+
+/** One immutable entry in the simulator's explanation trail. */
+data class PreviewExplanationStep(
+    val label: String,
+    val detail: String,
+    val blockId: String? = null,
+)
+
+/** Immutable, simulator-authored explanation for the latest preview decision. */
+data class PreviewExplanation(
+    val state: PreviewExplanationState,
+    val summary: String,
+    val reason: String? = null,
+    val blockId: String? = null,
+    val steps: List<PreviewExplanationStep> = emptyList(),
+)
+
 /** Same interpreter, controls and view in the editor and guided tour. No production inputs. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -49,6 +77,7 @@ fun PipelineSimulationPanel(
     onRestart: () -> Unit = {},
     revision: Int = 0,
     onExecutionState: (Set<String>, Set<String>) -> Unit = { _, _ -> },
+    explanation: PreviewExplanation? = null,
 ) {
     var playing by remember(simulation) { mutableStateOf(autoRun) }
     var generation by remember(simulation) { mutableIntStateOf(0) }
@@ -122,6 +151,7 @@ fun PipelineSimulationPanel(
                 IconButton(onClick = onRestart) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.pipeline_simulation_restart), Modifier.size(21.dp), tint = colors.onSurfaceVariant) }
             }
         }
+        explanation?.let { PreviewExplanationCard(it) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SimulationDisclosure(stringResource(R.string.pipeline_simulation_inputs), Icons.Outlined.Tune, inputsExpanded, { inputsExpanded = !inputsExpanded }, Modifier.weight(1f))
             SimulationDisclosure(stringResource(R.string.pipeline_sim_refined_inspect), Icons.Outlined.DataObject, inspectorExpanded, { inspectorExpanded = !inspectorExpanded }, Modifier.weight(1f))
@@ -133,6 +163,63 @@ fun PipelineSimulationPanel(
                 Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = colors.error)
                     Text(issue.message, color = colors.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewExplanationCard(explanation: PreviewExplanation) {
+    var expanded by remember(explanation) { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
+    val stateLabel = stringResource(
+        when (explanation.state) {
+            PreviewExplanationState.NO_EVENT -> R.string.pipeline_preview_state_no_event
+            PreviewExplanationState.HANDLED -> R.string.pipeline_preview_state_handled
+            PreviewExplanationState.CONDITION_SKIPPED -> R.string.pipeline_preview_state_condition_skipped
+            PreviewExplanationState.DISPLAYED -> R.string.pipeline_preview_state_displayed
+            PreviewExplanationState.COMPETING_ACTION_WON -> R.string.pipeline_preview_state_competing_action_won
+            PreviewExplanationState.MISSING_INPUT -> R.string.pipeline_preview_state_missing_input
+            PreviewExplanationState.ERROR -> R.string.pipeline_preview_state_error
+        },
+    )
+    PipelineCard(Modifier.fillMaxWidth(), padding = 14.dp) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PipelineEyebrow(stringResource(R.string.pipeline_preview_explanation_title))
+            Surface(shape = RoundedCornerShape(50), color = colors.secondaryContainer) {
+                Text(stateLabel, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = colors.onSecondaryContainer)
+            }
+        }
+        Text(explanation.summary, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
+        explanation.blockId?.let { id ->
+            Text(stringResource(R.string.pipeline_preview_block_id, id), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+        }
+        TextButton(
+            onClick = { expanded = !expanded },
+            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
+        ) {
+            Text(stringResource(R.string.pipeline_preview_why), style = MaterialTheme.typography.labelMedium)
+            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
+        }
+        if (expanded) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                val hasDetails = explanation.reason != null || explanation.steps.isNotEmpty()
+                if (explanation.reason != null) {
+                    Text(explanation.reason, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+                explanation.steps.forEach { step ->
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(step.label, style = MaterialTheme.typography.labelMedium, color = colors.onSurface)
+                        Text(step.detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                        step.blockId?.let { id ->
+                            Text(stringResource(R.string.pipeline_preview_block_id, id), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                        }
+                    }
+                }
+                if (!hasDetails) {
+                    Text(stringResource(R.string.pipeline_preview_no_details), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 }
             }
         }
