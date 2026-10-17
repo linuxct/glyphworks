@@ -12,6 +12,7 @@ interface Prefs {
     fun putInt(key: String, v: Int)
     fun putLong(key: String, v: Long)
     fun putFloat(key: String, v: Float)
+    fun putStringDurable(key: String, v: String): Boolean { putString(key, v); return true }
     fun putString(key: String, v: String)
     fun addChangeListener(listener: (String) -> Unit)
     fun removeChangeListener(listener: (String) -> Unit)

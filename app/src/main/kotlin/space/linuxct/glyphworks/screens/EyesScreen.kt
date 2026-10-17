@@ -23,11 +23,22 @@ class EyesScreen : GlyphScreen {
     private var nextBlinkAt = 0L
     private var blinkPhase = BLINK_OPEN
 
+    override fun behaviorState(): Map<String, Any> = mapOf("phase" to if (blinkPhase == BLINK_OPEN) "gaze" else "blink", "x" to pupilX, "y" to pupilY, "targetX" to targetX, "targetY" to targetY, "blinkPhase" to blinkPhase)
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        val c = ctx ?: return false
+        when (name) {
+            "gaze" -> { targetX = (arguments["x"] as? Number)?.toFloat()?.coerceIn(-1f, 1f) ?: targetX; targetY = (arguments["y"] as? Number)?.toFloat()?.coerceIn(-1f, 1f) ?: targetY; nextWanderAt = c.ports.clock.nowMillis() + ((arguments["duration"] as? Number)?.toLong() ?: WANDER_MIN_MS).coerceAtLeast(0) }
+            "blink" -> blinkPhase = 0
+            else -> return false
+        }
+        return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         val now = ctx.ports.clock.nowMillis()
-        nextWanderAt = now + WANDER_MIN_MS
-        nextBlinkAt = now + BLINK_MIN_MS
+        nextWanderAt = now + ctx.prefs.getLong("wanderMinimum", WANDER_MIN_MS).coerceAtLeast(50)
+        nextBlinkAt = now + ctx.prefs.getLong("blinkMinimum", BLINK_MIN_MS).coerceAtLeast(50)
         blinkPhase = BLINK_OPEN
         pupilX = 0f; pupilY = 0f; targetX = 0f; targetY = 0f
         ctx.scheduler.setTicker(TICK_MS) { tick() }
@@ -44,10 +55,10 @@ class EyesScreen : GlyphScreen {
         if (now >= nextWanderAt) {
             targetX = (c.ports.random.nextInt(GAZE_STATES) - GAZE_MID).toFloat()
             targetY = (c.ports.random.nextInt(GAZE_STATES) - GAZE_MID).toFloat()
-            nextWanderAt = now + WANDER_MIN_MS + c.ports.random.nextInt(WANDER_SPREAD_MS)
+            nextWanderAt = now + c.prefs.getLong("wanderMinimum", WANDER_MIN_MS).coerceAtLeast(50) + c.ports.random.nextInt(c.prefs.getInt("wanderSpread", WANDER_SPREAD_MS).coerceAtLeast(1))
         }
-        pupilX += (targetX - pupilX) * PUPIL_EASE
-        pupilY += (targetY - pupilY) * PUPIL_EASE
+        pupilX += (targetX - pupilX) * c.prefs.getFloat("gazeEase", PUPIL_EASE).coerceIn(0.01f, 1f)
+        pupilY += (targetY - pupilY) * c.prefs.getFloat("gazeEase", PUPIL_EASE).coerceIn(0.01f, 1f)
 
         if (blinkPhase == BLINK_OPEN && now >= nextBlinkAt) blinkPhase = 0
 
@@ -57,7 +68,7 @@ class EyesScreen : GlyphScreen {
             blinkPhase++
             if (blinkPhase >= BLINK_STEPS) {
                 blinkPhase = BLINK_OPEN
-                nextBlinkAt = now + BLINK_MIN_MS + c.ports.random.nextInt(BLINK_SPREAD_MS)
+                nextBlinkAt = now + c.prefs.getLong("blinkMinimum", BLINK_MIN_MS).coerceAtLeast(50) + c.ports.random.nextInt(c.prefs.getInt("blinkSpread", BLINK_SPREAD_MS).coerceAtLeast(1))
             }
         }
     }

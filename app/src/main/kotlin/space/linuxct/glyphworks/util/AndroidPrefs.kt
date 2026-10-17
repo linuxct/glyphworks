@@ -54,6 +54,7 @@ class AndroidPrefs(context: Context) : Prefs {
     override fun putInt(key: String, v: Int) = sp.edit().putInt(key, v).apply()
     override fun putLong(key: String, v: Long) = sp.edit().putLong(key, v).apply()
     override fun putFloat(key: String, v: Float) = sp.edit().putFloat(key, v).apply()
+    override fun putStringDurable(key: String, v: String): Boolean = sp.edit().putString(key, v).commit()
     override fun putString(key: String, v: String) {
         val valueIsUnchanged = sp.contains(key) && sp.getString(key, null) == v
         if (valueIsUnchanged) {

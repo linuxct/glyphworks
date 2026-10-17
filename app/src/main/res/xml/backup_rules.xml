@@ -32,8 +32,10 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="device_file" path="designs" />
+        <include domain="device_file" path="pipelines" />
     </cloud-backup>
     <device-transfer>
         <include domain="device_file" path="designs" />
+        <include domain="device_file" path="pipelines" />
     </device-transfer>
 </data-extraction-rules>

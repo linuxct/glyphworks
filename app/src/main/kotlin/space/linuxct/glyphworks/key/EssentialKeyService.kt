@@ -95,7 +95,9 @@ class EssentialKeyService : AccessibilityService() {
             return super.onKeyEvent(event)
         }
 
+        if (event.action == KeyEvent.ACTION_UP) Core.router.keyUp()
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            Core.router.keyDown()
             vibrate()
             Core.prefs.putLong(PrefKeys.SERVICE_HEARTBEAT, System.currentTimeMillis())
             lastConsumedPressAt = SystemClock.uptimeMillis()
@@ -169,6 +171,8 @@ class EssentialKeyService : AccessibilityService() {
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         DebugLog.w(C, "onUnbind (service disabled or system rebinding)")
         Core.router.onAction = null
+        Core.router.cancelPhysicalKey()
+        expiry?.let(mainHandler::removeCallbacks); expiry = null
         return super.onUnbind(intent)
     }
 

@@ -16,6 +16,17 @@ class BreathingScreen : GlyphScreen {
     private var running = false
     private var step = 0
 
+    override fun behaviorState(): Map<String, Any> = mapOf("phase" to if (!running) "idle" else if ((step % (2 * STEPS + 2 * HOLD)) < STEPS + HOLD) "inhale" else "exhale", "running" to running, "step" to step)
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        when (name) {
+            "start" -> if (!running) onEvent(Events.CHANGE)
+            "stop" -> if (running) onEvent(Events.CHANGE)
+            "toggle" -> onEvent(Events.CHANGE)
+            else -> return false
+        }
+        return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         running = false

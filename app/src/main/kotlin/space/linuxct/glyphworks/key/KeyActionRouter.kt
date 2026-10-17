@@ -24,6 +24,10 @@ class KeyActionRouter(
     private val screenManager: ScreenManager,
     private val scheduler: RenderScheduler,
     private val prefs: Prefs,
+    private val customGestures: (Int) -> Boolean = { false },
+    private val rawKey: (Boolean) -> Boolean = { false },
+    private val resolvedSingle: () -> Boolean = { false },
+    private val heldKey: (Long) -> Boolean = { false },
 ) {
     /** Runs on the render thread, or on the caller's thread for the early returns. */
     @Volatile
@@ -39,15 +43,44 @@ class KeyActionRouter(
     private var firedOnFirstPress = false
 
     /** Only [GlyphScreen.instantAction] screens act here; the rest wait for the window to close. */
+    private var rawConsumed = false
+    private var awaitingResolution = false
+    private var physicalDown = false
+    private var hold: space.linuxct.glyphworks.core.Cancelable? = null
+    fun keyDown() { scheduler.run {
+        if (screenManager.livePreviewActive) return@run
+        physicalDown = true; awaitingResolution = true
+        rawConsumed = rawKey(true) || rawConsumed
+        hold?.cancel()
+        hold = scheduler.postDelayed(600) {
+            if (physicalDown && !screenManager.livePreviewActive) {
+                val consumed = heldKey(600)
+                if (awaitingResolution) rawConsumed = consumed || rawConsumed
+            }
+        }
+    } }
+    fun keyUp() { scheduler.run {
+        physicalDown = false; hold?.cancel(); hold = null
+        if (!screenManager.livePreviewActive) {
+            val consumed = rawKey(false)
+            if (awaitingResolution) rawConsumed = consumed || rawConsumed
+        }
+    } }
+    fun cancelPhysicalKey() { scheduler.run {
+        physicalDown = false; awaitingResolution = false; rawConsumed = false; firedOnFirstPress = false
+        hold?.cancel(); hold = null
+    } }
+
     fun firstPress() {
         scheduler.run {
-            if (!screenManager.sessionLive) return@run
+            if (!screenManager.sessionLive || screenManager.livePreviewActive || rawConsumed) return@run
             if (prefs.getBoolean(PrefKeys.MENU_MODE_ENABLED, PrefKeys.MENU_MODE_ENABLED_DEF) &&
                 screenManager.inMenu
             ) {
                 return@run
             }
             if (!screenManager.currentScreen().instantAction) return@run
+            if (customGestures(1)) { firedOnFirstPress = true; report(1, KeyAction.TOY_ACTION); return@run }
             DebugLog.i(C, "instant press -> EVENT_CHANGE to '${screenManager.currentScreen().id}'")
             firedOnFirstPress = true
             screenManager.dispatchGlyphEvent(Events.CHANGE)
@@ -71,13 +104,21 @@ class KeyActionRouter(
             return
         }
         scheduler.run {
+            if (screenManager.livePreviewActive) { report(clicks, KeyAction.IGNORED); return@run }
             if (!screenManager.sessionLive) {
                 DebugLog.i(C, "session not live yet -> revive and swallow")
                 arbiter.revive()
                 report(clicks, KeyAction.SWALLOWED)
                 return@run
             }
-            if (clicks == 1 && handledEarly) return@run
+            val consumedRaw = rawConsumed
+            rawConsumed = false; awaitingResolution = false
+            if (consumedRaw) { report(clicks, KeyAction.TOY_ACTION); return@run }
+            if (clicks == 1) {
+                val consumed = resolvedSingle()
+                if (handledEarly || consumed) return@run
+            }
+            if (customGestures(clicks)) { report(clicks, KeyAction.TOY_ACTION); return@run }
             val menuModeOn = prefs.getBoolean(PrefKeys.MENU_MODE_ENABLED, PrefKeys.MENU_MODE_ENABLED_DEF)
             when {
                 menuModeOn && screenManager.inMenu -> when (clicks) {
@@ -137,6 +178,8 @@ class KeyActionRouter(
 
     fun glyphButtonChange() {
         scheduler.run {
+            if (screenManager.livePreviewActive) return@run
+            if (customGestures(1)) return@run
             val menuModeOn = prefs.getBoolean(PrefKeys.MENU_MODE_ENABLED, PrefKeys.MENU_MODE_ENABLED_DEF)
             if (menuModeOn && screenManager.inMenu) {
                 DebugLog.i(C, "glyph button -> menu cycle preview")

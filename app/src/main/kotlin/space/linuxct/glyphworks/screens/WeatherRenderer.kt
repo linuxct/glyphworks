@@ -21,6 +21,8 @@ object WeatherRenderer {
         elapsedMs: Long,
         fahrenheit: Boolean = false,
         iconStyle: String = WeatherPrefs.ORIGINAL,
+        conditionFrame: IntArray? = null,
+        temperatureFrame: IntArray? = null,
     ): IntArray {
         val c = MatrixCanvas(size)
         val usable = snapshot.status == WeatherStatus.READY || snapshot.status == WeatherStatus.STALE
@@ -31,19 +33,26 @@ object WeatherRenderer {
             InformationDrawing.text(c, mark, if (size >= 25) 14 else 8, if (size >= 25) 2 else 1)
             return InformationDrawing.mask(c)
         }
+        fun replacement(frame: IntArray?, shift: Int): Boolean {
+            if (frame == null || frame.size != size * size) return false
+            for (y in 0 until size) for (x in 0 until size) c.set(x + shift, y, frame[y * size + x])
+            return true
+        }
+        fun drawIcon(shift: Int) { if (!replacement(conditionFrame, shift)) icon(c, snapshot, shift, iconStyle) }
+        fun drawTemperature(shift: Int) { if (!replacement(temperatureFrame, shift)) temperature(c, snapshot.temperatureC, fahrenheit, shift) }
         val phase = elapsedMs.coerceAtLeast(0) % LOOP_MS
         when {
-            phase < HOLD_MS -> icon(c, snapshot, 0, iconStyle)
+            phase < HOLD_MS -> drawIcon(0)
             phase < HOLD_MS + SLIDE_MS -> {
                 val shift = ((phase - HOLD_MS) * size / SLIDE_MS).toInt()
-                icon(c, snapshot, -shift, iconStyle)
-                temperature(c, snapshot.temperatureC, fahrenheit, size - shift)
+                drawIcon(-shift)
+                drawTemperature(size - shift)
             }
-            phase < 2 * HOLD_MS + SLIDE_MS -> temperature(c, snapshot.temperatureC, fahrenheit, 0)
+            phase < 2 * HOLD_MS + SLIDE_MS -> drawTemperature(0)
             else -> {
                 val shift = ((phase - 2 * HOLD_MS - SLIDE_MS) * size / SLIDE_MS).toInt()
-                temperature(c, snapshot.temperatureC, fahrenheit, -shift)
-                icon(c, snapshot, size - shift, iconStyle)
+                drawTemperature(-shift)
+                drawIcon(size - shift)
             }
         }
         if (snapshot.status == WeatherStatus.STALE) c.set(size / 2, size - 1, 1800)

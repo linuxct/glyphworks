@@ -53,6 +53,11 @@ object Core {
     lateinit var prefs: Prefs
         private set
 
+    lateinit var pipelineStore: space.linuxct.glyphworks.pipeline.store.PipelineStore
+        private set
+    lateinit var pipeline: space.linuxct.glyphworks.pipeline.runtime.PipelineController
+        private set
+
     lateinit var designStore: DesignStore
         private set
 
@@ -119,13 +124,19 @@ object Core {
             weather = weather,
         )
 
+        pipelineStore = space.linuxct.glyphworks.pipeline.store.PipelineStore(app)
+        pipeline = space.linuxct.glyphworks.pipeline.runtime.PipelineController(app, prefs, ports, scheduler, glyphLink.size, pipelineStore)
+
         screenManager = ScreenManager(
-            allScreens = ScreenRegistry.create(),
+            allScreens = pipeline.screens(),
             prefs = prefs,
             ports = ports,
             scheduler = scheduler,
             size = glyphLink.size,
         ) { frame -> glyphLink.pushFrame(frame) }
+
+        pipeline.attachManager(screenManager)
+        glyphLink.onAvailabilityChanged = pipeline::sdkAvailability
 
         autoBrightness = AutoBrightness(prefs, ports.light, scheduler) {
             screenManager.reapplyBrightness()
@@ -133,6 +144,7 @@ object Core {
         screenState = ScreenStateWatcher(app) { on -> autoBrightness.setScreenOn(on) }
 
         arbiter = SessionArbiter(glyphLink, scheduler, screenManager, prefs) { running ->
+            pipeline.onSessionChanged(running)
             if (running) {
                 shake.start()
                 screenState.start()
@@ -144,7 +156,9 @@ object Core {
             }
         }
 
-        router = KeyActionRouter(arbiter, screenManager, scheduler, prefs)
+        router = KeyActionRouter(arbiter, screenManager, scheduler, prefs, pipeline::routeGesture, pipeline::rawKey, pipeline::resolvedSingle, pipeline::heldKey)
+
+        NotificationSource.addEventListener { event -> pipeline.event(event) }
 
         shake.onShake = {
             scheduler.run { screenManager.dispatchGlyphEvent(Events.SHAKE) }

@@ -1,0 +1,31 @@
+<resources>
+    <string name="pipeline_simulation">Simulation</string>
+    <string name="pipeline_simulation_note">Sample inputs. Your phone and Glyph are not used.</string>
+    <string name="pipeline_simulation_play">Run</string>
+    <string name="pipeline_simulation_pause">Pause</string>
+    <string name="pipeline_simulation_step">Step 50 ms</string>
+    <string name="pipeline_simulation_time">Advance 5 s</string>
+    <string name="pipeline_simulation_restart">Restart</string>
+    <string name="pipeline_simulation_panel">%1$d × %1$d</string>
+    <string name="pipeline_simulation_inputs">Sample inputs</string>
+    <string name="pipeline_simulation_trace">Execution and variables</string>
+    <string name="pipeline_simulation_event_fields">Event fields</string>
+    <string name="pipeline_simulation_send">Send event</string>
+    <string name="pipeline_simulation_update">Set sample</string>
+    <string name="pipeline_simulation_value">Value</string>
+    <string name="pipeline_simulation_unavailable">Unavailable</string>
+    <string name="pipeline_simulation_no_trace">No blocks have run yet.</string>
+    <string name="pipeline_simulation_invalid_value">Enter a value with the expected type.</string>
+    <string name="pipeline_custom_title">Custom controls and menus</string>
+    <string name="pipeline_custom_description">Let a controller pipeline define your Glyph menu, key actions and global triggers.</string>
+    <string name="pipeline_custom_enable">Use custom controls</string>
+    <string name="pipeline_custom_edit">Edit controller</string>
+    <string name="pipeline_custom_stop">Stop</string>
+    <string name="pipeline_custom_standard">Return to Standard</string>
+    <string name="pipeline_custom_locked_title">Your controller is in charge</string>
+    <string name="pipeline_custom_locked_description">Toy selection and navigation are defined by your pipeline. Edit your controls or return to Standard in App settings.</string>
+    <string name="pipeline_custom_settings">App settings</string>
+    <string name="pipeline_custom_active">Running</string>
+    <string name="pipeline_custom_stopped">Stopped</string>
+    <string name="pipeline_custom_off">Standard mode</string>
+</resources>

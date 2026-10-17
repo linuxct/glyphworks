@@ -31,6 +31,12 @@ class BottleScreen : GlyphScreen {
     private var showingSprite = true
     private var ghostFrames = 0
 
+    override fun behaviorState(): Map<String, Any> = mapOf("phase" to when (phase) { Phase.REST -> if (showingSprite) "idle" else "pointer"; Phase.SPINNING -> "spinning"; Phase.BURST -> "burst" }, "angle" to (if (phase == Phase.SPINNING) spinStartAngle + spinAngleAt((ctx?.ports?.clock?.nowMillis() ?: spinStartedAt) - spinStartedAt, spinDelta) else restAngle), "result" to restAngle, "burstFrame" to burstFrames)
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        if (name != "spin") return false
+        onEvent(Events.CHANGE); return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         phase = Phase.REST

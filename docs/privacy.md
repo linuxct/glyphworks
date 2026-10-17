@@ -1,7 +1,7 @@
 # Privacy Policy — GlyphWorks for Nothing
 
-Applies to **GlyphWorks for Nothing** (`space.linuxct.glyphworks`), version 3.3.0, as distributed
-on Google Play and GitHub. Last updated: 2026-09-11.
+Applies to **GlyphWorks for Nothing** (`space.linuxct.glyphworks`) as distributed
+on Google Play and GitHub. Last updated: 2026-10-06.
 
 GlyphWorks is an independent, noncommercial, open-source app under AGPL-3.0. It has no advertising,
 analytics, crash-report uploads, or GlyphWorks accounts. The optional Weather toy uses the network
@@ -45,14 +45,17 @@ Weather data by [Open-Meteo](https://open-meteo.com/), under
 
 ## Notification access
 
-The **Notifications** toy and its Ambient background require Android's notification-listener
+The **Notifications** toy, its Ambient background, and notification-event pipeline blocks require Android's notification-listener
 access. This is separate from the permission to post the Timer's own notifications.
 
 The listener receives notification events from Android. GlyphWorks extracts only the opaque
-notification key, grouping information, and metadata needed to identify dismissible, ongoing,
-foreground-service, and media entries. It keeps that metadata only in memory to calculate the
-number shown on the Glyph Matrix. It does not read titles, message text, or notification actions;
-store notification data on disk; transmit it; or log notification payloads.
+notification key, originating app package name, grouping information, and metadata needed to
+identify dismissible, ongoing, foreground-service, and media entries. It keeps that metadata in
+memory to calculate the number shown on the Glyph Matrix and deliver received, updated, and
+removed events to active user-authored pipelines. Those events expose the app package name and
+current count. It does not read titles, message text, or notification actions, transmit this
+information, or log notification payloads. A pipeline can explicitly retain a value in a persistent
+local variable, as described below; the listener itself does not write notification metadata to disk.
 
 Android provides outstanding notification entries, not a reliable per-app unread-message count.
 GlyphWorks excludes ongoing services and media controls, and avoids counting a group summary
@@ -84,10 +87,33 @@ It also receives window-state events scoped to Essential Space and Essential Rec
 of a captured press, the service closes it once using Back when unlocked or Home when locked.
 This is disabled when key capture is off. The service is declared `isAccessibilityTool="false"`.
 
-Press counts are held in memory to choose toy actions. Local Android diagnostic logs include
+Press counts are held in memory to choose toy actions or invoke your pipeline's key rules.
+When Custom controls and menus is enabled, the controller you selected determines those actions
+instead of the standard toy menu. Local Android diagnostic logs include
 hardware key codes, click counts, toy actions, and service events; they are not uploaded by
 GlyphWorks. The service does not use accessibility information for advertising or profiling, or
 send it with weather requests. You can disable it in Android's Accessibility settings.
+
+## Pipelines and device inputs
+
+The optional Pipeline Builder processes device state locally: charging, screen/lock state,
+notification events, audio playback/output magnitudes, approximate location when permitted, and
+available motion, orientation, compass, light and proximity sensors. Inputs are observed while the
+relevant Glyph session and pipeline are active. The builder does not add an event-history database,
+usage analytics, screen-content access, or a new network destination.
+
+Pipelines, their artwork and reusable routines are saved as `glyph.pipeline` JSON projects in
+app-private device-protected storage. Applied revisions and unfinished drafts remain separate.
+Designs and pipeline projects can be included in Android backup and device transfer. Activation
+settings and runtime state are not included in those project backups.
+
+Variables are temporary unless the author explicitly marks them persistent. Persistent variables
+and timer deadlines are kept in local device-protected preferences. If an author stores a sensor
+reading or notification-event value in a persistent variable, that value stays there until the
+pipeline changes it or local app data is cleared. Runtime variable values and event traces are not
+included in exported pipeline files. Sharing or exporting is an explicit action and includes the
+project definition, its initial values, artwork and referenced routines, not a history of execution.
+The simulator uses sample inputs without reading live sensors or acquiring the Glyph display.
 
 ## Designs, settings and alarms
 
@@ -109,7 +135,7 @@ Timer data stays on the device.
 |---|---|
 | `com.nothing.ketchum.permission.ENABLE` | Draw on the Glyph Matrix through Nothing's SDK. |
 | Accessibility service (`BIND_ACCESSIBILITY_SERVICE`) | Recognise Essential Key presses and dismiss the related Essential pop-up. Cannot retrieve screen content. |
-| Notification access (`BIND_NOTIFICATION_LISTENER_SERVICE`) | Count outstanding dismissible notifications locally. Optional. |
+| Notification access (`BIND_NOTIFICATION_LISTENER_SERVICE`) | Count outstanding dismissible notifications and deliver local pipeline events. Optional. |
 | `RECORD_AUDIO` | On-device output-mix analysis for the visualizer. Optional. |
 | `MODIFY_AUDIO_SETTINGS` | Required by Android to analyse the output mix; no audio settings are changed. |
 | `ACCESS_COARSE_LOCATION` | Compass declination, Solar Path and optional Weather. |

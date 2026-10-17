@@ -1,5 +1,15 @@
 package space.linuxct.glyphworks.ui
 
+import space.linuxct.glyphworks.pipeline.PipelineSimulation
+import space.linuxct.glyphworks.ui.pipeline.portablePipeline
+import space.linuxct.glyphworks.pipeline.runtime.PipelinePrefs
+import space.linuxct.glyphworks.pipeline.native.NativeCatalog
+import space.linuxct.glyphworks.pipeline.templates.BuiltinPipelines
+import space.linuxct.glyphworks.core.design.DesignCodec
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import space.linuxct.pipeline.*
+
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -72,6 +82,9 @@ internal fun ToysTab(
     onDeckGesture: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
+    val catalogRevision by rememberPref(PipelinePrefs.LIBRARY_REVISION) { it.getLong(PipelinePrefs.LIBRARY_REVISION, 0) }
+    val customDocuments = remember(catalogRevision) { Core.pipeline.projects().filter { it.entry()?.kind == ProgramKind.TOY }.associateBy { "pipeline_${it.id}" } }
+    val toyNames = SCREEN_DISPLAY_NAMES.mapValues { stringResource(it.value) } + customDocuments.mapValues { it.value.name }
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val descriptionStyle = MaterialTheme.typography.bodyMedium
@@ -94,11 +107,11 @@ internal fun ToysTab(
     var savedFocus by rememberSaveable {
         mutableStateOf(Core.prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF))
     }
-    val deck = remember {
+    val deck = remember(customDocuments.keys) {
         ToyDeckState(
             normalizeToyOrder(
                 Core.prefs.getString(PrefKeys.SCREEN_ORDER, PrefKeys.SCREEN_ORDER_DEF),
-                SCREEN_DISPLAY_NAMES.keys.toList(),
+                toyNames.keys.toList(),
             ), savedFocus,
         )
     }
@@ -125,14 +138,22 @@ internal fun ToysTab(
     val panelSize = Core.glyphLink.size
     val requestFrame = remember(panelSize) { mutableStateOf(ToyRequest.previewFrame(panelSize)) }
     val player = rememberToyPlayer(
-        deck.selectedId, panelSize, revision, design,
+        deck.selectedId, panelSize, revision + catalogRevision.toInt(), design,
         visible && resumed && dialogId == null && !requestSelected, motion,
     )
     var thumbnails by remember { mutableStateOf<Map<String, IntArray>>(emptyMap()) }
-    LaunchedEffect(panelSize, revision, design) {
-        thumbnails = withContext(Dispatchers.Default) {
+    LaunchedEffect(panelSize, revision, design, catalogRevision) {
+        thumbnails = withContext(Dispatchers.IO) {
             SCREEN_DISPLAY_NAMES.keys.associateWith { id ->
                 ToyPreview.thumbnail(id, panelSize, Core.prefs, design)
+            } + customDocuments.mapValues { (_, doc) ->
+                val configured = runCatching { portablePipeline(doc, Core.prefs, { design }, Core.designStore::load) }.getOrElse { doc }
+                configured.preview.thumbnailAssetId?.let { asset ->
+                    space.linuxct.pipeline.PipelineAssets(configured).frame(asset, panelSize, index = configured.preview.thumbnailFrame)?.copyOf()
+                } ?: PipelineSimulation(configured, panelSize).use {
+                    if (configured.preview.initialAction) it.dispatch(PipelineEvent("key.action", consumable = true))
+                    it.advanceBy(configured.preview.elapsedMs); it.frame.copyOf()
+                }
             } + (ToyRequest.ID to requestFrame.value)
         }
     }
@@ -149,7 +170,7 @@ internal fun ToysTab(
         Core.prefs.putString(PrefKeys.SCREEN_ORDER, order.joinToString(","))
     }
     fun toggle(id: String, checked: Boolean) {
-        if (id !in SCREEN_DISPLAY_NAMES) return
+        if (id !in toyNames) return
         if (!checked && deck.order.none { it != id && Core.prefs.getBoolean(PrefKeys.screenEnabled(it), true) }) {
             Toast.makeText(context, R.string.toys_keep_one, Toast.LENGTH_SHORT).show()
             return
@@ -183,7 +204,7 @@ internal fun ToysTab(
                 ToyStage(
                     if (requestSelected) requestFrame else player.frame, panelSize,
                     Modifier.fillMaxWidth().height(stageHeight),
-                    onInteract = if (deck.selectedId in INTERACTIVE_PREVIEWS) ({ player.interact() }) else null,
+                    onInteract = if (!requestSelected && (deck.selectedId in INTERACTIVE_PREVIEWS || deck.selectedId in customDocuments)) ({ player.interact() }) else null,
                 )
             }
             item("caption") {
@@ -193,8 +214,7 @@ internal fun ToysTab(
                 ) {
                     Box(Modifier.fillMaxWidth().height(titleHeight), contentAlignment = Alignment.Center) {
                         Text(
-                            stringResource(if (requestSelected) R.string.toys_request_title else
-                                SCREEN_DISPLAY_NAMES.getValue(deck.selectedId)),
+                            if (requestSelected) stringResource(R.string.toys_request_title) else toyNames[deck.selectedId].orEmpty(),
                             style = titleStyle,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
@@ -207,7 +227,7 @@ internal fun ToysTab(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            stringResource(toyDescription(deck.selectedId)),
+                            customDocuments[deck.selectedId]?.entry()?.description?.ifBlank { "Your events. Your Glyph." } ?: stringResource(toyDescription(deck.selectedId)),
                             style = descriptionStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -219,7 +239,7 @@ internal fun ToysTab(
             }
             item("actions") {
                 ToyActions(
-                    hasSettings = deck.selectedId in CONFIGURABLE,
+                    hasSettings = !requestSelected,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 ) {
                     TextButton(
@@ -246,7 +266,7 @@ internal fun ToysTab(
                     }
                     TextButton(
                         onClick = { dialogId = deck.selectedId },
-                        enabled = deck.selectedId in CONFIGURABLE && deck.heldId == null,
+                        enabled = !requestSelected && deck.heldId == null,
                     ) {
                         Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp))
                         Text(stringResource(R.string.toys_settings), Modifier.padding(start = 8.dp))
@@ -254,7 +274,7 @@ internal fun ToysTab(
                 }
             }
             item("deck") {
-                ToyDeck(deck, panelSize, thumbnails, ::toggle, ::persistOrder, onDeckGesture)
+                ToyDeck(deck, panelSize, thumbnails, ::toggle, ::persistOrder, onDeckGesture, names = toyNames)
             }
             item("hint") {
                 Text(
@@ -317,9 +337,9 @@ private fun ToyActions(hasSettings: Boolean, modifier: Modifier, content: @Compo
 @Stable
 private class ToyPlayerState(size: Int) {
     val frame = mutableStateOf(IntArray(size * size))
-    var engine: ToyPreview? = null
+    var engine: PipelineSimulation? = null
     fun interact() {
-        engine?.let { it.interact(); frame.value = it.frame }
+        engine?.let { it.dispatch(PipelineEvent("key.action", consumable = true)); frame.value = it.frame }
     }
 }
 
@@ -335,18 +355,23 @@ private fun rememberToyPlayer(
     val state = remember(size) { ToyPlayerState(size) }
     LaunchedEffect(id, size, revision, design, running, motion) {
         if (!running) return@LaunchedEffect
-        val engine = ToyPreview(size, Core.prefs, design)
+        val original = Core.pipeline.document(id) ?: return@LaunchedEffect
+        val configured = withContext(Dispatchers.IO) {
+            runCatching { portablePipeline(original, Core.prefs, { design }, Core.designStore::load) }
+                .getOrElse { NativeCatalog.exportSettings(original, Core.prefs) }
+        }
+        val engine = PipelineSimulation(configured, size)
         state.engine = engine
         try {
-            engine.select(id)
-            engine.advance(700)
+            if (id == "dino" || configured.preview.initialAction) engine.dispatch(PipelineEvent("key.action", consumable = true))
+            engine.advanceBy(configured.preview.elapsedMs)
             state.frame.value = engine.frame
             if (motion) {
                 var previous = System.nanoTime()
                 while (isActive) {
                     delay(50)
                     val now = System.nanoTime()
-                    engine.advance(((now - previous) / 1_000_000).coerceIn(1, 150))
+                    engine.advanceBy(((now - previous) / 1_000_000).coerceIn(1, 150))
                     previous = now
                     val frame = engine.frame
                     if (!state.frame.value.contentEquals(frame)) state.frame.value = frame

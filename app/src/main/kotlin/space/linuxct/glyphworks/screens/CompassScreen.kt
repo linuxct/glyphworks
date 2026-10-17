@@ -49,10 +49,10 @@ class CompassScreen : GlyphScreen {
         private const val NEEDLE_HUB = 2200
         private const val NO_READING = 1500
 
-        fun renderFrame(size: Int, azimuthDeg: Float?): IntArray {
+        fun renderFrame(size: Int, azimuthDeg: Float?, ringScale: Float = 1f, needleScale: Float = 1f, tailScale: Float = 1f): IntArray {
             val canvas = MatrixCanvas(size)
             val center = size / 2
-            val ringR = (size / 2).toFloat()
+            val ringR = (size / 2).toFloat() * ringScale.coerceIn(0f, 2f)
 
             for (deg in 0 until DEGREES_PER_TURN step TICK_STEP_DEG) {
                 val v = when (deg) {
@@ -73,8 +73,8 @@ class CompassScreen : GlyphScreen {
             val rounded = ((azimuthDeg / quantum).roundToInt() * quantum % DEGREES_PER_TURN)
             // Turning the device by the azimuth puts north at -azimuth on the display.
             val northAngle = (DEGREES_PER_TURN - rounded).toFloat() % DEGREES_PER_TURN
-            val headLen = if (size >= 25) 9f else 4.6f
-            val tailLen = if (size >= 25) 5f else 2.6f
+            val headLen = (if (size >= 25) 9f else 4.6f) * needleScale.coerceIn(0f, 2f)
+            val tailLen = (if (size >= 25) 5f else 2.6f) * tailScale.coerceIn(0f, 2f)
             canvas.ray(center, center, northAngle, headLen, NEEDLE_HEAD)
             canvas.ray(center, center, northAngle + HALF_TURN_DEG, tailLen, NEEDLE_TAIL)
             canvas.set(center, center, NEEDLE_HUB)

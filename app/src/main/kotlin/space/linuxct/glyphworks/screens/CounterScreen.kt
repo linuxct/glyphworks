@@ -15,6 +15,18 @@ class CounterScreen : GlyphScreen {
 
     private var ctx: ScreenContext? = null
 
+    override fun behaviorState(): Map<String, Any> = mapOf("value" to (ctx?.prefs?.getInt(PrefKeys.COUNTER, PrefKeys.COUNTER_DEF) ?: 0))
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        val c = ctx ?: return false
+        when (name) {
+            "increment" -> { val amount = (arguments["amount"] as? Number)?.toInt() ?: 1; val wrap = ((arguments["wrap"] as? Number)?.toInt() ?: WRAP_AT).coerceIn(1, WRAP_AT); c.prefs.putInt(PrefKeys.COUNTER, Math.floorMod(c.prefs.getInt(PrefKeys.COUNTER, 0) + amount, wrap)); push() }
+            "reset" -> onEvent(Events.SHAKE)
+            "set" -> { c.prefs.putInt(PrefKeys.COUNTER, ((arguments["value"] as? Number)?.toInt() ?: 0).coerceIn(0, MAX_COUNT)); push() }
+            else -> return false
+        }
+        return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         push()

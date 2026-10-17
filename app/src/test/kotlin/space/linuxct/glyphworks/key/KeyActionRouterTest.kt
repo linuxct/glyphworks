@@ -210,4 +210,27 @@ class KeyActionRouterTest {
             assertTrue(h.output.last().contentEquals(initial))
         }
     }
+
+    @Test fun `consuming raw down suppresses instant and resolved action for the same press`() {
+        screenManager.startSession()
+        var resolved = 0
+        val router = KeyActionRouter(arbiter, screenManager, scheduler, prefs,
+            rawKey = { down -> down }, resolvedSingle = { resolved++; false })
+        router.keyDown(); router.firstPress(); router.keyUp(); router.execute(1)
+        assertEquals(0, resolved)
+        assertTrue(ambient.events.isEmpty())
+        router.execute(1)
+        assertEquals(1, resolved)
+        assertEquals(listOf(Events.CHANGE), ambient.events)
+    }
+
+    @Test fun `hold is emitted once only while an observed physical key remains down`() {
+        screenManager.startSession(); var holds = 0
+        val router = KeyActionRouter(arbiter, screenManager, scheduler, prefs, heldKey = { duration -> assertEquals(600L, duration); holds++; false })
+        router.keyDown(); scheduler.advanceTime(599); assertEquals(0, holds)
+        router.keyUp(); scheduler.advanceTime(1000); assertEquals(0, holds)
+        router.keyDown(); scheduler.advanceTime(600); scheduler.advanceTime(2000); assertEquals(1, holds)
+        router.keyUp(); router.glyphButtonChange(); scheduler.advanceTime(1000); assertEquals(1, holds)
+    }
+
 }

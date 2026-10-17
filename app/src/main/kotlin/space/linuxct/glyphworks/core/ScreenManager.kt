@@ -2,7 +2,7 @@ package space.linuxct.glyphworks.core
 
 /** The toy carousel. Call every method on the scheduler thread. */
 class ScreenManager(
-    private val allScreens: List<GlyphScreen>,
+    private var allScreens: List<GlyphScreen>,
     private val prefs: Prefs,
     private val ports: Ports,
     private val scheduler: RenderScheduler,
@@ -23,6 +23,27 @@ class ScreenManager(
 
     private var transientId: String? = null
     private var activeScreen: GlyphScreen? = null
+    private var controllerScreen: GlyphScreen? = null
+    private var previewSuspendedScreen = false
+
+    /** Advanced ownership is separate from persisted manual selection and rotation order. */
+    fun setControllerScreen(screen: GlyphScreen?) {
+        if (controllerScreen === screen) return
+        controllerScreen = screen
+        exitMenuState()
+        transientId = null
+        if (sessionLive && !livePreviewActive) forceActivate(currentScreen())
+    }
+
+    fun replaceCatalog(screens: List<GlyphScreen>) {
+        require(screens.isNotEmpty())
+        allScreens = screens
+        if (controllerScreen == null && activeScreen != null && screens.none { it.id == activeScreen?.id }) {
+            transientId = null
+            if (sessionLive && !livePreviewActive) forceActivate(currentScreen())
+        }
+    }
+
     private var lastPushed: IntArray? = null
 
     private var blinkOn = true
@@ -60,6 +81,7 @@ class ScreenManager(
     }
 
     fun currentScreen(): GlyphScreen {
+        controllerScreen?.let { return it }
         val screens = enabledScreens()
         transientId?.let { t -> allScreens.firstOrNull { it.id == t }?.let { return it } }
         val id = prefs.getString(PrefKeys.CURRENT_SCREEN, PrefKeys.CURRENT_SCREEN_DEF)
@@ -78,6 +100,7 @@ class ScreenManager(
     fun stopSession() {
         if (!sessionLive) return
         DebugLog.i(C, "session STOP (was '${activeScreen?.id}')")
+        activeScreen?.onEvent("session.suspend")
         exitMenuState()
         deactivate()
         transientId = null
@@ -107,7 +130,8 @@ class ScreenManager(
         DebugLog.i(C, "live preview BEGIN (was '${activeScreen?.id}')")
         exitMenuState()
         livePreviewActive = true
-        deactivate()
+        previewSuspendedScreen = activeScreen?.suspendForPreview() == true
+        if (!previewSuspendedScreen) deactivate()
         // Drop the old frame, or an auto-brightness tick re-pushes the toy over the preview.
         lastRawFrame = null
         lastContentFrame = null
@@ -133,7 +157,11 @@ class ScreenManager(
         lastPushed = null
         lastRawFrame = null
         lastContentFrame = null
-        if (sessionLive) forceActivate(currentScreen())
+        if (sessionLive) {
+            if (previewSuspendedScreen && activeScreen?.id == currentScreen().id) activeScreen?.resumeFromPreview()
+            else forceActivate(currentScreen())
+        }
+        previewSuspendedScreen = false
     }
 
     fun refreshCurrentScreen() {
@@ -157,6 +185,7 @@ class ScreenManager(
     fun next() = moveBy(1)
 
     fun home() {
+        if (controllerScreen != null) return
         if (!sessionLive) return
         val wasInMenu = inMenu
         exitMenuState()
@@ -172,6 +201,7 @@ class ScreenManager(
     }
 
     private fun moveBy(delta: Int) {
+        if (controllerScreen != null) return
         if (!sessionLive) return
         val screens = enabledScreens()
         val current = activeScreen ?: currentScreen()
@@ -193,6 +223,7 @@ class ScreenManager(
     }
 
     fun selectScreen(id: String) {
+        if (controllerScreen != null) return
         val screen = enabledScreens().firstOrNull { it.id == id }
             ?: allScreens.firstOrNull { it.id == id } ?: return
         DebugLog.i(C, "select '${screen.id}'")
@@ -202,6 +233,7 @@ class ScreenManager(
     }
 
     fun showTransient(id: String) {
+        if (controllerScreen != null) return
         if (!sessionLive) {
             DebugLog.d(C, "transient '$id' dropped (session not live)")
             return
@@ -219,6 +251,7 @@ class ScreenManager(
     }
 
     fun enterMenu() {
+        if (controllerScreen != null) return
         if (!sessionLive || inMenu) return
         DebugLog.i(C, "menu ENTER on '${currentScreen().id}'")
         inMenu = true
@@ -229,6 +262,7 @@ class ScreenManager(
     }
 
     fun menuNext() {
+        if (controllerScreen != null) return
         if (!inMenu) return
         val screens = enabledScreens()
         val cur = activeScreen ?: currentScreen()
@@ -241,6 +275,7 @@ class ScreenManager(
     }
 
     fun commitMenu() {
+        if (controllerScreen != null) return
         if (!inMenu) return
         val id = transientId ?: currentScreen().id
         DebugLog.i(C, "menu COMMIT '$id'")

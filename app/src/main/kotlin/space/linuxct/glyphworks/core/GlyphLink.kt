@@ -79,9 +79,15 @@ class GlyphLink(
         glyph.postDelayed(recovery, RECONNECT_DELAY_MS)
     }
 
+    /** SDK registration/connection state, not proof of physical LED visibility. */
+    @Volatile var onAvailabilityChanged: ((Boolean) -> Unit)? = null
     @Volatile
     var ready = false
-        private set
+        private set(value) {
+            val changed = field != value
+            field = value
+            if (changed) runCatching { onAvailabilityChanged?.invoke(value) }
+        }
 
     private var firstFrameLogged = false
 

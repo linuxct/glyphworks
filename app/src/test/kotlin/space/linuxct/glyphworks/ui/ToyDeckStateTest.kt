@@ -52,13 +52,14 @@ class ToyDeckStateTest {
             state.beginSwipe()
             state.swipe(1.8f * direction)
             state.finishSwipe(100f * direction, this)
-            assertEquals(10 + 3 * direction, state.selectedIndex)
+            assertEquals(10 + 2 * direction, state.selectedIndex)
             // Interrupt before settling. The next gesture starts at the current drawing,
             // not the old gesture origin or the pending animation's target card.
             state.beginSwipe()
+            assertEquals(10f + 1.8f * direction, state.position, 0.001f)
             state.swipe(1.8f * direction)
             state.finishSwipe(100f * direction, this)
-            assertEquals(10 + 5 * direction, state.selectedIndex)
+            assertEquals(10 + 4 * direction, state.selectedIndex)
             state.stop()
         }
     }

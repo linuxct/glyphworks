@@ -70,6 +70,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -228,15 +229,18 @@ internal fun EditorScaffold(
     store: DesignStore,
     onClose: () -> Unit,
     demo: Boolean = false,
+    onSaveAsset: (suspend (Design) -> Boolean)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val saveFailed = stringResource(R.string.create_save_failed)
     val unnamed = stringResource(R.string.pref_custom_unnamed)
 
-    val saver = remember(state, store, demo) {
+    val assetSaver by rememberUpdatedState(onSaveAsset)
+    val saver = remember(state, store, demo, onSaveAsset != null) {
         SaveScheduler(scope) {
             if (demo) return@SaveScheduler true
+            assetSaver?.let { return@SaveScheduler it(state.composed()) }
             when (state.saveIfDirty(store)) {
                 SaveOutcome.WRITTEN -> {
                     Core.scheduler.run { Core.screenManager.refreshCurrentScreen() }
@@ -270,7 +274,7 @@ internal fun EditorScaffold(
 
     var previewShown by rememberSaveable(state) { mutableStateOf(true) }
 
-    if (!demo) {
+    if (!demo && onSaveAsset == null) {
         LiveMatrixPreview(state, playing = playing, onRest = { playing = false })
 
         LaunchedEffect(state, claimed.value) {

@@ -236,28 +236,42 @@ class ToyDeckOrderTest {
     }
 
     @Test
-    fun `fast flick advances at least one page in its direction`() {
-        assertEquals(4, toyDeckSnapTarget(3.1f, 1.2f, 8, swipeStartPosition = 3.1f))
-        assertEquals(2, toyDeckSnapTarget(3.1f, -1.2f, 8, swipeStartPosition = 3.1f))
-        assertEquals(1, toyDeckSnapTarget(0f, 2f, 8, swipeStartPosition = 0f))
-        assertEquals(6, toyDeckSnapTarget(7f, -2f, 8, swipeStartPosition = 7f))
+    fun `fast flick finishes the partial slot without adding a page at an exact anchor`() {
+        assertEquals(4, toyDeckSnapTarget(3.1f, 1.2f, 8, swipeStartPosition = 3f))
+        assertEquals(2, toyDeckSnapTarget(2.9f, -1.2f, 8, swipeStartPosition = 3f))
+        assertEquals(0, toyDeckSnapTarget(0f, 2f, 8, swipeStartPosition = 0f))
+        assertEquals(7, toyDeckSnapTarget(7f, -2f, 8, swipeStartPosition = 7f))
+        assertEquals(4, toyDeckSnapTarget(4f, 1000f, 8, swipeStartPosition = 3f))
+        assertEquals(2, toyDeckSnapTarget(2f, -1000f, 8, swipeStartPosition = 3f))
     }
 
     @Test
-    fun `strong flick travels at most two pages from the nearest anchor`() {
-        assertEquals(5, toyDeckSnapTarget(3.1f, 4f, 8, swipeStartPosition = 3.1f))
-        assertEquals(1, toyDeckSnapTarget(3.1f, -4f, 8, swipeStartPosition = 3.1f))
-        assertEquals(5, toyDeckSnapTarget(3.1f, 1000f, 8, swipeStartPosition = 3.1f))
-        assertEquals(1, toyDeckSnapTarget(3.1f, -1000f, 8, swipeStartPosition = 3.1f))
+    fun `short flicks move only one card regardless of speed including interrupted snaps`() {
+        for (speed in listOf(1.2f, 4f, 1000f)) {
+            assertEquals(4, toyDeckSnapTarget(3.1f, speed, 8, swipeStartPosition = 3f))
+            assertEquals(2, toyDeckSnapTarget(2.9f, -speed, 8, swipeStartPosition = 3f))
+            // Crossing a rounding boundary during a short swipe must not skip a neighbor.
+            assertEquals(4, toyDeckSnapTarget(4.2f, speed, 8, swipeStartPosition = 3.4f))
+            assertEquals(4, toyDeckSnapTarget(3.8f, -speed, 8, swipeStartPosition = 4.6f))
+        }
     }
 
     @Test
-    fun `fast flick counts finger travel toward its three card limit`() {
+    fun `release speed alone cannot move a stationary deck`() {
+        for (speed in listOf(-1000f, -4f, -1.2f, 1.2f, 4f, 1000f)) {
+            assertEquals(3, toyDeckSnapTarget(3f, speed, 8, swipeStartPosition = 3f))
+            assertEquals(3, toyDeckSnapTarget(3.1f, speed, 8, swipeStartPosition = 3.1f))
+        }
+    }
+
+    @Test
+    fun `longer flicks finish traveled slots within the three card budget`() {
         assertEquals(3, toyDeckSnapTarget(2.6f, 1000f, 20, swipeStartPosition = 0f))
         assertEquals(3, toyDeckSnapTarget(2.6f, 2f, 20, swipeStartPosition = 0f))
         assertEquals(14, toyDeckSnapTarget(14.4f, -1000f, 20, swipeStartPosition = 17f))
         assertEquals(14, toyDeckSnapTarget(14.4f, -2f, 20, swipeStartPosition = 17f))
-        assertEquals(7, toyDeckSnapTarget(6.2f, 1000f, 20, swipeStartPosition = 4.4f))
+        assertEquals(6, toyDeckSnapTarget(6.2f, 1000f, 20, swipeStartPosition = 4.4f))
+        assertEquals(14, toyDeckSnapTarget(13.8f, -1000f, 20, swipeStartPosition = 15.6f))
     }
 
     @Test
@@ -269,9 +283,9 @@ class ToyDeckOrderTest {
     }
 
     @Test
-    fun `reversing direction at release still moves toward the final swipe direction`() {
-        assertEquals(6, toyDeckSnapTarget(8.2f, -10f, 20, swipeStartPosition = 7f))
-        assertEquals(9, toyDeckSnapTarget(7.2f, 10f, 20, swipeStartPosition = 8f))
+    fun `reversing direction at release finishes the current slot without extra momentum`() {
+        assertEquals(8, toyDeckSnapTarget(8.2f, -10f, 20, swipeStartPosition = 7f))
+        assertEquals(8, toyDeckSnapTarget(7.2f, 10f, 20, swipeStartPosition = 8f))
     }
 
     @Test
@@ -297,6 +311,10 @@ class ToyDeckOrderTest {
             velocity.add(32, 200f * direction)
             velocity.add(48, 300f * direction)
             assertEquals(6250f * direction, velocity.atRelease(50), 0.001f)
+            // A brief gesture may contain just one MOVE sample after DOWN.
+            velocity.reset(0, 0f)
+            velocity.add(16, 100f * direction)
+            assertEquals(6250f * direction, velocity.atRelease(20), 0.001f)
         }
     }
 
@@ -305,8 +323,11 @@ class ToyDeckOrderTest {
         val velocity = ToyDeckVelocity()
         assertEquals(0f, velocity.atRelease(100), 0f)
         velocity.reset(0, 0f)
-        velocity.add(16, 100f)
         assertEquals(0f, velocity.atRelease(20), 0f)
+        velocity.add(4, 100f)
+        assertEquals(0f, velocity.atRelease(6), 0f)
+        velocity.reset(0, 0f)
+        velocity.add(16, 100f)
         velocity.add(32, 200f)
         velocity.add(48, 300f)
         assertEquals(0f, velocity.atRelease(150), 0f)
@@ -332,7 +353,9 @@ class ToyDeckOrderTest {
         assertEquals(0, toyDeckSnapTarget(-3f, -10f, 8, swipeStartPosition = -3f))
         assertEquals(7, toyDeckSnapTarget(20f, 10f, 8, swipeStartPosition = 20f))
         assertEquals(0, toyDeckSnapTarget(0f, -2f, 2, swipeStartPosition = 0f))
-        assertEquals(1, toyDeckSnapTarget(0f, 50f, 2, swipeStartPosition = 0f))
+        assertEquals(0, toyDeckSnapTarget(0f, 50f, 2, swipeStartPosition = 0f))
+        assertEquals(1, toyDeckSnapTarget(0.2f, 50f, 2, swipeStartPosition = 0f))
+        assertEquals(0, toyDeckSnapTarget(0.8f, -50f, 2, swipeStartPosition = 1f))
         assertEquals(0, toyDeckSnapTarget(20f, 50f, 1, swipeStartPosition = 20f))
         assertEquals(0, toyDeckSnapTarget(20f, 50f, 0, swipeStartPosition = 20f))
     }

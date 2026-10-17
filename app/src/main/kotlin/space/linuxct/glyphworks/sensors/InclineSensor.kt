@@ -25,6 +25,14 @@ class InclineSensor(app: Context) : InclinePort, SensorEventListener {
     @Volatile private var lastPollAt = 0L
     private var started = false
 
+    @Synchronized override fun setActive(active: Boolean) {
+        if (active) return
+        mainHandler.removeCallbacks(idleCheck)
+        if (started) sensorManager?.unregisterListener(this)
+        started = false
+        haveGravity = false; pitch = null; roll = null
+    }
+
     private val idleCheck = object : Runnable {
         override fun run() {
             synchronized(this@InclineSensor) {

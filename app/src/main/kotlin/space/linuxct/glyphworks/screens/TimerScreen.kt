@@ -38,6 +38,26 @@ class TimerScreen : GlyphScreen {
 
     private fun durationMs(c: ScreenContext) = durationSec(c) * MILLIS_PER_SECOND
 
+    override fun behaviorState(): Map<String, Any> {
+        val c = ctx ?: return emptyMap()
+        val start = startMillis(c)
+        val paused = pausedElapsed(c)
+        val elapsed = if (paused > 0) paused else if (start > 0) (c.ports.clock.nowMillis() - start).coerceAtLeast(0) else 0L
+        return mapOf("phase" to when { done -> "done"; paused > 0 -> "paused"; start > 0 -> "running"; else -> "idle" }, "remaining" to (durationMs(c) - elapsed).coerceAtLeast(0), "elapsed" to elapsed, "deadline" to if (start > 0) start + durationMs(c) else 0L)
+    }
+    override fun behaviorCommand(name: String, arguments: Map<String, Any>): Boolean {
+        val c = ctx ?: return false
+        when (name) {
+            "start" -> if (startMillis(c) == 0L && pausedElapsed(c) == 0L) { done = false; start(c) }
+            "pause" -> if (startMillis(c) > 0L && pausedElapsed(c) == 0L) pause(c)
+            "resume" -> if (pausedElapsed(c) > 0L) resume(c)
+            "reset" -> { c.ports.timer.cancelAlarm(); c.prefs.putLong(PrefKeys.TIMER_START, 0); c.prefs.putLong(PrefKeys.TIMER_PAUSED_ELAPSED, 0); c.prefs.putLong(PrefKeys.TIMER_CHIMED_FOR, 0); done = false; dismissDone(c) }
+            "complete" -> { c.ports.timer.cancelAlarm(); c.prefs.putLong(PrefKeys.TIMER_START, 0); c.prefs.putLong(PrefKeys.TIMER_PAUSED_ELAPSED, 0); startDonePulse() }
+            else -> return false
+        }
+        return true
+    }
+
     override fun onActivate(ctx: ScreenContext) {
         this.ctx = ctx
         done = false
@@ -57,6 +77,7 @@ class TimerScreen : GlyphScreen {
                 done = true
                 ctx.pushFrame(renderDone(ctx.size))
             } else {
+                ctx.ports.timer.scheduleAlarm(start + durationMs(ctx))
                 startTicker()
             }
         } else {

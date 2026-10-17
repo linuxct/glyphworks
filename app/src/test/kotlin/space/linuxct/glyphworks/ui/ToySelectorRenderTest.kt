@@ -45,6 +45,8 @@ import space.linuxct.glyphworks.R
 import space.linuxct.glyphworks.TestHarness
 import space.linuxct.glyphworks.core.GlyphLink
 import space.linuxct.glyphworks.core.PrefKeys
+import space.linuxct.glyphworks.pipeline.runtime.PipelineController
+import space.linuxct.glyphworks.pipeline.store.PipelineStore
 import space.linuxct.glyphworks.ui.theme.GlyphWorksTheme
 import space.linuxct.glyphworks.ui.theme.fullContrastTopAppBarColors
 import space.linuxct.glyphworks.ui.theme.recordBackdrop
@@ -80,6 +82,11 @@ class ToySelectorRenderTest {
         }
         coreField("prefs", fixture.prefs)
         coreField("ports", fixture.ports)
+        val storeDirectory = java.nio.file.Files.createTempDirectory("selector-pipelines").toFile()
+        val store = PipelineStore(storeDirectory)
+        val pipeline = PipelineController(RuntimeEnvironment.getApplication(), fixture.prefs, fixture.ports, fixture.scheduler, panelSize, store)
+        coreField("pipelineStore", store)
+        coreField("pipeline", pipeline)
         val link = GlyphLink(RuntimeEnvironment.getApplication())
         GlyphLink::class.java.getDeclaredField("size").apply { isAccessible = true }.setInt(link, panelSize)
         coreField("glyphLink", link)
@@ -146,6 +153,10 @@ class ToySelectorRenderTest {
             activity.close()
             (GlyphLink::class.java.getDeclaredField("ioThread").apply { isAccessible = true }.get(link) as HandlerThread)
                 .quitSafely()
+            pipeline.stop()
+            coreField("pipeline", null)
+            coreField("pipelineStore", null)
+            storeDirectory.deleteRecursively()
             coreField("glyphLink", null)
             coreField("ports", null)
             coreField("prefs", null)
