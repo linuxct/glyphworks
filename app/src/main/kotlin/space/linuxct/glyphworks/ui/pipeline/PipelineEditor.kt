@@ -657,7 +657,7 @@ private fun BlockList(
                                 Text(spec?.category.orEmpty().uppercase(), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = .9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.height(3.dp))
-                            Text(pipelineBlockTitle(block), modifier = Modifier.testTag("pipeline-block-title:${block.id}"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(pipelineBlockTitle(block), modifier = Modifier.fillMaxWidth().testTag("pipeline-block-title:${block.id}"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                             if (running || waiting) Text(if (waiting) "Waiting" else "Running", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             val summary = blockDisplaySummary(if (block.op == "display.toy") block.copy(arguments = block.arguments - "toy") else block, document)
                             if (summary.isNotBlank()) Text(summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
