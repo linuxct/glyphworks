@@ -22,8 +22,8 @@ android {
         applicationId = "space.linuxct.glyphworks"
         minSdk = 33
         targetSdk = 37
-        versionCode = 28
-        versionName = "3.4.4"
+        versionCode = 29
+        versionName = "3.5.0"
     }
 
     signingConfigs {
@@ -126,7 +126,7 @@ dependencies {
     // motionScheme parameter as public API (both were internal in 1.4.0), which
     // is what lets the app use MD3's real expressive springs instead of copying
     // token values. It pulls Compose 1.12.0-alpha03 transitively.
-    implementation("androidx.compose.material3:material3:1.5.0-alpha29")
+    implementation("androidx.compose.material3:material3:1.5.0-beta01")
     // AnimatedContent lives in the non-core animation artifact, which material3
     // does NOT depend on (verified in the POMs of both 1.4.0 and 1.5.0-alpha23).
     implementation("androidx.compose.animation:animation:1.12.1")
